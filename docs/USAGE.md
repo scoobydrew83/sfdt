@@ -1504,6 +1504,13 @@ sfdt events publish Order_Placed__e --field Order_Id__c=A-1
 sfdt events tail Order_Placed__e --expect Status__c=OK --timeout 30
 ```
 
+`publish` carries the same two brakes as `automation` and `permissions` — a production guard and a
+confirmation that refuses rather than auto-confirms when non-interactive. Publishing is a
+*behavioural* change rather than a data write: the event fires every subscriber on the channel —
+flows, Apex triggers, and any external listener — and a delivered event cannot be recalled. There
+is no undo, which is precisely why it is gated going in. `--dry-run` prints the exact body and
+sends nothing.
+
 The CometD/Bayeux protocol implementation is [`@sfdt/flow-core`](../packages/flow-core)'s, shared
 verbatim with the Chrome extension's background worker. A stateful handshake with a replay
 extension and a reconnect policy is exactly the kind of thing two copies would drift on, in ways
@@ -1855,8 +1862,16 @@ silently failed to populate.
 | `--wait <minutes>` | For `load`: minutes to wait for each job. Defaults to `config.data.bulk.waitMinutes` (10) |
 | `--async` | For `load`: queue each job and return immediately instead of waiting |
 | `--line-ending <LF\|CRLF>` | For `load`: CSV line ending. Defaults to `config.data.bulk.lineEnding`, else sf's own default |
-| `-y, --yes` | For `delete`: skip the confirmation prompt. **Required** for non-interactive runs (`--json`, no TTY, or `SFDT_NON_INTERACTIVE`), which otherwise refuse to delete |
+| `-y, --yes` | For `delete` and `load`: skip the confirmation prompt. **Required** for non-interactive runs (`--json`, no TTY, or `SFDT_NON_INTERACTIVE`), which otherwise refuse rather than auto-confirm |
+| `--production` | For `load`: acknowledge that the target org is production. Detection fails safe — an org whose sandbox status cannot be read is treated as production |
 | `--json` | Emit machine-readable output |
+
+> `sfdt data load` inserts or **upserts**, and an upsert overwrites records that are already
+> there. It carries two brakes: a production guard (`--production`) and a confirmation that
+> refuses rather than auto-confirms when non-interactive. `delete` carries the confirmation but
+> **not** the production guard. Note `load` is **not** recorded in the
+> ledger: `sfdt ledger undo` covers org *configuration* changes, not bulk data writes, so a load
+> has to be reversed by loading corrected data.
 
 > `sfdt data delete` bulk-removes every record a data set's queries match — by design for
 > scratch/sandbox seed cleanup.

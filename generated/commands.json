@@ -3252,6 +3252,20 @@
               "required": false,
               "default": null,
               "description": "Emit structured JSON to stdout"
+            },
+            {
+              "flags": "-y, --yes",
+              "name": "yes",
+              "required": false,
+              "default": null,
+              "description": "Skip the confirmation prompt (required for non-interactive use)"
+            },
+            {
+              "flags": "--production",
+              "name": "production",
+              "required": false,
+              "default": null,
+              "description": "Acknowledge that the target org is production"
             }
           ],
           "subcommands": []
@@ -5476,6 +5490,20 @@
               "required": false,
               "default": null,
               "description": "Print the exact body without sending it"
+            },
+            {
+              "flags": "--yes",
+              "name": "yes",
+              "required": false,
+              "default": null,
+              "description": "Skip the confirmation prompt"
+            },
+            {
+              "flags": "--production",
+              "name": "production",
+              "required": false,
+              "default": null,
+              "description": "Acknowledge that the target org is production"
             },
             {
               "flags": "--json",

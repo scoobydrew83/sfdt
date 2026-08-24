@@ -393,6 +393,7 @@ export const TOOLS = [
         fields: { type: 'object', description: 'Field API name to value.', additionalProperties: true },
         org: { type: 'string', description: 'Salesforce org alias. Defaults to config defaultOrg.' },
         dryRun: { type: 'boolean', description: 'Return the exact request body without sending it.' },
+        production: { type: 'boolean', description: 'Acknowledge that the target org is production. Required there; detection fails safe.' },
         confirmExecution: { type: 'boolean', description: 'Must be true to publish to the org.' }
       },
       required: ['event', 'fields', 'confirmExecution']
@@ -753,6 +754,7 @@ export const TOOLS = [
         org: { type: 'string', description: 'Org alias. Defaults to config defaultOrg.' },
         wait: { type: 'integer', minimum: 0, description: 'Minutes to wait for each job. Defaults to config data.bulk.waitMinutes (10).' },
         async: { type: 'boolean', description: 'Queue each job and return immediately instead of waiting.' },
+        production: { type: 'boolean', description: 'Acknowledge that the target org is production. Required there; detection fails safe.' },
         confirmExecution: { type: 'boolean', description: 'Must be true to write records to the org.' }
       },
       required: ['set', 'confirmExecution']
@@ -1223,7 +1225,8 @@ export class SfdtMcpServer {
         if (!args.confirmExecution) {
           throw new Error('Publishing an event fires every real subscriber — flows, triggers, and any external system on the channel. Pass confirmExecution: true to proceed.');
         }
-        const cmdArgs = ['events', 'publish', args.event, '--json'];
+        const cmdArgs = ['events', 'publish', args.event, '--json', '--yes'];
+        if (args.production) cmdArgs.push('--production');
         for (const [k, v] of Object.entries(args.fields ?? {})) {
           cmdArgs.push('--field', `${k}=${v}`);
         }
@@ -1451,7 +1454,10 @@ export class SfdtMcpServer {
         if (!args.confirmExecution) {
           throw new Error('Loading a data set writes records to the org. Pass confirmExecution: true to proceed.');
         }
-        const cliArgs = ['data', 'load', args.set, '--json'];
+        // `--yes` because confirmExecution above IS the confirmation at this
+        // layer; --json is non-interactive, so the CLI would otherwise refuse.
+        const cliArgs = ['data', 'load', args.set, '--json', '--yes'];
+        if (args.production) cliArgs.push('--production');
         if (args.org) cliArgs.push('--org', args.org);
         if (args.wait != null) cliArgs.push('--wait', String(args.wait));
         if (args.async) cliArgs.push('--async');

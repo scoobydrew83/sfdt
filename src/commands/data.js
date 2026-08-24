@@ -2,6 +2,8 @@ import ora from 'ora';
 import chalk from 'chalk';
 import inquirer from 'inquirer';
 import { loadConfig } from '../lib/config.js';
+import { guardProduction } from '../lib/org-facts.js';
+import { confirmChange } from '../lib/confirm-change.js';
 import {
   exportDataSet,
   importDataSet,
@@ -184,6 +186,23 @@ function makeLoadAction() {
     try {
       const config = await loadConfig();
       const org = resolveOrg(config, options);
+
+      // `load` inserts or UPSERTS. An upsert overwrites existing records, which
+      // is not obviously safer than the operations that were already gated —
+      // and `delete`, its sibling, has demanded a confirmation since it shipped.
+      // Same two brakes here, so the rule is uniform rather than incidental.
+      await guardProduction(org, options, 'insert or overwrite records in it');
+      const ok = await confirmChange(
+        `load data set "${setName}" into ${org}`,
+        [
+          'Insert and upsert both write records; an upsert overwrites what is already there.',
+          'This is not recorded in the ledger and cannot be undone with `sfdt ledger undo`.',
+        ],
+        options,
+        jsonMode,
+      );
+      if (!ok) return;
+
       const runOpts = {
         waitMinutes: parseWaitMinutes(options.wait),
         lineEnding: parseLineEnding(options.lineEnding),
@@ -289,6 +308,8 @@ export function registerDataCommand(program) {
     .option('--async', 'Queue each job and return immediately instead of waiting')
     .option('--line-ending <LF|CRLF>', 'CSV line ending (default config.data.bulk.lineEnding, or sf\'s own default)')
     .option('--json', 'Emit structured JSON to stdout')
+    .option('-y, --yes', 'Skip the confirmation prompt (required for non-interactive use)')
+    .option('--production', 'Acknowledge that the target org is production')
     .action(makeLoadAction());
 
   data

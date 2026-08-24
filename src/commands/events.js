@@ -1,6 +1,8 @@
 import chalk from 'chalk';
 import fs from 'fs-extra';
 import { loadConfig } from '../lib/config.js';
+import { guardProduction } from '../lib/org-facts.js';
+import { confirmChange } from '../lib/confirm-change.js';
 import { parseSetPairs } from '../lib/record-runner.js';
 import {
   listEventChannels,
@@ -198,6 +200,8 @@ export function registerEventsCommand(program) {
     .option('--org <alias>', 'Org alias (defaults to config.defaultOrg)')
     .option('--field <Name=Value>', 'Repeatable. Splits on the first = only', collect)
     .option('--dry-run', 'Print the exact body without sending it')
+    .option('--yes', 'Skip the confirmation prompt')
+    .option('--production', 'Acknowledge that the target org is production')
     .option('--json', 'Emit structured JSON to stdout')
     .action(async (eventName, options) => {
       const jsonMode = !!options.json;
@@ -205,6 +209,25 @@ export function registerEventsCommand(program) {
         const config = await loadConfig();
         const orgAlias = resolveOrg(config, options);
         const fields = parseSetPairs(options.field ?? []);
+
+        // Publishing is behavioural, not just a data write: the event fires every
+        // real subscriber — flows, Apex triggers, and any external system on the
+        // channel — and none of that is reversible from here. That puts it in the
+        // same class as toggling automation, so it takes the same two brakes.
+        if (!options.dryRun) {
+          await guardProduction(orgAlias, options, 'fire every subscriber listening on that channel');
+          const ok = await confirmChange(
+            `publish ${eventName} to ${orgAlias}`,
+            [
+              'Every subscriber fires: flows, Apex triggers, and any external listener.',
+              'A publish cannot be recalled — there is no undo for a delivered event.',
+            ],
+            options,
+            jsonMode,
+          );
+          if (!ok) return;
+        }
+
         const result = await publishEvent(config, orgAlias, eventName, fields, {
           dryRun: !!options.dryRun,
         });

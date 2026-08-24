@@ -20,12 +20,19 @@ vi.mock('../../src/lib/data-runner.js', () => ({
   extractSObject: vi.fn(),
 }));
 vi.mock('../../src/lib/exit-codes.js', () => ({ resolveExitCode: vi.fn(() => 1) }));
+// The guard itself is covered in org-facts/automation tests; here we assert the
+// WIRING — that `data load` calls it, and with the right subject.
+vi.mock('../../src/lib/org-facts.js', () => ({
+  guardProduction: vi.fn().mockResolvedValue({ isProduction: false, acknowledged: false }),
+  isProductionOrg: vi.fn().mockResolvedValue(false),
+}));
 vi.mock('inquirer', () => ({ default: { prompt: vi.fn() } }));
 vi.mock('ora', () => ({
   default: vi.fn(() => ({ start: vi.fn().mockReturnThis(), succeed: vi.fn().mockReturnThis(), fail: vi.fn().mockReturnThis(), warn: vi.fn().mockReturnThis() })),
 }));
 
 import inquirer from 'inquirer';
+import { guardProduction } from '../../src/lib/org-facts.js';
 import { loadConfig } from '../../src/lib/config.js';
 import { exportDataSet, importDataSet, deleteDataSet, bulkLoadDataSet, listDataSets, readQueries, extractSObject } from '../../src/lib/data-runner.js';
 import { registerDataCommand } from '../../src/commands/data.js';
@@ -234,6 +241,58 @@ describe('data delete confirmation', () => {
   });
 });
 
+describe('data load is braked like the writes beside it', () => {
+  // `load` inserts or UPSERTS — an upsert overwrites existing records, which is
+  // not obviously safer than the operations that were already gated. `delete`
+  // has demanded a confirmation since it shipped; `load` shipped with neither a
+  // guard nor a confirmation. These assert the rule is now uniform.
+  beforeEach(() => {
+    bulkLoadDataSet.mockResolvedValue({
+      set: 'seed', org: 'dev', kind: 'bulk',
+      operations: [{ sobject: 'Account', operation: 'upsert', status: 'ok', processed: 1, failed: 0 }],
+    });
+  });
+
+  it('asks the production guard before writing anything', async () => {
+    await createProgram().parseAsync(['node', 'sfdt', 'data', 'load', 'seed', '--yes']);
+
+    expect(guardProduction).toHaveBeenCalledWith(
+      'dev',
+      expect.anything(),
+      expect.stringMatching(/insert or overwrite records/),
+    );
+  });
+
+  it('REFUSES when non-interactive without --yes, and loads nothing', async () => {
+    // A prompt in CI is either a hang or a silent yes. Refusing is the only
+    // honest third option — the same rule `data delete` already follows.
+    process.stdin.isTTY = false;
+
+    await createProgram().parseAsync(['node', 'sfdt', 'data', 'load', 'seed']);
+
+    expect(bulkLoadDataSet, 'the load must not run without confirmation').not.toHaveBeenCalled();
+    expect(process.exitCode).toBe(1);
+  });
+
+  it('aborts without loading when the operator declines the prompt', async () => {
+    process.stdin.isTTY = true;
+    inquirer.prompt.mockResolvedValue({ confirmed: false });
+
+    await createProgram().parseAsync(['node', 'sfdt', 'data', 'load', 'seed']);
+
+    expect(bulkLoadDataSet).not.toHaveBeenCalled();
+  });
+
+  it('proceeds when the operator confirms at the prompt', async () => {
+    process.stdin.isTTY = true;
+    inquirer.prompt.mockResolvedValue({ confirmed: true });
+
+    await createProgram().parseAsync(['node', 'sfdt', 'data', 'load', 'seed']);
+
+    expect(bulkLoadDataSet).toHaveBeenCalled();
+  });
+});
+
 describe('data load', () => {
   beforeEach(() => {
     bulkLoadDataSet.mockResolvedValue({
@@ -243,7 +302,7 @@ describe('data load', () => {
   });
 
   it('loads a bulk data set and leaves the exit code clean', async () => {
-    await createProgram().parseAsync(['node', 'sfdt', 'data', 'load', 'seed']);
+    await createProgram().parseAsync(['node', 'sfdt', 'data', 'load', 'seed', '--yes', '--yes']);
     expect(bulkLoadDataSet).toHaveBeenCalledWith(
       expect.anything(), 'seed', 'dev', expect.objectContaining({ async: false }));
     expect(process.exitCode).toBeUndefined();
@@ -257,7 +316,7 @@ describe('data load', () => {
         { sobject: 'Contact', status: 'error', error: 'INVALID_FIELD' },
       ],
     });
-    await createProgram().parseAsync(['node', 'sfdt', 'data', 'load', 'seed']);
+    await createProgram().parseAsync(['node', 'sfdt', 'data', 'load', 'seed', '--yes', '--yes']);
     expect(process.exitCode).toBe(1);
   });
 
@@ -267,7 +326,7 @@ describe('data load', () => {
       operations: [{ sobject: 'Contact', status: 'error', error: 'boom' }],
     });
     const spy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
-    await createProgram().parseAsync(['node', 'sfdt', 'data', 'load', 'seed', '--json']);
+    await createProgram().parseAsync(['node', 'sfdt', 'data', 'load', 'seed', '--yes', '--json']);
     const payload = JSON.parse(spy.mock.calls.at(-1)[0]);
     spy.mockRestore();
     expect(payload.result.errorCount).toBe(1);
@@ -275,13 +334,13 @@ describe('data load', () => {
   });
 
   it('passes --wait through as a number of minutes', async () => {
-    await createProgram().parseAsync(['node', 'sfdt', 'data', 'load', 'seed', '--wait', '25']);
+    await createProgram().parseAsync(['node', 'sfdt', 'data', 'load', 'seed', '--yes', '--wait', '25']);
     expect(bulkLoadDataSet).toHaveBeenCalledWith(
       expect.anything(), 'seed', 'dev', expect.objectContaining({ waitMinutes: 25 }));
   });
 
   it('rejects a non-numeric --wait before it reaches sf', async () => {
-    await createProgram().parseAsync(['node', 'sfdt', 'data', 'load', 'seed', '--wait', 'soon']);
+    await createProgram().parseAsync(['node', 'sfdt', 'data', 'load', 'seed', '--yes', '--wait', 'soon']);
     expect(bulkLoadDataSet).not.toHaveBeenCalled();
     expect(process.exitCode).toBe(1);
   });
@@ -292,7 +351,7 @@ describe('data load', () => {
       operations: [{ sobject: 'Account', status: 'ok', unmatchedFieldMapKeys: ['Nmae'] }],
     });
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
-    await createProgram().parseAsync(['node', 'sfdt', 'data', 'load', 'seed']);
+    await createProgram().parseAsync(['node', 'sfdt', 'data', 'load', 'seed', '--yes', '--yes']);
     expect(warn.mock.calls.flat().join(' ')).toMatch(/Nmae/);
     warn.mockRestore();
   });
@@ -304,13 +363,13 @@ describe('data load --line-ending', () => {
   });
 
   it('normalises case and passes it through', async () => {
-    await createProgram().parseAsync(['node', 'sfdt', 'data', 'load', 'seed', '--line-ending', 'crlf']);
+    await createProgram().parseAsync(['node', 'sfdt', 'data', 'load', 'seed', '--yes', '--line-ending', 'crlf']);
     expect(bulkLoadDataSet).toHaveBeenCalledWith(
       expect.anything(), 'seed', 'dev', expect.objectContaining({ lineEnding: 'CRLF' }));
   });
 
   it('rejects an unknown value before it reaches sf', async () => {
-    await createProgram().parseAsync(['node', 'sfdt', 'data', 'load', 'seed', '--line-ending', 'CR']);
+    await createProgram().parseAsync(['node', 'sfdt', 'data', 'load', 'seed', '--yes', '--line-ending', 'CR']);
     expect(bulkLoadDataSet).not.toHaveBeenCalled();
     expect(process.exitCode).toBe(1);
   });
