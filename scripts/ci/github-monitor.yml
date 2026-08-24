@@ -27,6 +27,16 @@ jobs:
         env:
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
           TEAMS_WEBHOOK_URL: ${{ secrets.TEAMS_WEBHOOK_URL }}
+      # Setup-audit-trail anomalies and critical security changes. Exits
+      # non-zero on a critical change or a per-user velocity spike, so the
+      # scheduled run is a real gate rather than a report nobody opens.
+      # `always()` so a monitor failure does not skip the security audit.
+      - name: Run org audit
+        if: always()
+        run: npx --yes @sfdt/cli@latest audit all --org {{org}} --notify --json
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          TEAMS_WEBHOOK_URL: ${{ secrets.TEAMS_WEBHOOK_URL }}
       - name: Upload monitoring snapshot
         if: always()
         uses: actions/upload-artifact@v4

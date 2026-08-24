@@ -6,6 +6,33 @@ All notable changes to the **SFDT for Salesforce** VS Code extension (`sfdt.sfdt
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-08-24
+
+### Added
+- **Five new command groups in the "SFDT: Run Command…" picker**, tracking the CLI commands added
+  in `@sfdt/cli` 0.23.0. Each is a group with its own children rather than a flat list, so the
+  picker keeps saying what a command *costs* rather than only what it is called:
+  - **Permissions** — Matrix (what each profile and permission set grants) and Drift vs Source
+    (compare org grants against the repository).
+  - **Packages** — List (installed packages with versions and notes) and Compare Orgs (version
+    drift between two orgs).
+  - **Platform Events** — List Channels, Tail (subscribe and print events as they arrive), and
+    Publish, which is marked **destructive**: publishing fires every real subscriber.
+  - **Field Usage** — Impact (what writes a field: flows, field updates, Apex), Usage Sweep
+    (unreferenced fields on an object), and Usage Sweep (repo), which needs no org at all.
+  - **Record** — Get (read a record and show what is editable), plus Edit and Clone, both marked
+    **destructive**.
+- **Data → Load (Bulk API)**, marked **destructive**, for loading a bulk data set over Bulk API v2.
+
+### Changed
+- Bumped the `@sfdt/flow-core` dependency range from `^0.10.0` to `^0.13.0`. flow-core is bundled
+  into the extension at package time, so this changes what ships inside the `.vsix` rather than
+  adding a runtime dependency.
+
+> Every entry above surfaces an existing CLI command through the picker — the extension reimplements
+> no logic of its own, which is why the destructive flags mirror the CLI's own gating rather than
+> adding a second opinion about it.
+
 ## [0.6.0] - 2026-07-30
 
 ### Added

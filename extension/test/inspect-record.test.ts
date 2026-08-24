@@ -128,7 +128,12 @@ describe('inspect-record — UI activation & inspection', () => {
     const trs = document.querySelectorAll('tbody tr');
     expect(trs).toHaveLength(3);
 
-    const values = Array.from(document.querySelectorAll('tbody tr td span')).map(span => span.textContent);
+    // Editable fields now render their value INSIDE a typed control, so the
+    // value text lives on the control rather than in a span. Read both.
+    const values = [
+      ...Array.from(document.querySelectorAll('tbody tr td span')).map((s) => s.textContent),
+      ...Array.from(document.querySelectorAll<HTMLInputElement>('tbody tr td input')).map((i) => i.value),
+    ];
     expect(values).toContain('Acme Test Corp');
     expect(values).toContain('123-456-7890');
   });
@@ -453,7 +458,10 @@ describe('inspect-record — UI activation & inspection', () => {
       (s) => s.textContent?.includes('Account · 001800000000001AAA'),
     );
     expect(recordInfo).toBeTruthy();
-    const values = Array.from(document.querySelectorAll('tbody tr td span')).map((s) => s.textContent);
+    const values = [
+      ...Array.from(document.querySelectorAll('tbody tr td span')).map((s) => s.textContent),
+      ...Array.from(document.querySelectorAll<HTMLInputElement>('tbody tr td input')).map((i) => i.value),
+    ];
     expect(values).toContain('Menu Corp');
   });
 

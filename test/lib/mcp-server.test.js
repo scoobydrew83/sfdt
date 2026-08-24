@@ -58,6 +58,7 @@ vi.mock('../../src/lib/mcp-parking.js', () => ({
 
 import { execa } from 'execa';
 import fs from 'fs-extra';
+import { loadConfig } from '../../src/lib/config.js';
 import { SfdtMcpServer, TOOLS } from '../../src/lib/mcp-server.js';
 import { parkIfNeeded, getParkedResult } from '../../src/lib/mcp-parking.js';
 
@@ -86,6 +87,28 @@ describe('SfdtMcpServer', () => {
     expect(result.cacheScope).toBe('global');
   });
 
+  it('advertises optional projectRoot on every tool schema', () => {
+    for (const tool of TOOLS) {
+      expect(tool.inputSchema.properties.projectRoot, tool.name).toEqual(
+        expect.objectContaining({ type: 'string' })
+      );
+    }
+  });
+
+  it('starts without a default project so clients can provide projectRoot per call', async () => {
+    const exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => undefined);
+    loadConfig.mockRejectedValueOnce(new Error('no configured project in cwd'));
+    mockRegisteredHandlers.clear();
+
+    const neutralServer = new SfdtMcpServer();
+    await neutralServer.start();
+
+    expect(exitSpy).not.toHaveBeenCalled();
+    expect(mockRegisteredHandlers.has('list-tools')).toBe(true);
+    expect(mockRegisteredHandlers.has('call-tool')).toBe(true);
+    exitSpy.mockRestore();
+  });
+
   describe('call-tool actions', () => {
     let callHandler;
 
@@ -97,6 +120,63 @@ describe('SfdtMcpServer', () => {
       return callHandler({ params: { name, arguments: args } });
     };
 
+    it('routes a call through configuration loaded from explicit projectRoot', async () => {
+      loadConfig.mockResolvedValueOnce({
+        _projectRoot: '/workspace/customer-project',
+        _configDir: '/workspace/customer-project/.sfdt',
+        defaultOrg: 'customer-dev',
+        logDir: '/workspace/customer-project/logs',
+      });
+      execa.mockResolvedValueOnce({ exitCode: 0, stdout: 'preflight pass', stderr: '' });
+
+      await callTool('sfdt_preflight', {
+        projectRoot: '/workspace/customer-project',
+        strict: true,
+      });
+
+      expect(loadConfig).toHaveBeenCalledWith('/workspace/customer-project');
+      expect(execa).toHaveBeenCalledWith(
+        'node',
+        expect.arrayContaining(['preflight', '--strict']),
+        expect.objectContaining({ cwd: '/workspace/customer-project' })
+      );
+    });
+
+    it('rejects an invalid explicit projectRoot without executing a command', async () => {
+      loadConfig.mockRejectedValueOnce(new Error('project is not initialized with .sfdt'));
+
+      const result = await callTool('sfdt_preflight', {
+        projectRoot: '/workspace/not-a-project',
+      });
+
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain('project is not initialized');
+      expect(execa).not.toHaveBeenCalled();
+    });
+
+    it('isolates concurrent calls routed to different project roots', async () => {
+      loadConfig.mockImplementation(async (root) => ({
+        _projectRoot: root || '/project',
+        _configDir: `${root || '/project'}/.sfdt`,
+        logDir: `${root || '/project'}/logs`,
+      }));
+      execa.mockImplementation(async (_command, _args, options) => {
+        await new Promise((resolve) => setTimeout(resolve, options.cwd.endsWith('one') ? 10 : 1));
+        return { exitCode: 0, stdout: options.cwd, stderr: '' };
+      });
+
+      const [one, two] = await Promise.all([
+        callTool('sfdt_preflight', { projectRoot: '/workspace/one' }),
+        callTool('sfdt_preflight', { projectRoot: '/workspace/two' }),
+      ]);
+
+      expect(one.content[0].text).toContain('/workspace/one');
+      expect(two.content[0].text).toContain('/workspace/two');
+      expect(execa.mock.calls.map((call) => call[2].cwd)).toEqual(
+        expect.arrayContaining(['/workspace/one', '/workspace/two'])
+      );
+    });
+
     it('executes sfdt_preflight tool', async () => {
       execa.mockResolvedValueOnce({ exitCode: 0, stdout: 'preflight pass', stderr: '' });
 
@@ -107,6 +187,62 @@ describe('SfdtMcpServer', () => {
         expect.anything()
       );
       expect(result.content[0].text).toContain('preflight pass');
+    });
+
+    describe('sfdt_permissions_grant cannot smuggle flags through its variadic', () => {
+      // `fields` is the ONLY caller-supplied array spread into child argv, and
+      // its CLI target is a Commander variadic that also declares --production.
+      // Commander consumes options anywhere in argv, including mid-variadic, so
+      // an element beginning with `-` became a FLAG and vanished from the field
+      // list. --production is the sole gate on guardProduction(), so a single
+      // injected element disabled the production brake — reachable from org
+      // text an LLM is holding in context.
+      it('rejects a field element that is really a flag', async () => {
+        const result = await callTool('sfdt_permissions_grant', {
+          parent: 'Sales Ops',
+          fields: ['Account.SSN__c', '--production'],
+          level: 'edit',
+          confirmExecution: true,
+        });
+
+        expect(result.isError).toBe(true);
+        expect(result.content[0].text).toMatch(/not a qualified <Object>\.<Field> name/);
+        expect(execa, 'the CLI must never be reached with an injected flag').not.toHaveBeenCalled();
+      });
+
+      it.each([
+        ['--org', ['Account.A', '--org', 'EVIL']],
+        ['-p shorthand', ['-p']],
+        ['non-string', ['Account.A', 42]],
+        ['empty array', []],
+        ['shell metacharacters', ['Account.A; rm -rf /']],
+        ['unqualified name', ['Account']],
+      ])('rejects %s', async (_label, fields) => {
+        const result = await callTool('sfdt_permissions_grant', {
+          parent: 'P', fields, level: 'read', confirmExecution: true,
+        });
+        expect(result.isError).toBe(true);
+        expect(execa).not.toHaveBeenCalled();
+      });
+
+      it('passes valid fields AFTER a `--` terminator so nothing later can be read as an option', async () => {
+        execa.mockResolvedValueOnce({ exitCode: 0, stdout: '{}', stderr: '' });
+
+        await callTool('sfdt_permissions_grant', {
+          parent: 'Sales Ops',
+          fields: ['Account.Region__c', 'Account.Tier__c'],
+          level: 'edit',
+          confirmExecution: true,
+        });
+
+        const argv = execa.mock.calls[0][1];
+        const dashDash = argv.indexOf('--');
+        expect(dashDash, 'a `--` terminator must precede the variadic').toBeGreaterThan(-1);
+        // Structural defence: everything after `--` is positional by definition,
+        // so even a future validator gap cannot reopen the injection.
+        expect(argv.slice(dashDash + 1)).toEqual(['Account.Region__c', 'Account.Tier__c']);
+        expect(argv.indexOf('--parent')).toBeLessThan(dashDash);
+      });
     });
 
     it('executes sfdt_drift tool', async () => {
@@ -534,7 +670,9 @@ describe('MCP tool examples (advanced tool use)', () => {
   // where JSON schema alone under-specifies parameter conventions.
   const isInScope = (tool) => {
     const props = tool.inputSchema?.properties ?? {};
-    const names = Object.keys(props);
+    // projectRoot is common request-routing metadata, not an operation-specific
+    // parameter that makes an otherwise simple tool require examples.
+    const names = Object.keys(props).filter((name) => name !== 'projectRoot');
     if (names.length >= 2) return true;
     return names.some((n) => Array.isArray(props[n].enum) || props[n].type === 'array');
   };

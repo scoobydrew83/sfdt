@@ -29,6 +29,7 @@ export const GUI_ROUTES = [
   { id: 'soql', label: 'SOQL Console', group: 'Analyze' },
   { id: 'scratch', label: 'Scratch Orgs', group: 'Analyze' },
   { id: 'data', label: 'Data Sets', group: 'Analyze' },
+  { id: 'installed-packages', label: 'Installed Packages', group: 'Analyze' },
   { id: 'docs', label: 'Documentation', group: 'Analyze' },
   { id: 'notifications', label: 'Notifications', group: 'Config' },
   { id: 'settings', label: 'Settings', group: 'Config' },

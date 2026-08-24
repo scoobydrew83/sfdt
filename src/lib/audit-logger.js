@@ -48,6 +48,13 @@ const SENSITIVE_KEYS = [
   'refresh_token',
   'secret',
   'token',
+  // A Salesforce session id IS a bearer token. `sfdt events tail` holds one in
+  // memory to run a CometD long-poll (see org-session.js), so the names it
+  // could plausibly travel under are redacted here too. This is the backstop —
+  // the plan is that it never reaches a log at all.
+  'sessionid',
+  'session_id',
+  'sid',
 ];
 
 /**

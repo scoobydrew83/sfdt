@@ -14,19 +14,27 @@ vi.mock('../../src/lib/data-runner.js', () => ({
   exportDataSet: vi.fn(),
   importDataSet: vi.fn(),
   deleteDataSet: vi.fn(),
+  bulkLoadDataSet: vi.fn(),
   listDataSets: vi.fn(),
   readQueries: vi.fn(),
   extractSObject: vi.fn(),
 }));
 vi.mock('../../src/lib/exit-codes.js', () => ({ resolveExitCode: vi.fn(() => 1) }));
+// The guard itself is covered in org-facts/automation tests; here we assert the
+// WIRING — that `data load` calls it, and with the right subject.
+vi.mock('../../src/lib/org-facts.js', () => ({
+  guardProduction: vi.fn().mockResolvedValue({ isProduction: false, acknowledged: false }),
+  isProductionOrg: vi.fn().mockResolvedValue(false),
+}));
 vi.mock('inquirer', () => ({ default: { prompt: vi.fn() } }));
 vi.mock('ora', () => ({
   default: vi.fn(() => ({ start: vi.fn().mockReturnThis(), succeed: vi.fn().mockReturnThis(), fail: vi.fn().mockReturnThis(), warn: vi.fn().mockReturnThis() })),
 }));
 
 import inquirer from 'inquirer';
+import { guardProduction } from '../../src/lib/org-facts.js';
 import { loadConfig } from '../../src/lib/config.js';
-import { exportDataSet, importDataSet, deleteDataSet, listDataSets, readQueries, extractSObject } from '../../src/lib/data-runner.js';
+import { exportDataSet, importDataSet, deleteDataSet, bulkLoadDataSet, listDataSets, readQueries, extractSObject } from '../../src/lib/data-runner.js';
 import { registerDataCommand } from '../../src/commands/data.js';
 
 function createProgram() {
@@ -52,14 +60,16 @@ describe('data command', () => {
   it('exports a data set using the default org', async () => {
     const writeSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
     await createProgram().parseAsync(['node', 'sfdt', 'data', 'export', 'qa', '--json']);
-    expect(exportDataSet).toHaveBeenCalledWith(expect.any(Object), 'qa', 'dev');
+    // makeAction threads the parsed options through to every runner so the bulk
+    // verbs can read --wait/--async; the tree verbs simply ignore it.
+    expect(exportDataSet).toHaveBeenCalledWith(expect.any(Object), 'qa', 'dev', expect.any(Object));
     writeSpy.mockRestore();
   });
 
   it('imports a data set with an --org override', async () => {
     const writeSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
     await createProgram().parseAsync(['node', 'sfdt', 'data', 'import', 'qa', '--org', 'staging', '--json']);
-    expect(importDataSet).toHaveBeenCalledWith(expect.any(Object), 'qa', 'staging');
+    expect(importDataSet).toHaveBeenCalledWith(expect.any(Object), 'qa', 'staging', expect.any(Object));
     writeSpy.mockRestore();
   });
 
@@ -129,6 +139,47 @@ describe('data command', () => {
     expect(errSpy).toHaveBeenCalledWith(expect.stringContaining('fs error'));
     expect(process.exitCode).toBe(1);
     errSpy.mockRestore();
+  });
+});
+
+describe('data delete is guarded against production', () => {
+  // Bulk delete removes every record the set's queries match — the most
+  // destructive operation in this CLI. Before this it was the one write that
+  // was EASIER to run against production than a permission grant: it had a
+  // confirmation but no production guard.
+  beforeEach(() => {
+    readQueries.mockResolvedValue(['SELECT Id FROM Account']);
+    extractSObject.mockReturnValue('Account');
+    deleteDataSet.mockResolvedValue({ set: 'seed', org: 'dev', sobjects: [] });
+  });
+
+  it('asks the production guard, naming what is about to happen', async () => {
+    await createProgram().parseAsync(['node', 'sfdt', 'data', 'delete', 'seed', '--yes']);
+
+    expect(guardProduction).toHaveBeenCalledWith(
+      'dev',
+      expect.anything(),
+      expect.stringMatching(/bulk-delete records/),
+    );
+  });
+
+  it('refuses BEFORE prompting, so a refused org is never asked about', async () => {
+    // Order matters: a guard that ran after the prompt would make the operator
+    // confirm a deletion the CLI was always going to refuse.
+    process.stdin.isTTY = true;
+    const refusal = new Error('"prod" looks like a production org — re-run with --production');
+    guardProduction.mockRejectedValueOnce(refusal);
+
+    await createProgram().parseAsync(['node', 'sfdt', 'data', 'delete', 'seed']);
+
+    expect(inquirer.prompt, 'the operator must not be prompted for a refused org').not.toHaveBeenCalled();
+    expect(deleteDataSet).not.toHaveBeenCalled();
+    expect(process.exitCode).toBe(1);
+  });
+
+  it('still deletes on a sandbox without --production', async () => {
+    await createProgram().parseAsync(['node', 'sfdt', 'data', 'delete', 'seed', '--yes']);
+    expect(deleteDataSet).toHaveBeenCalled();
   });
 });
 
@@ -228,5 +279,139 @@ describe('data delete confirmation', () => {
     expect(errSpy).toHaveBeenCalledWith(expect.stringContaining('bulk api down'));
     expect(process.exitCode).toBe(1);
     errSpy.mockRestore();
+  });
+});
+
+describe('data load is braked like the writes beside it', () => {
+  // `load` inserts or UPSERTS — an upsert overwrites existing records, which is
+  // not obviously safer than the operations that were already gated. `delete`
+  // has demanded a confirmation since it shipped; `load` shipped with neither a
+  // guard nor a confirmation. These assert the rule is now uniform.
+  beforeEach(() => {
+    bulkLoadDataSet.mockResolvedValue({
+      set: 'seed', org: 'dev', kind: 'bulk',
+      operations: [{ sobject: 'Account', operation: 'upsert', status: 'ok', processed: 1, failed: 0 }],
+    });
+  });
+
+  it('asks the production guard before writing anything', async () => {
+    await createProgram().parseAsync(['node', 'sfdt', 'data', 'load', 'seed', '--yes']);
+
+    expect(guardProduction).toHaveBeenCalledWith(
+      'dev',
+      expect.anything(),
+      expect.stringMatching(/insert or overwrite records/),
+    );
+  });
+
+  it('REFUSES when non-interactive without --yes, and loads nothing', async () => {
+    // A prompt in CI is either a hang or a silent yes. Refusing is the only
+    // honest third option — the same rule `data delete` already follows.
+    process.stdin.isTTY = false;
+
+    await createProgram().parseAsync(['node', 'sfdt', 'data', 'load', 'seed']);
+
+    expect(bulkLoadDataSet, 'the load must not run without confirmation').not.toHaveBeenCalled();
+    expect(process.exitCode).toBe(1);
+  });
+
+  it('aborts without loading when the operator declines the prompt', async () => {
+    process.stdin.isTTY = true;
+    inquirer.prompt.mockResolvedValue({ confirmed: false });
+
+    await createProgram().parseAsync(['node', 'sfdt', 'data', 'load', 'seed']);
+
+    expect(bulkLoadDataSet).not.toHaveBeenCalled();
+  });
+
+  it('proceeds when the operator confirms at the prompt', async () => {
+    process.stdin.isTTY = true;
+    inquirer.prompt.mockResolvedValue({ confirmed: true });
+
+    await createProgram().parseAsync(['node', 'sfdt', 'data', 'load', 'seed']);
+
+    expect(bulkLoadDataSet).toHaveBeenCalled();
+  });
+});
+
+describe('data load', () => {
+  beforeEach(() => {
+    bulkLoadDataSet.mockResolvedValue({
+      set: 'seed', org: 'dev', kind: 'bulk', waitMinutes: 10,
+      operations: [{ sobject: 'Account', operation: 'insert', file: 'a.csv', status: 'ok', processed: 3, failed: 0 }],
+    });
+  });
+
+  it('loads a bulk data set and leaves the exit code clean', async () => {
+    await createProgram().parseAsync(['node', 'sfdt', 'data', 'load', 'seed', '--yes', '--yes']);
+    expect(bulkLoadDataSet).toHaveBeenCalledWith(
+      expect.anything(), 'seed', 'dev', expect.objectContaining({ async: false }));
+    expect(process.exitCode).toBeUndefined();
+  });
+
+  it('exits non-zero when any operation failed, so CI can branch on it', async () => {
+    bulkLoadDataSet.mockResolvedValue({
+      set: 'seed', org: 'dev', kind: 'bulk', waitMinutes: 10,
+      operations: [
+        { sobject: 'Account', status: 'ok' },
+        { sobject: 'Contact', status: 'error', error: 'INVALID_FIELD' },
+      ],
+    });
+    await createProgram().parseAsync(['node', 'sfdt', 'data', 'load', 'seed', '--yes', '--yes']);
+    expect(process.exitCode).toBe(1);
+  });
+
+  it('emits errorCount in the JSON envelope alongside the raw result', async () => {
+    bulkLoadDataSet.mockResolvedValue({
+      set: 'seed', org: 'dev', kind: 'bulk', waitMinutes: 10,
+      operations: [{ sobject: 'Contact', status: 'error', error: 'boom' }],
+    });
+    const spy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+    await createProgram().parseAsync(['node', 'sfdt', 'data', 'load', 'seed', '--yes', '--json']);
+    const payload = JSON.parse(spy.mock.calls.at(-1)[0]);
+    spy.mockRestore();
+    expect(payload.result.errorCount).toBe(1);
+    expect(payload.result.operations[0].error).toBe('boom');
+  });
+
+  it('passes --wait through as a number of minutes', async () => {
+    await createProgram().parseAsync(['node', 'sfdt', 'data', 'load', 'seed', '--yes', '--wait', '25']);
+    expect(bulkLoadDataSet).toHaveBeenCalledWith(
+      expect.anything(), 'seed', 'dev', expect.objectContaining({ waitMinutes: 25 }));
+  });
+
+  it('rejects a non-numeric --wait before it reaches sf', async () => {
+    await createProgram().parseAsync(['node', 'sfdt', 'data', 'load', 'seed', '--yes', '--wait', 'soon']);
+    expect(bulkLoadDataSet).not.toHaveBeenCalled();
+    expect(process.exitCode).toBe(1);
+  });
+
+  it('warns about fieldMap keys that matched no CSV column', async () => {
+    bulkLoadDataSet.mockResolvedValue({
+      set: 'seed', org: 'dev', kind: 'bulk', waitMinutes: 10,
+      operations: [{ sobject: 'Account', status: 'ok', unmatchedFieldMapKeys: ['Nmae'] }],
+    });
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    await createProgram().parseAsync(['node', 'sfdt', 'data', 'load', 'seed', '--yes', '--yes']);
+    expect(warn.mock.calls.flat().join(' ')).toMatch(/Nmae/);
+    warn.mockRestore();
+  });
+});
+
+describe('data load --line-ending', () => {
+  beforeEach(() => {
+    bulkLoadDataSet.mockResolvedValue({ set: 'seed', org: 'dev', kind: 'bulk', operations: [] });
+  });
+
+  it('normalises case and passes it through', async () => {
+    await createProgram().parseAsync(['node', 'sfdt', 'data', 'load', 'seed', '--yes', '--line-ending', 'crlf']);
+    expect(bulkLoadDataSet).toHaveBeenCalledWith(
+      expect.anything(), 'seed', 'dev', expect.objectContaining({ lineEnding: 'CRLF' }));
+  });
+
+  it('rejects an unknown value before it reaches sf', async () => {
+    await createProgram().parseAsync(['node', 'sfdt', 'data', 'load', 'seed', '--yes', '--line-ending', 'CR']);
+    expect(bulkLoadDataSet).not.toHaveBeenCalled();
+    expect(process.exitCode).toBe(1);
   });
 });

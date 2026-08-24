@@ -428,6 +428,21 @@
     "bridgeRequired": false
   },
   {
+    "id": "record-delete",
+    "name": "Delete records (opt-in)",
+    "contexts": [
+      "setup_flows",
+      "setup_other",
+      "flow_builder",
+      "flow_trigger_explorer",
+      "record_page"
+    ],
+    "enabledByDefault": false,
+    "workspace": false,
+    "sideButton": false,
+    "bridgeRequired": false
+  },
+  {
     "id": "rest-explore",
     "name": "REST API Explorer",
     "contexts": [

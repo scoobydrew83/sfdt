@@ -878,6 +878,137 @@
       "group": null
     },
     {
+      "id": "permissions-matrix",
+      "label": "Matrix",
+      "detail": "What each profile and permission set grants",
+      "args": [
+        "permissions",
+        "matrix"
+      ],
+      "group": null
+    },
+    {
+      "id": "permissions-drift",
+      "label": "Drift vs Source",
+      "detail": "Compare org grants against the repository",
+      "args": [
+        "permissions",
+        "drift"
+      ],
+      "group": null
+    },
+    {
+      "id": "packages-list",
+      "label": "List",
+      "detail": "Installed packages with versions and notes",
+      "args": [
+        "packages",
+        "list"
+      ],
+      "group": null
+    },
+    {
+      "id": "packages-compare",
+      "label": "Compare Orgs",
+      "detail": "Version drift between two orgs",
+      "args": [
+        "packages",
+        "compare"
+      ],
+      "group": null
+    },
+    {
+      "id": "events-list",
+      "label": "List Channels",
+      "detail": "Every subscribable channel in the org",
+      "args": [
+        "events",
+        "list"
+      ],
+      "group": null
+    },
+    {
+      "id": "events-tail",
+      "label": "Tail",
+      "detail": "Subscribe and print events as they arrive",
+      "args": [
+        "events",
+        "tail"
+      ],
+      "group": null
+    },
+    {
+      "id": "events-publish",
+      "label": "Publish",
+      "detail": "Publish one platform event",
+      "args": [
+        "events",
+        "publish"
+      ],
+      "group": null
+    },
+    {
+      "id": "field-impact",
+      "label": "Impact",
+      "detail": "Show what writes a field (flows, field updates, Apex)",
+      "args": [
+        "field",
+        "impact"
+      ],
+      "group": null
+    },
+    {
+      "id": "field-usage",
+      "label": "Usage Sweep",
+      "detail": "Find unreferenced fields on an object",
+      "args": [
+        "field",
+        "usage"
+      ],
+      "group": null
+    },
+    {
+      "id": "field-usage-offline",
+      "label": "Usage Sweep (repo)",
+      "detail": "Find unreferenced fields from source, no org needed",
+      "args": [
+        "field",
+        "usage",
+        "--offline"
+      ],
+      "group": null
+    },
+    {
+      "id": "record-get",
+      "label": "Get",
+      "detail": "Read a record and show what is editable",
+      "args": [
+        "record",
+        "get"
+      ],
+      "group": null
+    },
+    {
+      "id": "record-edit",
+      "label": "Edit",
+      "detail": "Update fields on a record",
+      "args": [
+        "record",
+        "edit"
+      ],
+      "group": null
+    },
+    {
+      "id": "record-clone",
+      "label": "Clone",
+      "detail": "Create a copy of a record",
+      "args": [
+        "record",
+        "clone"
+      ],
+      "group": null
+    },
+    {
       "id": "data-list",
       "label": "List",
       "detail": "List configured data sets",
@@ -904,6 +1035,16 @@
       "args": [
         "data",
         "import"
+      ],
+      "group": null
+    },
+    {
+      "id": "data-load",
+      "label": "Load (Bulk API)",
+      "detail": "Load a bulk data set into the org over Bulk API v2",
+      "args": [
+        "data",
+        "load"
       ],
       "group": null
     },

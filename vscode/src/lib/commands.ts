@@ -205,11 +205,50 @@ export const COMMAND_GROUPS: CommandGroup[] = [
     docsUrl: DOCS.configUtils,
     entries: [
       {
+        id: 'permissions', label: 'Permissions', detail: 'Object and field access granted by profiles and permission sets', icon: 'shield',
+        children: [
+          { id: 'permissions-matrix', label: 'Matrix', detail: 'What each profile and permission set grants', args: ['permissions', 'matrix'] },
+          { id: 'permissions-drift', label: 'Drift vs Source', detail: 'Compare org grants against the repository', args: ['permissions', 'drift'] },
+        ],
+      },
+      {
+        id: 'packages', label: 'Packages', detail: 'Installed package inventory and cross-org drift', icon: 'package',
+        children: [
+          { id: 'packages-list', label: 'List', detail: 'Installed packages with versions and notes', args: ['packages', 'list'] },
+          { id: 'packages-compare', label: 'Compare Orgs', detail: 'Version drift between two orgs', args: ['packages', 'compare'] },
+        ],
+      },
+      {
+        id: 'events', label: 'Platform Events', detail: 'Platform Events and Change Data Capture', icon: 'radio-tower',
+        children: [
+          { id: 'events-list', label: 'List Channels', detail: 'Every subscribable channel in the org', args: ['events', 'list'] },
+          { id: 'events-tail', label: 'Tail', detail: 'Subscribe and print events as they arrive', args: ['events', 'tail'] },
+          { id: 'events-publish', label: 'Publish', detail: 'Publish one platform event', args: ['events', 'publish'], destructive: true },
+        ],
+      },
+      {
+        id: 'field', label: 'Field Usage', detail: 'Analyze how a field is used across an org', icon: 'search',
+        children: [
+          { id: 'field-impact', label: 'Impact', detail: 'Show what writes a field (flows, field updates, Apex)', args: ['field', 'impact'] },
+          { id: 'field-usage', label: 'Usage Sweep', detail: 'Find unreferenced fields on an object', args: ['field', 'usage'] },
+          { id: 'field-usage-offline', label: 'Usage Sweep (repo)', detail: 'Find unreferenced fields from source, no org needed', args: ['field', 'usage', '--offline'] },
+        ],
+      },
+      {
+        id: 'record', label: 'Record', detail: 'Read, edit, or clone a single record', icon: 'symbol-field',
+        children: [
+          { id: 'record-get', label: 'Get', detail: 'Read a record and show what is editable', args: ['record', 'get'] },
+          { id: 'record-edit', label: 'Edit', detail: 'Update fields on a record', args: ['record', 'edit'], destructive: true },
+          { id: 'record-clone', label: 'Clone', detail: 'Create a copy of a record', args: ['record', 'clone'], destructive: true },
+        ],
+      },
+      {
         id: 'data', label: 'Data Sets', detail: 'Manage data sets', icon: 'database',
         children: [
           { id: 'data-list', label: 'List', detail: 'List configured data sets', args: ['data', 'list'] },
           { id: 'data-export', label: 'Export', detail: 'Export a data set from the org', args: ['data', 'export'] },
           { id: 'data-import', label: 'Import', detail: 'Import a data set into the org', args: ['data', 'import'] },
+          { id: 'data-load', label: 'Load (Bulk API)', detail: 'Load a bulk data set into the org over Bulk API v2', args: ['data', 'load'], destructive: true },
           { id: 'data-delete', label: 'Delete', detail: 'Bulk-delete a data set in the org', args: ['data', 'delete'], destructive: true },
         ],
       },

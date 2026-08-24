@@ -210,7 +210,7 @@ export {
 export type { InferredRef, InferredRefKind } from './dependency-parsers.js';
 
 // "What writes this field?" (P4-4) — the single Flow parsing engine for field
-// writes, consumed by the Chrome extension's Field Impact Analysis.
+// writes, consumed by the Field Impact model below.
 export {
   extractFieldWrites,
   filterFieldWrites,
@@ -222,3 +222,192 @@ export type {
   FieldWriteStatus,
   FlowFieldWrite,
 } from './field-writes.js';
+
+// Field Impact Analysis — the viewmodel, the scan caps and the pure Tooling
+// query builders. Shared by `sfdt field`, the MCP tools and the Chrome
+// extension so every surface scans an org to the same depth and applies the
+// same confirmed/inferred vocabulary to what it finds.
+export {
+  analyzeFieldImpact,
+  buildFieldImpactVM,
+  flowBuilderUrl,
+  setupRecordUrl,
+  STATUS_LEGEND,
+  FLOW_CANDIDATE_CAP,
+  FLOW_ANALYSE_CAP,
+  WORKFLOW_LIST_CAP,
+  WORKFLOW_METADATA_CAP,
+  WORKFLOW_DETAIL_CONCURRENCY,
+  APEX_HIT_CAP,
+  customFieldIdQuery,
+  flowCandidateQuery,
+  recentActiveFlowsQuery,
+  flowMetadataQuery,
+  workflowFieldUpdateListQuery,
+  workflowFieldUpdateDetailQuery,
+  objectFromFullName,
+  apexSearchSosl,
+  otherReferencesQuery,
+  REFERENCE_CAP,
+} from './field-impact.js';
+export type {
+  FieldImpactQueries,
+  FieldImpactRequest,
+  FieldImpactStatus,
+  FieldImpactSourceType,
+  FlowCandidate,
+  WorkflowFieldUpdateCandidate,
+  ApexSearchHit,
+  FieldImpactInput,
+  FieldImpactRow,
+  FieldImpactVM,
+} from './field-impact.js';
+
+// Object-wide field usage — the sweep that precedes a cleanup, plus the
+// population fold that makes `safeToRemove` mean something. Shared by
+// `sfdt field usage` and any surface that wants the same adjudication.
+export {
+  analyzeFieldUsage,
+  applyPopulation,
+  chunk,
+  customFieldsForObjectQuery,
+  dependencyBatchQuery,
+  developerName,
+  DEPENDENCY_CHUNK,
+  DEPENDENCY_ROW_CAP,
+  FIELD_ID_CAP,
+} from './field-usage.js';
+export type {
+  FieldUsageQueries,
+  FieldUsageFieldInput,
+  FieldUsageRow,
+  FieldUsageVM,
+  FieldPopulation,
+} from './field-usage.js';
+
+// Offline (repo) field usage — the CI-friendly half: no org, structural
+// references (layouts, profiles, permission sets) separated from logical ones.
+export {
+  classifyOfflineSource,
+  isSelfDefinition,
+  fieldReferenceRegex,
+  buildOfflineUsageVM,
+} from './field-usage-offline.js';
+export type { ReferenceKind, OfflineSourceType, OfflineHit } from './field-usage-offline.js';
+
+// Salesforce streaming (CometD/Bayeux). One protocol implementation shared by
+// the extension's background worker and `sfdt events tail` — a stateful
+// handshake with a replay extension is exactly the kind of thing two copies
+// would drift on.
+export {
+  SalesforceBayeuxClient,
+  eventChannelQuery,
+  eventChannelPath,
+  REPLAY_NEW_ONLY,
+  REPLAY_ALL_RETAINED,
+} from './streaming.js';
+export type { BayeuxMessage, EventChannelKind, EventChannelQuery } from './streaming.js';
+
+// Installed package inventory — the version model, the annotation fold, and the
+// cross-org drift comparator. Shared by `sfdt packages`, the MCP tools and the
+// GUI dashboard page.
+export {
+  installedPackagesQuery,
+  parseVersion,
+  versionFromParts,
+  formatVersion,
+  compareVersions,
+  toInstalledRow,
+  packageKey,
+  classifyUpdate,
+  analyzePackages,
+  comparePackageSets,
+} from './packages.js';
+export type {
+  PackageVersion,
+  InstalledPackageRow,
+  PackageNote,
+  UpdateStatus,
+  PackageRow,
+  PackageVM,
+  PackageQueries,
+  DriftVerdict,
+  PackageDriftRow,
+  PackageDriftVM,
+} from './packages.js';
+
+// Object and field permissions — what is GRANTED. Deliberately never
+// "effective": muting permission sets are Metadata-API only, so a computed
+// union can be more permissive than reality, and every result says so.
+export {
+  objectPermissionsQuery,
+  fieldPermissionsQuery,
+  userAssignmentsQuery,
+  groupComponentsQuery,
+  unqualifyField,
+  grantFromFlags,
+  maxGrant,
+  unionObjectGrants,
+  parentFromRow,
+  buildPermissionMatrix,
+  MUTING_NOTE,
+  NO_OBJECT_GRANT,
+} from './permissions.js';
+export type {
+  FieldGrant,
+  ObjectGrant,
+  PermissionParent,
+  FieldGrantRow,
+  PermissionMatrixVM,
+  PermissionQueries,
+} from './permissions.js';
+
+// Automation state — the five kinds of Salesforce automation, and the three
+// different ways they are written. Shared so every surface surfaces the cost
+// difference rather than presenting one uniform toggle.
+export {
+  AUTOMATION_TYPES,
+  findAutomationType,
+  automationListQuery,
+  metadataFetchQuery,
+  toAutomationRow,
+  toggledMetadata,
+  activeMetadataKey,
+  buildAutomationGrid,
+} from './automation.js';
+export type {
+  AutomationWriteMode,
+  AutomationType,
+  AutomationRow,
+  AutomationGridVM,
+  AutomationQueries,
+} from './automation.js';
+
+// Record editability model — shared by the CLI (`sfdt record`), the MCP tools
+// and the Chrome extension, so a field is refused identically on every surface.
+export {
+  EDITABLE_TYPES,
+  isEditableType,
+  SYSTEM_FIELD_NAMES,
+  classifyFieldEditability,
+  formatForInput,
+  coerceForWire,
+  buildDirtyDiff,
+  buildCreateBody,
+  mapSaveErrors,
+} from './record-edit.js';
+export type {
+  FieldDescribe,
+  SalesforceRestErrorDetail,
+  EditableType,
+  NotEditableReason,
+  EditabilityMode,
+  FieldEditability,
+  InputValue,
+  DirtyDiff,
+  DescribeLike,
+  CreateBody,
+  FieldSaveError,
+  BannerSaveError,
+  MappedSaveErrors,
+} from './record-edit.js';

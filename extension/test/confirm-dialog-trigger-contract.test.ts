@@ -453,7 +453,7 @@ describe('nothing disables the control that opens the confirm dialog', () => {
 
   it('finds every caller of the dialog, and only those', () => {
     // The other half of "scans the files it claims to": a rule that watches the
-    // wrong functions is decoration. These three are the whole caller set —
+    // wrong functions is decoration. These four are the whole caller set —
     // `git grep confirmDialog` over features/ui/entrypoints/lib.
     const callers = scannedSources()
       .filter(({ source }) => dialogCallSites(source).length > 0)
@@ -462,6 +462,10 @@ describe('nothing disables the control that opens the confirm dialog', () => {
     expect(callers).toEqual([
       'features/debug-log-viewer.ts',
       'features/flow-version-manager.ts',
+      // Record delete (P4-1 PR-4): typed confirm on the object API name. It
+      // does NOT disable its trigger around the dialog — see the caller
+      // contract in ui/confirm-dialog.ts, which the rest of this suite pins.
+      'features/inspect-record.ts',
       'features/soql-runner.ts',
     ]);
     // …and the wrapper hop is live in the tree, not only in a fixture: the

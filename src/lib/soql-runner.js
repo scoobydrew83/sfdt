@@ -289,6 +289,10 @@ export async function describeSObject(config, name, { org, tooling = false, filt
       length: f.length ?? null,
       nillable: !!f.nillable,
       custom: !!f.custom,
+      // `unique` backs the field-usage removal predicate: a unique field may be
+      // an external key, so it is never a removal candidate even when empty and
+      // unreferenced.
+      unique: !!f.unique,
       picklistValues: (f.picklistValues ?? []).filter((p) => p.active).map((p) => p.value),
       referenceTo: f.referenceTo ?? [],
       relationshipName: f.relationshipName ?? null,

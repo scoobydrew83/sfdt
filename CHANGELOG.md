@@ -7,6 +7,460 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.23.0] - 2026-08-24
+
+### Added
+
+- **`sfdt automation list|enable|disable`, `sfdt permissions grant|revoke|fix`, and `sfdt ledger`
+  — the first commands in this CLI that change org *configuration*, and the record that makes
+  them reversible.** Everything shipped before this reads an org, deploys metadata from a
+  reviewed repo, or writes a file. These change a live org's behaviour for every user at once,
+  so the shape of the guarantee mattered more than the features.
+
+  **The ledger is a record, not a gate.** `logs/ledger.jsonl` is append-only and hash-chained:
+  each entry's hash covers the previous one, so a line edited or removed afterwards breaks the
+  chain and `ledger verify` names the first break — by stored `seq` *and* by line number, because
+  the two diverge exactly when the file has been tampered with. Every write records the state it
+  is about to replace **before** the org is touched, so `ledger undo` can put it back. Undo
+  appends a compensating entry and never rewrites the original, so the chain still verifies
+  afterwards; a second undo of the same change is refused. `ledger.js` knows nothing about flows
+  or permissions — each writing feature registers a reverser by `kind`, and an entry whose kind
+  has no reverser is reported as *not automatically reversible*, naming the ledger file and the
+  entry id so it can be restored by hand, never silently skipped.
+
+  This is a deliberate exception to golden principle #5, now written into that file rather than
+  quietly contradicted: telemetry never throws, but `recordIntent` **does**, and callers let it.
+  If the before-state cannot be recorded the write must not happen — an unrecorded change is an
+  unreversible one, and handing someone a changed org with no way back is worse than an aborted
+  command. Recording the *outcome* afterwards stays best-effort, because by then the org has
+  already changed. Neither existing store could serve: `run-history.js` deletes all but 200 rows
+  per type on every insert and keeps only counts, and `audit-logger.js` rewrites its whole array
+  capped at 1000. A row you can `DELETE` is not a ledger.
+
+  **`automation`** is one grid over five types where three read-only `audit inactive-*` checks
+  used to be. Those checks select no `Id` and query only the inactive side, so they can report a
+  problem and never fix one; they are untouched. Process Builder is **not** a sixth type — a
+  process *is* a Flow, differing by `ProcessType`, and listing it separately would be marketing.
+  What the grid does say out loud is that the five do not cost the same to toggle: flows,
+  validation rules and duplicate rules are Tooling record writes, while workflow rules and Apex
+  triggers need a **metadata deploy** — and a production deploy runs tests, so toggling a trigger
+  there is a deployment with everything that implies. That cost is printed at the point of use,
+  not buried in a doc.
+
+  The dangerous operation is that a Tooling `Metadata` write **replaces** the object rather than
+  merging into it: `{active:false}` alone would discard a validation rule's formula and error
+  message. Rather than document that, `toggledMetadata()` throws when handed metadata that was
+  never read, so a write that was not preceded by a read cannot be constructed — and the read
+  *is* the before-state, which makes the ledger entry free. Deactivating a flow discards which
+  version was active, so that number is recorded; undo restores that exact version or fails
+  cleanly rather than activating a different one.
+
+  **`permissions grant|revoke|fix`** is the writable half of the matrix. `permissions fix
+  <Object>` is the bulk fix: it applies exactly the `missing-in-org` rows `permissions drift`
+  already finds, with **your repository as the intended state** — the target is code-reviewed before it is applied, which a
+  staging UI cannot offer, and reversible after, which is when people actually discover a
+  permission change was wrong. Profiles are refused up front by name: Salesforce does not permit
+  direct DML on profile-owned permission entries. That is documented behaviour rather than
+  something proven here, and refusing is the safe direction to be wrong in.
+
+  Four brakes, none optional: `--dry-run` on every write; a **production guard** promoted out of
+  `deploy.js` into `src/lib/org-facts.js` that now *blocks* instead of merely picking a test
+  level, and fails safe — an org whose `isSandbox` cannot be read is treated as production; the
+  `data.js` confirmation pattern verbatim, which **refuses** rather than auto-confirming when
+  non-interactive; and the ledger. On MCP every write tool declares `confirmExecution`, including
+  `sfdt_ledger_undo` — undoing is itself a write. `confirmExecution` is not forwarded into the
+  CLI, so the CLI's `--yes` is an independent gate rather than a proxy for it, and the docs say
+  so instead of implying one guard covers both.
+
+  **Not verified against a live org.** `sf` is not installed here, so no write in this work has
+  ever executed for real. Specifically unproven: the Tooling `Metadata` PATCH shape per type,
+  `DuplicateRule` and `ApexTrigger.Status` (neither had any precedent in this repo), and the
+  profile-DML refusal. What *is* proven is the layer above the wire: every request body, refusal,
+  guard and ledger entry is unit-tested against a mocked `sf`. The failure mode here is a changed
+  org rather than a wrong report, which is why the gap is named instead of implied.
+
+- **`sfdt packages list|compare|note` — installed package inventory, annotations, and cross-org
+  version drift.** Nothing in this repo touched `InstalledSubscriberPackage` before; this was
+  greenfield.
+
+  The ask behind it was "can we check the API for updates?" For a third-party managed package the
+  honest answer is **no**: AppExchange has no public REST API and no per-listing version feed,
+  `SubscriberPackageVersion` is queryable only in a Dev Hub for packages you *own*, and
+  `InstalledSubscriberPackage` reports the installed version and nothing about what exists
+  upstream. Rather than imply otherwise, `updateStatus` names its evidence every time —
+  `unknown` (nothing recorded to compare against, explicitly **not** "up to date"),
+  `update-available` (behind a version *a human recorded*, with the date), `ahead-of-record`
+  (installed is newer, so the note is stale rather than the org), and `current` (matches the
+  record, and says out loud that a person put that number there).
+
+  `compare --source --target` is the update question that **is** answerable: both orgs are already
+  authenticated, so cross-org drift needs no vendor API at all, and "is prod behind UAT?" is what
+  people actually want to know. `--fail-on-drift` gates CI on real differences and never on
+  `unknown` — a package whose version could not be read is our inability to compare, not evidence
+  the orgs differ, and folding `unknown` into `same` would let the gate pass on a comparison that
+  never happened. Version comparison is **numeric per component**, because under a string compare
+  `3.10.0` sorts below `3.9.0` and the gate would fire backwards.
+
+  Annotations live in **`.sfdt/packages.json`, committed**. Since the only durable answer is one a
+  human writes down, where they write it down decides whether the feature is worth anything: in
+  the repo it is code-reviewed, shared, and readable by CI; in a browser it is one person's and
+  dies with the profile. Keyed by namespace (the subscriber package id is per-org; the annotation
+  is about the product), merged additively so keys written by a newer sfdt survive an older one
+  editing a neighbouring field, and `--latest` is validated because an unparseable string stores
+  fine and then compares against nothing forever. Deliberately not registered in `CONFIG_FILES` —
+  it is data, not configuration.
+
+  Surfaces: CLI, MCP (`sfdt_packages_note` writes a repo file ⇒ `confirmExecution`), a GUI
+  dashboard page that edits the same file with no new protocol, and VS Code.
+
+- **`sfdt permissions matrix|drift` — object and field access, per user, and as a deploy gate.**
+
+  The word this feature will not use is **"effective"**. A user's real access is what their
+  profile and permission sets grant *minus* whatever a muting permission set inside a permission
+  set group takes away — and muting permission sets are Metadata-API only, so a computed union can
+  be more permissive than reality. Every result is labelled *granted*, carries the caveat in words,
+  and a test asserts the word appears on no piece of data, only inside the note that disclaims it.
+
+  Every query is scoped to one object, which keeps a `FieldPermissions` scan (100k–1M rows
+  org-wide) bounded by construction. `ParentId` and `Parent.IsOwnedByProfile` are selected — the
+  axis the existing `audit lint-access` checks drop, and the reason they can only answer "does
+  anyone have read?". Those checks are unchanged; this is a new command, not an extension of them.
+
+  `--user` resolves the profile, permission sets **and permission set groups** — two hops, because
+  the user is assigned the group while the grants live on its member sets, and skipping the second
+  would silently lose every grant a group carries. `--offline` reads profiles and permission sets
+  from the repo with no org, and `drift` compares the two: `extra-in-org` — granted in the org but
+  absent from source — is the verdict a security review wants, and `--fail-on-drift` makes it a
+  deploy gate. Permissions as a CI gate is the thing a hosted product structurally cannot do.
+
+- **`sfdt field impact|usage` — field usage and impact on the CLI, MCP and VS Code, sharing one
+  model with the Chrome panel.** Field impact existed only inside the Chrome extension, one field
+  at a time; `sfdt dependencies` answered a component-level question instead.
+
+  The plan was to promote the pure viewmodel and rebuild the fetch layer CLI-side. Reading that
+  layer showed the plan was wrong: its ~330 lines are not query plumbing, they are twenty-odd
+  carefully worded **scope notes** — which query was refused versus which came back empty, when a
+  broad scan may assert a reference, what the Flow parser does not model. Those notes are the
+  product. So the whole scan moved to **`@sfdt/flow-core`** (`0.12.0 → 0.13.0`) as
+  `analyzeFieldImpact(queries, …)`, with every org call injected: the browser supplies its
+  worker-proxied Tooling client, the CLI supplies `sf data query --use-tooling-api`. The
+  extension's 84-case suite passes unchanged through a re-export shim, which is what proves the
+  move behaviour-preserving. The contract has one rule stated in three places: **an implementation
+  must let a refusal throw**, because resolving empty would tell the scan "your org has none of
+  these" and turn a permissions failure into a clean bill of health.
+
+  `impact` answers *what writes this field* — flows **parsed** rather than merely referenced,
+  workflow field updates, and an Apex text search that is always `inferred` because a text hit is
+  not a write. Alongside it, and deliberately in a **separate** list, are the components that
+  merely *reference* the field: validation rules, layouts, reports, email templates, list views.
+  One dependency query buys every type at once, where four bespoke per-type scans would each need
+  a list-then-read-`Metadata` pass and still miss whatever type nobody added. They are kept apart
+  because *what writes this field* and *where does this field appear* are different questions —
+  a validation rule listed among the writers is useless when you are working out what changed a
+  value, and essential when you are working out what a change would break.
+
+  `usage` sweeps a whole object, which is the shape you want before a cleanup. Field ids are
+  batched into `RefMetadataComponentId IN (…)` queries, so 300 fields cost `ceil(300/200)` round
+  trips rather than 300. Fields come back in **three** states, and conflating any two is the whole
+  failure mode: `unreferenced: true`, `false`, and **`null` — not scanned**. A standard field has
+  no `CustomField` record for an edge to point at; a refused lookup returns an empty id list that
+  looks exactly like "this object has no custom fields"; a failed batch marks only its own fields.
+  All three are `null`, with a note saying which applies.
+
+  `--population` counts non-null values, and is what makes *safe to remove* mean anything: a
+  reference-only tool will call a field holding two million values unused. `safeToRemove` stays
+  `null` until data is counted and is `true` only when the field is custom, scanned, unreferenced,
+  measured at **zero**, and neither required nor unique — a count that *failed* is not a count of
+  zero. Every rejection records a `keepReason`, so the list explains itself.
+
+  `--offline` runs the same sweep against the repository with **no org**, so it works on a pull
+  request before the field is deployed anywhere. A naive grep is worthless here, because profiles
+  and permission sets name every field they grant and layouts list most fields on the object: those
+  are **structural** references, and `unreferenced` is keyed on **logical** ones only (Apex, flows,
+  validation rules, formulas on other fields, reports, LWC, Aura). Structural hits are still shown,
+  labelled, because removing a field means removing those entries too. `--fail-on-unreferenced`
+  gates CI, on `true` only — a field whose status is unknown never fails a build, or the gate would
+  be firing on our inability to check.
+
+- **`sfdt events list|tail|publish` — Platform Events and Change Data Capture on the CLI, MCP and
+  VS Code.** Streaming existed only inside the Chrome extension.
+
+  The CometD/Bayeux client — handshake, subscribe with the replay extension, `/meta/connect`
+  long-poll, backoff — moved from the extension's background worker into **`@sfdt/flow-core`**
+  verbatim, rather than being reimplemented for Node. It was already fully injected and uses only
+  Node 22 globals, so it needed no adaptation; the Chrome-specific half (sid from cookies, host
+  derivation, `chrome.runtime.Port`) stayed put. Two copies of a stateful handshake with a replay
+  extension would have drifted on exactly the parts that only show up against a real org.
+
+  `list` enumerates every subscribable channel with its Bayeux path. `tail` subscribes and is
+  **always bounded**; `--replay all` replays the retention window, which is what makes it useful
+  for debugging something that already happened rather than waiting for it to recur. `publish`
+  fires a real event — an ordinary REST POST — and paired with `tail --expect` becomes a
+  **publish-then-assert integration test that runs in your pipeline**. The MCP publish tool
+  declares `confirmExecution`.
+
+  `--json` emits **one envelope at the end** rather than streaming: the JSON envelope is a single
+  object on stdout (golden principle #6) and a tail is a stream, and both cannot be true at once.
+  Without `--json`, events stream as NDJSON and status goes to stderr.
+
+  **`events tail` is the one command in this CLI that holds a session token in memory.** Every
+  other command shells to `sf` and lets it join the session, which is why sfdt stores no tokens.
+  A CometD long-poll is a connection this process must own and `sf` cannot proxy one. The token is
+  read from the `sf` keychain at the moment of use and never written, cached, persisted, logged,
+  enveloped, or accepted from a flag or environment variable; `accessToken`/`sessionId`/`sid`
+  joined the redaction list as a backstop. It lives in one file, `src/lib/org-session.js`, and
+  [SECURITY.md](SECURITY.md) now documents the posture rather than implying the CLI never touches
+  a token.
+
+- **Record delete in the Chrome inspector, off by default.** The last piece of the record
+  view/edit/clone/delete chain. It has its own feature id `record-delete` rather than a flag
+  inside `inspect-record`, because the remote kill switch is a list of feature ids and a nested
+  boolean could never be killed remotely. `enabledByDefault: false` is the whole opt-in. With the
+  gate closed the Delete control is **not built at all** — absent from the DOM, not hidden, since
+  a hidden button is still reachable by a devtools poke. Deleting requires typing the object's API
+  name, and a timed-out delete reports `unknown` rather than success or failure. No new Chrome
+  permission is involved.
+
+- **`sfdt record get|edit|clone` — single-record read and write on the CLI, MCP and VS Code,
+  from the same model the browser uses.** Record view/edit/clone existed only inside the Chrome
+  extension; the CLI had no record command at all, so nothing scriptable and no agent could read
+  or amend one record safely.
+
+  The editability model moves to **`@sfdt/flow-core`** (`0.11.0 → 0.12.0`, consumer ranges in
+  lockstep) and the extension's `lib/record-edit.ts` becomes a re-export, so no feature code
+  changed and its 67 tests moved to flow-core and pass unchanged — which is what proves the move
+  behaviour-preserving rather than merely compiling. The point of one model is that a formula
+  field, an auto-number, or a field your permissions do not cover is refused **for the identical
+  stated reason** whether you are in a terminal, an agent, or the browser. Two copies of that
+  rule would be two answers waiting to diverge.
+
+  `get` prints every field — editable ones marked, read-only ones dimmed with the reason. Nothing
+  is dropped from the view, only from the request body. `edit` refuses a non-editable or unknown
+  field **locally, by name**, before anything reaches the org, and builds its PATCH from the
+  shared diff, which also omits any field missing from the record payload — so a field hidden
+  from you by field-level security can never be written to `null` over a value you were never
+  allowed to see. A value that already matches is a no-op, not a write: `100` is not different
+  from `"100"`. `--set` splits on the first `=` only, so a URL survives being a value.
+
+  **A write reports one of four outcomes and the exit code follows it.** `saved`, `no-op` and
+  `dry-run` exit 0. `rejected` exits 1 with the org's message on the exact field. And **`unknown`
+  exits 1 too** — a timed-out write may have committed, so the command says so instead of
+  claiming nothing was saved, and a script is told to go and look rather than to retry blindly.
+
+  Exposed as `sfdt_record_get` (read-only) plus `sfdt_record_edit` and `sfdt_record_clone`, both
+  `confirmExecution`-gated, and as a VS Code command group. The MCP half is the part a hosted
+  product structurally cannot offer: an agent in Claude Code or Cursor can read and amend an org
+  record, gated by confirmation, with nobody else's app in the loop.
+
+- **`src/lib/org-rest.js`** — the generic `sf api request rest` transport, extracted from
+  `apexguru-runner.js`, which held the only copy. A second copy would have been a second place to
+  forget the `NO_COLOR` workaround (sf colorizes even without a TTY, which breaks `JSON.parse`).
+  It also gains `restErrorDetails`, which pulls the `fields` array out of a rejection — the only
+  thing that says *which* field the org refused.
+
+### Fixed
+
+- **The ledger redacted the very payload it exists to restore.** `recordIntent` ran the audit
+  redactor over the before-state, and `ledger undo` writes that state straight back to the org —
+  so an undo could deploy `[REDACTED]` into a flow, a validation rule or a `.workflow` in place of
+  a real value, and record itself as `applied`. Redaction is lossy and one-way; a restore payload
+  cannot survive it. The ledger now stores the payload raw and redacts on the **read** side
+  instead, so `ledger list`, `ledger show`, the JSON envelope and the MCP tools all still mask
+  secrets while the file stays faithful enough to restore from. The `undo` path that used to print
+  an unreversible entry's before-state now names the file and id instead — stdout is the one place
+  a raw restore payload must not go. The regression test that claimed to prove "restores the
+  recorded Metadata verbatim" could not have caught this: its fixture contained nothing the
+  redactor would touch. It now does.
+
+- **`sfdt automation enable|disable` could toggle the wrong workflow rule.** `flipStatusXml`
+  replaced the *first* `<active>` in the retrieved file, and a `.workflow` file can carry every
+  rule on the object — so a command naming one rule could deactivate another and deploy it. It now
+  flips the rule matching the requested `<fullName>`, and returns the file unchanged (which makes
+  the caller refuse) when the target cannot be located in a file holding more than one flag.
+
+- **`sfdt ledger undo` bypassed the production guard and the confirmation.** Undo is an org write —
+  reversing a `permissions grant` *revokes* access — yet it ran without the two brakes the forward
+  commands require, so a change that needed `--production` to make needed nothing to reverse. It
+  now guards on the org recorded in the entry and confirms before writing, refusing rather than
+  auto-confirming when non-interactive. `sfdt_ledger_undo` gained a matching `production` input.
+
+- **Concurrent ledger appends broke the hash chain.** Computing `seq` and `prevHash` requires
+  reading the file before appending, so two concurrent `sfdt` processes wrote two entries claiming
+  the same predecessor and `ledger verify` reported the second as tampering — a false alarm on the
+  mechanism whose whole job is tamper evidence. Appends now take a cross-process lock file, with a
+  30-second stale-lock reclaim so a killed process cannot wedge the ledger.
+
+- **`sfdt permissions grant|revoke` escaped quotes but not backslashes when building SOQL.** A
+  permission-set label ending in `\` escaped its own closing delimiter and broke out of the string
+  literal. It now uses `@sfdt/flow-core`'s `escapeSoql`, which every other query builder in this
+  repo already used.
+
+- **`sfdt field impact|usage` interpolated object and field names into SOQL unchecked.** These land
+  in identifier positions (`FROM x`, `WHERE y != null`) where quoting does not apply, so escaping
+  cannot help — the names are now validated against the API-name shape and refused otherwise.
+
+- **`sfdt record edit|clone` described the object twice per write**, once via `getRecord` and again
+  directly — two of the largest payloads in the API for one answer. Both now share a single fetch.
+
+### Security
+
+Findings from the pre-release review (`pr-analysis/security/2026-08-23-combined-report.md`), run by
+two independent reviewers plus the deterministic contract checks. Each fix landed with a regression
+test verified to fail without it.
+
+- **Two mutating MCP tools declared `confirmExecution` and never enforced it.**
+  `sfdt_events_publish` and `sfdt_packages_note` listed it in `inputSchema.required`, but the MCP
+  SDK types `arguments` as `z.record(z.string(), z.unknown()).optional()` and **never validates a
+  tool's inputSchema** — so the declaration was documentation, not a control. Publishing an event
+  fires every real subscriber; annotating a package writes a committed repo file. Both now check in
+  the handler, and all 21 mutating tools were re-verified.
+
+  The test that should have caught this asserted only that the property was *declared in the
+  schema*, so it passed green while the gate was missing. `test/command-policy.test.js` now drives
+  the real CallTool handler and asserts, for every tool the policy marks mutating, that it refuses
+  **and that nothing was executed** — an error alone proves only that something failed, not that
+  the command was stopped. Three tools legitimately allow a bare call because they default to a
+  read-only sub-action (`apex trace` → list, `scratch pool` → status, `retrofit` → validate-only);
+  they carry an explicit exemption, itself guarded by a test that the exemption still names a real
+  mutating tool.
+
+- **`sfdt_permissions_grant` could smuggle flags through its variadic argument.** The caller-supplied
+  `fields` array was spread straight into child argv against a Commander variadic that also declares
+  `--production`. Commander consumes options anywhere in argv, including mid-variadic, so an element
+  beginning with `-` became a flag and vanished from the field list — disabling the production guard
+  and allowing `--org` redirection, from data an LLM routinely holds in context. Every element is now
+  validated against the qualified `Object.Field` shape, **and** the list is passed after a `--`
+  terminator, so a future change to either defence cannot silently reopen it.
+
+- **`sfdt ledger undo` could write outside its staging directory.** The deploy-mode reverser joined
+  a ledger-supplied `relPath` with no containment check and wrote the payload *before* deploying, so
+  a forged `logs/ledger.jsonl` — an ordinary file that arrives with a cloned repo — could overwrite
+  any file the user can write, and land even when the deploy failed. Verifying the chain would not
+  have helped: it is an unkeyed SHA-256, so whoever can write the file can compute a valid chain.
+  Containment is the control that holds, mirroring the guard `data-runner.js` already used. The
+  ledger-supplied `parentId` reaching SOQL on the undo path is now escaped as well.
+
+- **The Claude AI provider dropped its tool sandbox when handed an empty allowlist.**
+  `allowedTools: []` means "no tools at all" — the most restrictive request a caller can make — and
+  a `.length > 0` test turned it into no `--allowedTools` flag, falling back to ambient permission
+  defaults. Both sibling providers already carried this fix; the **default** provider did not. The
+  one caller passing `[]` is `buildSnapshotSummary`, which feeds org-derived text to the model. An
+  empty list now sends an explicit sentinel rather than an empty flag value, which a CLI reading as
+  "unset" would have reinstated the bug.
+
+### Changed
+
+- **Every org-mutating command now carries the same brakes**, so the rule is uniform rather than
+  incidental. `sfdt events publish` and `sfdt data load` gained a production guard and a
+  confirmation; `sfdt data delete` gained the production guard, checked **before** its prompt so a
+  refused org is never one you are asked to confirm. `delete` keeps its bespoke confirmation rather
+  than the shared helper: it prints the actual queries and the objects they resolve to, and for the
+  most destructive operation here the blast radius is the part worth showing.
+
+  `publish` is gated because it is *behavioural* rather than a data write — the event fires every
+  flow, trigger and external listener on the channel, and a delivered event cannot be recalled.
+  `load` is gated because an upsert overwrites records that are already there. `record edit|clone`
+  remains deliberately unguarded as the low-blast-radius interactive case.
+
+  On MCP the matching tools forward `--production` and pass `--yes`, since `confirmExecution` is the
+  confirmation at that layer and `--json` is a non-interactive context the CLI would otherwise refuse.
+
+- **`sfdt audit audittrail` grew a severity model, a velocity baseline, and a gate that bites.**
+  The check used to sweep `SetupAuditTrail` for 17 substrings and report every hit as an
+  undifferentiated "suspicious change", with `warn` as its worst status — which meant it could
+  never trip `audit`'s own exit-code gate (`fail` or `error`) and never cleared the notifier's
+  default `warn` threshold. It was a report nobody was paged by.
+
+  Matches now carry a **severity** and a plain-English category. `critical` is reserved for
+  changes to who can get in or what they can reach — password policy, session settings, login IP
+  ranges, Login-As, profile and permission-set assignment, connected apps, named credentials,
+  certificates — and makes the check **fail**; everything else (deletions, password resets, users
+  frozen or deactivated) stays `elevated` and warns. The pattern list is ordered most-specific
+  first, so `changedpasswordpolicy` is a policy change rather than being swallowed by the
+  `changedpassword` entry beneath it.
+
+  **Velocity is measured against each user's own baseline, from one query.** The lookback splits
+  into an observation window (the most recent 24 h by default) and a baseline (everything
+  older), both expressed as changes per day so the two are comparable. A user above 3× their own
+  baseline — who also cleared an absolute floor of 10 events, so going from 1 change to 3 is not
+  an incident — is reported with **both rates**, because a ratio without its denominator is a
+  number nobody can act on. A user with no baseline is never flagged: first-seen is not a spike.
+  Velocity runs over every row rather than only the classified ones, since a burst of otherwise
+  ordinary changes from one account at 3am is the whole signal. *Considered and rejected:* a
+  baseline read from `logs/history.db` — `queryRuns` is exported and would have worked, but the
+  stored summary holds no per-user counts, and past runs have heterogeneous lookback windows, so
+  the baseline would have silently depended on how often somebody happened to run an audit.
+
+  **The row cap is now honest.** It moves to `audit.auditTrailMaxRows` (default 5000), and
+  hitting it is reported in the summary *and* skips velocity — the rows a cap discards are the
+  oldest, which is exactly the baseline half of the split, so a spike computed off a truncated
+  window would be fiction. Deliberately not billed as "unpaginated": `sf data query` paginates,
+  but the result crosses a subprocess buffer, so an unbounded sweep of a busy org would trade a
+  silent truncation for a crash.
+
+  New config keys under `audit`: `auditTrailMaxRows`, `auditTrailVelocityWindowHours`,
+  `auditTrailVelocityFactor`, `auditTrailVelocityMinEvents`.
+
+- **The generated monitor CI templates now schedule the security audit.** All four providers
+  gain a `sfdt audit all --notify --json` step beside the existing monitor run, so a project
+  scaffolded by `sfdt ci init --type monitor` gets anomaly alerting without wiring it by hand.
+  On GitHub and Azure the step is conditioned to run even when monitoring failed — a monitor
+  outage is the last moment you want the security audit skipped. *Considered and rejected:* a
+  fifth `--type audit`, which would mean four more templates and a `generated/` change for a job
+  that belongs on the schedule that already exists.
+
+  The golden-output test for monitor templates moves from byte-equality to the
+  "every original line survives, in order" assertion the deploy templates have always used.
+  Byte-equality would make every future addition read as a regression while catching nothing the
+  line-survival check misses.
+
+- **`describeFinding` renders the two new shapes.** Velocity anomalies get their own arm, keyed
+  off an explicit discriminant rather than a shape — they carry `user`, which the chain below
+  reads as a person on a change row rather than the subject of a rate. Classified audit rows
+  render their severity and category; a row from an older snapshot has neither and renders
+  exactly as it always did.
+
+### Added
+
+- **`sfdt data load` — Bulk API v2 data loading.** `sfdt data` could only drive `sf data
+  export/import tree`, which preserves relationships but tops out in the low thousands of
+  records and cannot upsert at all — so seeding a sandbox from a real extract, or reconciling
+  against an external system's ids, had no path through sfdt. A data set may now carry a
+  `bulk.json` instead of a `queries.json`, listing CSV load operations run over Bulk API v2 by
+  the new `load` verb (`sf data import bulk` / `sf data upsert bulk`; no new dependencies).
+  Operations run in **declaration order and never concurrently** — a bulk spec's order is
+  usually a dependency order, and Bulk API v2 jobs are already parallel server-side.
+  `bulk.json` and `queries.json` in the same set is an error rather than a precedence rule, so
+  `data load` and `data import` cannot disagree about what a set contains, and `data list` now
+  globs both so a bulk set is never reported as absent.
+
+  **Field mapping.** `sf data import bulk` has no mapping flag — it matches CSV headers to
+  field API names verbatim. An operation may declare `fieldMap`, which rewrites **only the
+  header row** into a sibling file under `.mapped/`; that copy is what loads. The rewrite is
+  streamed rather than read whole, because Bulk API v2 exists precisely for files too large to
+  want in memory. A map key that matches no column is reported as `unmatchedFieldMapKeys` and
+  warned about: otherwise the load succeeds, the column keeps its original name, and the field
+  silently fails to populate.
+
+  **Partial success is not success.** Salesforce exits 0 for a job that processed some rows and
+  rejected others, so a non-zero `numberRecordsFailed` is recorded as an `error` for that
+  operation, and `load` exits 1 when any operation failed — a half-loaded data set is not a
+  successful seed, and CI branching on the exit code has no other signal. The `--json` envelope
+  carries `errorCount` alongside the raw per-operation results. A failing operation is recorded
+  and the run continues, matching `data delete`.
+
+  `file` paths are containment-checked against the data-set directory (a data set is exactly
+  the kind of thing that gets copied between projects), `--wait` is validated as whole minutes
+  before it can reach argv, and deletes are deliberately **not** a supported bulk operation —
+  they stay on `sfdt data delete`, which owns the confirmation gate. New config keys
+  `data.bulk.waitMinutes` (default 10) and `data.bulk.lineEnding`. Surfaced as the
+  `confirmExecution`-gated MCP tool `sfdt_data_load` and a VS Code "Load (Bulk API)" entry.
+
+### Fixed
+
+- **`docs/USAGE.md` no longer claims `sfdt data delete` is unexposed over MCP** — the
+  `sfdt_data_delete` tool has existed since the MCP mutating-tool expansion.
+
 ## [0.22.2] - 2026-08-12
 
 A dependency-maintenance release. **No CLI behaviour changes** — no command, flag, config key

@@ -27,6 +27,16 @@ export interface PresentOpts {
   footer?: HTMLElement;
   /** Called when the view is closed (modal dismissed or tab closed). */
   onClose?: () => void;
+  /**
+   * Veto hook for the *dismissal* paths — Escape and the backdrop click.
+   *
+   * A surface holding unsaved user input must not click-outside-dismiss
+   * (CONVENTIONS.md item 2), and only the feature knows whether it is dirty.
+   * Return false to keep the view open. It deliberately does NOT gate
+   * `handle.close()`: a feature closing itself has already decided, and routing
+   * that through a confirm would double-prompt.
+   */
+  confirmClose?: () => boolean;
   /** Modal card width (page mode only). Default 860px. */
   width?: string;
   /** Document to build in (defaults to the global document). */
@@ -174,8 +184,14 @@ export function presentAsModal(opts: PresentOpts): ViewHandle {
     if (returnFocusTo && typeof returnFocusTo.focus === 'function') returnFocusTo.focus();
     opts.onClose?.();
   };
+  // Dismissal paths ask first; `close()` itself does not, so a feature calling
+  // handle.close() is never second-guessed.
+  const dismiss = (): void => {
+    if (opts.confirmClose && opts.confirmClose() === false) return;
+    close();
+  };
   overlay.addEventListener('click', (e) => {
-    if (e.target === overlay) close();
+    if (e.target === overlay) dismiss();
   });
 
   // Bubble phase on purpose: ui/menu.ts listens in the CAPTURE phase and calls
@@ -188,7 +204,7 @@ export function presentAsModal(opts: PresentOpts): ViewHandle {
     // collapses the whole stack instead of the view on top. Last-mounted wins.
     const siblings = overlay.parentNode?.querySelectorAll('.sfdt-view-overlay');
     if (siblings?.length && siblings[siblings.length - 1] !== overlay) return;
-    close();
+    dismiss();
   };
   doc.addEventListener('keydown', onKey);
 

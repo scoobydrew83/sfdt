@@ -1046,6 +1046,39 @@ sfdt audit licenses --json
 
 Exits non-zero when any check reports `fail` **or** `error` status, so an unreachable org or a missing permission can't read as healthy in CI. Check thresholds are configured under the `audit` block in `.sfdt/config.json`.
 
+#### The `audittrail` check
+
+Reads `SetupAuditTrail` over `audit.auditTrailLookbackDays` (default 30) and reports two
+different things.
+
+**Classified changes.** Each matching row carries a **severity** and a category. `critical`
+covers changes to who can get in or what they can reach — password policy, session settings,
+login IP ranges, Login-As, profile and permission-set assignment, connected apps, named
+credentials, certificates. `elevated` covers the rest (deletions, password resets, users frozen
+or deactivated). A `critical` row makes the check `fail`; `elevated` alone makes it `warn`.
+
+**Velocity anomalies.** The lookback is split: the most recent
+`audit.auditTrailVelocityWindowHours` (default 24) is the observation window, and everything
+older is that user's own baseline. A user whose observed changes-per-day exceeds
+`audit.auditTrailVelocityFactor` (default 3) × their baseline — and who cleared
+`audit.auditTrailVelocityMinEvents` (default 10) in absolute terms — is reported with **both
+rates**, so the number can be argued with. A user with no baseline activity is never flagged:
+first-seen is not a spike. Velocity runs over every row, not just the classified ones, because a
+burst of ordinary changes from one account is exactly the signal.
+
+Because a `critical` change or an anomaly makes the check `fail`, the run exits non-zero — so
+this is a **CI gate**, and it also clears the notifier's default `warn` threshold, so
+`--notify` reaches Slack/Teams without extra configuration. The generated
+`sfdt ci init --type monitor` templates now schedule `sfdt audit all --notify --json` alongside
+the monitor run.
+
+> **On completeness.** The sweep is capped at `audit.auditTrailMaxRows` (default 5000). When it
+> hits the cap the summary says so **and velocity is skipped** — the rows lost to a cap are the
+> oldest, which is precisely the baseline half of the split. This is deliberately not an
+> "unpaginated" claim: `sf data query` paginates, but the whole result crosses a subprocess
+> buffer, so an unbounded sweep of a busy org trades a silent truncation for a crash. Reporting
+> what was cut beats claiming a completeness that can't be delivered.
+
 ---
 
 ### sfdt monitor
@@ -1152,34 +1185,703 @@ sfdt docs diagram --output docs/erd.mmd
 
 ---
 
-### sfdt data
+### sfdt ledger
 
-Manage data sets via native `sf data export/import tree` for sandbox and scratch-org seeding.
+The append-only record of every org change sfdt makes, and how to reverse one.
 
 ```bash
-sfdt data list
-sfdt data export accounts --org production
-sfdt data import accounts --org scratch1
-sfdt data delete accounts --org scratch1            # prompts for confirmation
-sfdt data delete accounts --org scratch1 --yes      # skip the prompt
+sfdt ledger list                 # what has sfdt changed?
+sfdt ledger show <id>            # including the state it replaced
+sfdt ledger verify               # has the file been tampered with?
+sfdt ledger undo <id>            # put it back
 ```
 
-**Arguments:**
-
-| Argument | Description |
+| Option | Description |
 |---|---|
-| `<action>` | `list`, `export`, `import`, or `delete` |
-| `[set]` | Data-set name (required for `export`/`import`/`delete`) |
+| `--limit <n>` | For `list`: how many to show (default 50) |
+| `--yes` | For `undo`: skip the confirmation prompt (required for non-interactive use) |
+| `--production` | For `undo`: acknowledge that the org the change was made in is production |
+| `--json` | Emit machine-readable output |
+
+**An undo is an org write, and carries the same brakes as the change it reverses.** It needs
+`--production` against a production org and a confirmation before it runs — the same two gates
+`automation disable` and `permissions grant` use. Without that, the forward change would demand
+`--production` while putting it back demanded nothing, and undoing a `permissions grant` *revokes*
+access. `undo` takes no `--org`: the target comes from the recorded entry.
+
+`automation disable` and `permissions grant` record the state that preceded them before they
+touch the org. That is what makes them reversible — and it is the thing a stage-and-approve UI
+cannot do, because approval only ever looks forward. You find out a change was wrong *after* it
+lands, which is exactly when a recorded before-state is worth having.
+
+**It is not `run-history` and not `audit.json`.** Neither of those is append-only: run history
+deletes all but the newest 200 rows per type on every insert and stores only counts; the GUI audit
+log rewrites its whole array capped at 1000, so any past entry can be silently altered by the next
+write. Both are right for what they do. Neither can answer *what was there before*.
+
+**Hash-chained.** Each entry's hash covers its content plus the previous entry's, so editing or
+deleting any line breaks the chain. `verify` names the first break by both its recorded sequence
+number and its current line — when those diverge, that gap is itself the evidence a line was
+removed. Only the first break is reported: everything after it is unverifiable, and listing them
+all would present consequences as if they were problems.
+
+**Nothing is ever mutated.** Undo appends a compensating entry rather than flipping a flag on the
+original, so `ledger verify` still passes afterwards. A second undo of the same change is refused —
+it would re-apply it.
+
+**The before-state is stored raw, and redacted only when shown.** It is a *restore payload* —
+`undo` writes it straight back to the org — and redaction is lossy and one-way, so a redacted copy
+would deploy `[REDACTED]` into a flow or a validation rule during the recovery it exists to
+perform. Redaction happens on the read side instead: `ledger list`, `ledger show`, the JSON
+envelope and the MCP tools all mask secrets, and nothing carrying an unredacted payload leaves the
+process. Treat `logs/ledger.jsonl` with the same care as the org metadata it mirrors.
+
+**Appends are locked across processes.** Computing an entry's sequence number and previous-hash
+means reading the file before writing to it, so two concurrent `sfdt` runs could otherwise write
+two entries claiming the same predecessor — and `verify` would report the second as tampering. A
+lock file beside the ledger serialises that window; a lock left by a killed process is reclaimed
+after 30 seconds.
+
+| Status | Meaning |
+|---|---|
+| `applied` | The write succeeded |
+| `failed` | The write was attempted and rejected |
+| `undone` | Reversed by a later entry |
+| **`pending`** | Recorded, but its outcome never was — the command may have been interrupted mid-write. **Check the org before undoing it.** |
+
+> **A deliberate exception to golden principle #5.** That principle says anything writing history
+> degrades silently, so measurement cannot break the measured. The ledger is the one carve-out: if
+> the before-state cannot be recorded, **the org write does not happen**. An unrecorded change is
+> an unreversible one, and handing you a changed org with no way back is a worse failure than an
+> aborted command. Recording the *outcome* afterwards stays best-effort, because by then the org
+> has already changed.
+
+---
+
+### sfdt automation
+
+The on/off grid across every kind of Salesforce automation, and the toggles behind it.
+
+```bash
+sfdt automation list                                          # what's on?
+sfdt automation list --type validation-rule
+sfdt automation disable validation-rule Account.Region_Required --dry-run
+sfdt automation disable validation-rule Account.Region_Required
+sfdt automation enable flow Set_Region
+```
+
+#### Five types, three write mechanisms
+
+A grid of uniform toggles implies every row costs the same. It does not, and this is the part a
+single button hides:
+
+| Type | Written by | Cost |
+|---|---|---|
+| Flow (incl. Process Builder) | Tooling `Metadata.activeVersionNumber` | A record write |
+| Validation rule | Tooling `Metadata.active` | A record write |
+| Duplicate rule | Tooling `Metadata.isActive` | A record write |
+| **Workflow rule** | **Metadata deploy** | Retrieve, edit, deploy |
+| **Apex trigger** | **Metadata deploy** | In production a Status change *is* a code deployment — **it runs tests** |
+
+Process Builder is **not** a sixth type: a process *is* a Flow, differing only by `ProcessType`.
+Listing it separately would be marketing rather than modelling.
+
+#### The read that is a correctness requirement
+
+`Metadata` is a compound field, and writing it **replaces** the object rather than merging. So a
+validation-rule toggle reads the whole `Metadata`, changes one key, and writes all of it back.
+Sending `{ active: false }` alone would compile, read fine, and discard the rule's formula and
+error message the first time it ran. The code refuses to build a write from metadata it never read.
+
+That read is also, conveniently, the before-state — which is why every toggle is reversible.
+
+Deactivating a flow sets `activeVersionNumber` to `0`, which **discards which version was
+active**. The ledger records it, so `sfdt ledger undo` restores that exact version; if the version
+has since been deleted, the undo fails cleanly rather than activating a different one.
+
+#### Three brakes on every write
+
+- **`--dry-run`** prints the exact body that would be sent and writes nothing.
+- **A production guard.** A write against a non-sandbox org is refused unless `--production` is
+  passed. Detection **fails safe**: some org shapes omit `isSandbox` entirely, and a failed lookup
+  or a missing value is treated as production, because dropping the guard on an org you could not
+  identify is the wrong way to be wrong.
+- **A confirmation**, unless `--yes`. In a non-interactive context (JSON mode, CI, no TTY) it
+  **refuses** rather than auto-confirming — a prompt in CI is either a hang or a silent yes.
+
+---
+
+### sfdt permissions
+
+Object and field access granted by profiles and permission sets. `matrix` and `drift` read; `grant`, `revoke` and `fix` write.
+
+```bash
+sfdt permissions matrix Account                      # who can see and edit what
+sfdt permissions matrix Account --user ana@acme.com  # what one user gets
+sfdt permissions matrix Account --offline            # from the repo, no org
+
+sfdt permissions drift Account --fail-on-drift       # org vs source, as a CI gate
+```
+
+#### It says "granted". It will never say "effective"
+
+This is the load-bearing decision, so it is stated first rather than footnoted.
+
+A user's real access is what their profile and permission sets grant **minus** whatever a *muting
+permission set* inside a permission set group takes away. Muting permission sets are **Metadata
+API only** — there is no queryable sObject for them — so any computed union can be **more
+permissive than reality**, and no amount of care with the queries changes that.
+
+A tool that calls that number "effective access" is not slightly imprecise; it is wrong in the
+direction that matters, and wrong in a way the reader cannot detect. So every result here is
+labelled *granted*, carries the caveat in words, and the word "effective" appears on no piece of
+data. A competitor claiming "effective" has the identical blind spot plus a false label.
+
+#### `matrix`
+
+Columns are profiles (prefixed `P:`) then permission sets, in a stable order so two runs are
+comparable by eye. Cells are `RW` / `R` / `—`, and edit implies read. Object-level CRUD, View All
+and Modify All are reported above the field grid, because a field grant is meaningless without it.
+
+Every query is **scoped to the one object**. A bare `SELECT … FROM FieldPermissions` is 100k–1M
+rows in a real org funnelled through `sf` stdout into `JSON.parse`; filtering by `SobjectType`
+makes this bounded by construction rather than by a cap that has to be explained. (The existing
+`audit lint-access` checks do run unbounded — they answer a different, cheaper question and are
+left alone.)
+
+`--user` resolves that user's profile, permission sets, **and permission set groups** — two hops,
+because the user is assigned the group while the grants live on its member sets. Skipping the
+second hop would silently drop every grant a group carries, and groups are where most large orgs
+put their access. When a group is involved the muting caveat is repeated pointing at it by name,
+since a group is exactly where muting is used.
+
+An empty result is **not** "nobody has access": Salesforce stores a permission entry only where
+access differs from the default, so absence is not denial. The output says so.
+
+#### `grant`, `revoke` and `fix` — the writable half
+
+```bash
+sfdt permissions grant Account.Region__c --parent "Sales Ops" --level read
+sfdt permissions revoke Account.Secret__c --parent "Sales Ops"
+sfdt permissions fix Account --dry-run
+```
+
+`ObjectPermissions` and `FieldPermissions` are ordinary updatable sObjects, so these are plain REST
+writes. Three shapes are needed, because Salesforce models "no access" as the **absence** of a row
+rather than a row saying no: create one to grant, patch it to change a level, delete it to remove
+access. Granting `edit` always sends `read` too — the org rejects edit without it.
+
+**Profiles are refused, by name and up front.** Salesforce does not permit direct DML on
+profile-owned permission entries; those must go through the Metadata API, so change them in source
+and deploy. Refusing explicitly beats letting the org return an opaque
+`INSUFFICIENT_ACCESS_OR_READONLY` that reads like a problem with *your* access.
+
+**`fix` is the bulk fix, and its shape is the argument for it.** It applies exactly what
+`permissions drift` found `missing-in-org` — with **your repository** as the intended state, so the
+target was code-reviewed before it was applied rather than clicked through in a browser. Grants the
+org has that source does not (`extra-in-org`) are deliberately **left alone**: removing access
+nobody asked to remove is a different and far riskier decision.
+
+Same three brakes as `automation`: `--dry-run`, the production guard, and a confirmation that
+refuses rather than auto-confirms when non-interactive. Every change is recorded in the ledger, so
+`sfdt ledger undo` restores the prior grants — including after a *partial* failure, since the
+recorded before-state covers the whole batch and restoring a field already at its recorded level is
+a no-op.
+
+#### `--offline` and `drift` — permissions as a deploy gate
+
+`--offline` reads `profiles/*.profile-meta.xml` and `permissionsets/*.permissionset-meta.xml` from
+the repository. No org, so it runs on a pull request. Its bound is different and is stated: source
+declares what is **committed**, and an org may carry grants nobody ever put in the repo.
+
+`drift` compares the two directly:
+
+| Verdict | Meaning |
+|---|---|
+| `extra-in-org` | Granted in the org but **absent from source** — the one a security review cares about |
+| `missing-in-org` | Declared in source but not granted in the org |
+| `changed` | Both grant it, at different levels |
+| `only-in-org` / `only-in-repo` | A profile or permission set present on one side only |
+
+Parents are matched by **label**, because the org identifies them by id and the repository by
+filename and those cannot be equated. That is a real limitation, so an unmatched parent is reported
+rather than dropped — and `--fail-on-drift` deliberately does **not** gate on it, since an
+unmatched parent is usually a naming mismatch rather than an access difference and a noisy gate
+gets turned off. Field-level differences are unambiguous, so those do gate.
+
+```yaml
+- name: Permissions must match source
+  run: npx --yes @sfdt/cli@latest permissions drift Account --org prod --fail-on-drift
+```
+
+Not added to the generated CI templates, for the same reason the field gate was not: it is
+per-object, so a generic template step would ship everyone a job with no object configured.
+
+---
+
+### sfdt packages
+
+Installed package inventory, annotations, and cross-org version drift.
+
+```bash
+sfdt packages list                                    # what's installed, and is it behind?
+sfdt packages compare --source uat --target prod      # is prod behind UAT?
+sfdt packages compare --source uat --target prod --fail-on-drift
+sfdt packages note acme --latest 3.10.0 --url https://vendor.example/releases
+```
+
+#### There is no "check for updates" API, and this says so
+
+This is worth stating plainly, because every tool in this category implies otherwise:
+
+- **AppExchange has no public REST API** and no per-listing version feed.
+- **`SubscriberPackageVersion` is queryable only in a Dev Hub, for packages you own.** In a
+  subscriber org it tells you nothing about a third party's package.
+- **`InstalledSubscriberPackage`** — the Tooling object this command reads — gives you the
+  *installed* version and nothing about what exists upstream.
+
+So `sfdt packages` never claims to have checked. What it does instead:
+
+| `updateStatus` | What it actually means |
+|---|---|
+| `unknown` | Nothing was recorded to compare against. **Not** "up to date" |
+| `update-available` | Installed is behind a version **a human recorded**, with the date they recorded it |
+| `ahead-of-record` | Installed is *newer* than the record — the note is stale, not the org |
+| `current` | Matches the recorded version. Still a human's number, and the output says so |
+
+#### `compare` — the update question that *is* answerable
+
+Both orgs are already authenticated, so comparing them needs no vendor API at all. Per package the
+verdict is `same`, `source-ahead`, `target-ahead`, `only-in-source`, `only-in-target`, or
+**`unknown`** — a package installed in both whose version could not be read. `unknown` is kept
+distinct from `same` deliberately: folding them together would let `--fail-on-drift` pass on a
+comparison that never happened.
+
+`--fail-on-drift` exits 1 on a real difference and never on `unknown`, for the same reason the
+field gate does — a gate that fires on our inability to check gets deleted.
+
+> Version comparison is **numeric, per component**. Under a string compare `3.10.0` sorts below
+> `3.9.0`, so an org two minor versions ahead would report as behind and the gate would fire
+> backwards. There is a test for exactly this.
+
+#### `note` — why the annotation goes in your repo
+
+`sfdt packages note <namespace> --url … --latest … --owner …` writes **`.sfdt/packages.json`**, a
+committed file. That is the whole design: the vendor's URL, the version someone actually checked,
+and who owns the relationship become code-reviewed, shared by the team, and readable by CI —
+instead of living in one admin's browser and dying with the profile. A hosted product structurally
+cannot put your annotations in your repository.
+
+- Keyed by **namespace**, not the subscriber package id, because the id is per-org and the
+  annotation is about the *product*.
+- Merges **additively**: a field you do not pass is left alone, and keys written by a *newer* sfdt
+  are preserved untouched. Pass an empty string to clear a field.
+- `--latest` is validated. A value that does not parse as a version is refused rather than stored,
+  because a stored non-version compares against nothing forever while its owner believes the
+  package is being watched.
+- Recording a version stamps the date, so a two-year-old note reads as the weak evidence it is.
+
+The GUI dashboard's **Installed Packages** page is the editor for the same file.
+
+*Considered and rejected:* a Dev Hub `Package2Version` check. It is real, but only covers packages
+you publish yourself — not the AppExchange ones this feature exists for. And scraping vendor
+listings: the Chrome extension's CSP forbids external hosts outright, and HTML scraping of a
+vendor's site is fragile and impolite.
+
+---
+
+### sfdt events
+
+Platform Events and Change Data Capture.
+
+```bash
+sfdt events list                                    # what can I subscribe to?
+sfdt events tail Order_Placed__e                    # listen for 60s
+sfdt events tail AccountChangeEvent --replay all    # replay the retention window
+sfdt events publish Order_Placed__e --field Order_Id__c=A-1
+
+# publish, then assert it arrived — an integration test for CI
+sfdt events tail Order_Placed__e --expect Status__c=OK --timeout 30
+```
+
+`publish` carries the same two brakes as `automation` and `permissions` — a production guard and a
+confirmation that refuses rather than auto-confirms when non-interactive. Publishing is a
+*behavioural* change rather than a data write: the event fires every subscriber on the channel —
+flows, Apex triggers, and any external listener — and a delivered event cannot be recalled. There
+is no undo, which is precisely why it is gated going in. `--dry-run` prints the exact body and
+sends nothing.
+
+The CometD/Bayeux protocol implementation is [`@sfdt/flow-core`](../packages/flow-core)'s, shared
+verbatim with the Chrome extension's background worker. A stateful handshake with a replay
+extension and a reconnect policy is exactly the kind of thing two copies would drift on, in ways
+that only show up against a real org.
+
+#### `list`
+
+Enumerates custom platform events (`__e`), standard platform events, custom `PlatformEventChannel`
+channels, and the entities enrolled in Change Data Capture — each with its Bayeux path. A kind
+whose query is refused is reported as *unchecked*; it never silently becomes "your org has none".
+
+#### `tail`
+
+| Option | Description |
+|---|---|
+| `--replay <id>` | `new` (default), `all` for everything still in the retention window, or a specific replay id |
+| `--timeout <seconds>` | Stop after this long. Default 60 — a tail is always bounded |
+| `--max <n>` | Stop after this many events |
+| `--expect <Field=Value>` | Repeatable. Stop on the first matching event; **exit 1 if none arrives** |
+| `--out <file>` | Append each event to a file as NDJSON |
+| `--json` | Emit one envelope at the end instead of streaming |
+
+`--replay all` is the one worth knowing: it replays events already in the retention window
+(roughly 24 hours, 72 for high-volume), so you can inspect something that has *already* happened
+rather than waiting for it to happen again.
+
+`--expect` walks dotted paths into the payload, so CDC's header is reachable:
+`--expect payload.ChangeEventHeader.changeType=CREATE`. It compares as strings and requires
+**every** pair. This is deliberately not a JSONPath dialect — a matcher nobody can predict is
+worse than one that only does the obvious thing.
+
+> **Why `--json` does not stream.** The JSON envelope is one object on stdout (golden principle
+> #6); a tail is a stream. Both cannot be true at once, so `--json` prints nothing live and emits
+> a single envelope at the end, bounded by `--timeout`/`--max`. Without `--json`, events stream to
+> stdout as NDJSON as they arrive and status goes to stderr. The invariant wins over the
+> convenience.
+
+Ctrl-C ends a tail cleanly, unsubscribing from the org rather than leaving it holding a
+subscription for a process that has exited.
+
+#### `publish`, and the reason it exists
+
+Publishing an event is an ordinary REST POST to `/sobjects/<Event>__e/` — no token, no streaming.
+`--dry-run` prints the exact body without sending it.
+
+Paired with `tail --expect`, it becomes a **publish-then-assert integration test that runs in your
+pipeline**:
+
+```yaml
+- run: npx --yes @sfdt/cli@latest events publish Order_Placed__e --field Order_Id__c=CI-$GITHUB_RUN_ID
+- run: npx --yes @sfdt/cli@latest events tail Order_Placed__e --expect Order_Id__c=CI-$GITHUB_RUN_ID --timeout 60
+```
+
+Publishing fires **real subscribers** — flows, triggers, and any external system listening. The
+MCP tool therefore declares `confirmExecution`.
+
+#### One command in this CLI holds a session token
+
+`tail` is the exception to how everything else here works. Every other command shells out to `sf`
+and lets it join the session, which is why sfdt stores no tokens. A CometD long-poll is a single
+HTTP connection held open for minutes and `sf` has no subcommand that proxies one, so `tail` reads
+an access token via `sf org display` and holds it **in memory for the life of the command**.
+
+What that does and does not change:
+
+- It is read from the `sf` keychain at the moment of use. Nothing is written, cached to disk, or
+  persisted between runs — **no new secret is stored anywhere**.
+- It is never logged, never placed in the JSON envelope, never put in a snapshot or a notification
+  payload, and never accepted from a flag or an environment variable.
+- `accessToken` / `sessionId` / `sid` are in the redaction list, so anything that *does* reach a
+  log is masked. That is the backstop, not the plan.
+
+All of this lives in one file, `src/lib/org-session.js`, so reviewing it is reading one file
+rather than grepping.
+
+---
+
+### sfdt field
+
+Field-level analysis over an org. Read-only.
+
+```bash
+sfdt field impact Account.Region__c              # deep: what writes ONE field
+sfdt field impact Opportunity.StageName --links
+
+sfdt field usage Account                        # wide: every field on the object
+sfdt field usage Account --population            # …and how much data each holds
+
+sfdt field usage Account --offline               # from the repo, no org at all
+sfdt field usage Account --offline --fail-on-unreferenced   # a CI gate
+```
+
+`impact` answers **"what writes this field?"** from three sources:
+
+| Source | How it is found | Status |
+|---|---|---|
+| Flows | `MetadataComponentDependency` narrows the candidates, then `@sfdt/flow-core` **parses** each flow's metadata to see which actually write the field | `confirmed` when the metadata states the write |
+| Workflow field updates | Tooling `WorkflowFieldUpdate.Metadata.field` names the target field outright | `confirmed` |
+| Apex | Tooling SOSL text search over class and trigger source | **always `inferred`** — a text hit is not a write |
+
+Alongside the writers it lists **other references** — validation rules, page layouts, reports,
+email templates, list views and formula fields — in a separate section, from the dependency edges
+Salesforce records. These are kept apart from the writers on purpose:
+
+> *What writes this field* and *where does this field appear* are different questions with
+> different consequences. A validation rule referencing the field is useless when you are working
+> out what changed a value, and essential when you are working out what a change would break.
+
+One dependency query buys every referencing type at once. Four bespoke per-type scans would each
+need a list-then-read-`Metadata` pass (Tooling serves compound `Metadata` one row at a time), cost
+an order of magnitude more round trips, and still miss whatever type nobody thought to add.
+Reports in particular have no queryable column list — the dependency edge is the only cheap record
+that a report uses a field.
+
+The engine is [`@sfdt/flow-core`](../packages/flow-core)'s `analyzeFieldImpact`, shared verbatim
+with the Chrome extension's Field Impact panel, so both surfaces scan an org to the same depth
+and hedge in the same words.
 
 **Options:**
 
 | Option | Description |
 |---|---|
 | `--org <alias>` | Target org (defaults to `config.defaultOrg`) |
-| `-y, --yes` | For `delete`: skip the confirmation prompt. **Required** for non-interactive runs (`--json`, no TTY, or `SFDT_NON_INTERACTIVE`), which otherwise refuse to delete |
+| `--links` | Resolve the org instance URL so rows carry Setup / Flow Builder deep links. Costs one extra `sf` call, so it is opt-in; without it rows carry no URL rather than a broken relative one |
+| `--json` | Emit machine-readable output. The scan notes travel in the envelope's `warnings` as well as the body |
+
+`usage` sweeps **every** field on an object instead, which is the shape you want before a
+cleanup. It resolves the object's custom fields once, then batches the dependency lookup into
+`RefMetadataComponentId IN (…)` queries, so 300 fields cost `ceil(300 / 200)` round trips rather
+than 300.
+
+Fields come back in **three** states, and conflating any two of them is the whole failure mode:
+
+| State | Meaning |
+|---|---|
+| `unreferenced: true` | Nothing referenced it in the sources scanned |
+| `unreferenced: false` | Something did — `references` names what |
+| `unreferenced: null` | **Not scanned.** A standard field has no `CustomField` record for a dependency edge to point at, and a failed batch leaves its fields here too. This is *unknown*, not clean |
+
+**Options:**
+
+| Option | Description |
+|---|---|
+| `--org <alias>` | Target org (defaults to `config.defaultOrg`) |
+| `--population` | Count non-null values for each unreferenced custom field (one query each, five in flight). Required before any field can be called safe to remove |
+| `--offline` | Scan the repository instead of an org — no org needed, CI-friendly (see below) |
+| `--fail-on-unreferenced` | Exit 1 when any field is unreferenced. Gates on `true` only, never on unknown |
 | `--json` | Emit machine-readable output |
 
-> `sfdt data delete` bulk-removes every record a data set's queries match — by design for scratch/sandbox seed cleanup. It is not exposed over MCP.
+#### Why `--population` is not optional in practice
+
+A reference-only sweep will happily report a field holding two million values as unreferenced,
+because metadata edges say nothing about data. So `safeToRemove` stays `null` until you have
+actually counted, and a field earns it only when **all** of these hold:
+
+- it is custom (a standard field is not yours to remove);
+- it was actually scanned, and nothing referenced it;
+- its population was actually measured, and is **zero** — a count that *failed* is not a count of
+  zero, and is refused;
+- it is not required, and not unique (a unique field may back an external key).
+
+Every field that misses the bar carries a `keepReason` saying which condition it failed, so the
+list explains itself rather than leaving you to guess why something you expected is absent.
+
+#### `--offline`: the same question, asked of the repo
+
+`--offline` scans your source tree instead of an org. No org alias is resolved at all, so it runs
+on a pull request — before the field is deployed anywhere. That is the half a hosted console
+structurally cannot offer, because it needs your repository rather than your org.
+
+The field list comes from `objects/<Object>/fields/*.field-meta.xml`, so offline mode covers the
+fields tracked in *this repository* — standard fields and anything deployed but not committed are
+not included, and the notes say so.
+
+**Structural references do not count as use.** A naive grep reports every field as referenced,
+because profiles and permission sets carry a `fieldPermissions` entry for every field they grant,
+and layouts list most fields on the object. Those name a field because it *exists*, not because
+anything depends on its value. So:
+
+| Kind | Metadata | Counts as use? |
+|---|---|---|
+| **Logical** | Apex, triggers, flows, validation rules, formulas on other fields, reports, email templates, LWC, Aura, workflows, quick actions | **Yes** |
+| **Structural** | Layouts, profiles, permission sets, list views, record types, field sets | No — but still listed, marked `(structural)`, because removing the field means removing those entries too |
+
+Two smaller traps the scan handles: a field's own `.field-meta.xml` names it in `<fullName>` and
+is skipped for that field (while still being read for *other* fields' formulas), and matching is
+whole-token, so `Region__c` is not counted as used by a file that only mentions `Sub_Region__c`.
+
+Offline results are **always inferred** — a text match is not a reference, and a field name built
+at runtime by dynamic SOQL is invisible to any text scan. No field is ever reported as safe to
+remove from a repo scan: there is no data to count, and a field unreferenced in source may hold
+millions of values in every org it is deployed to.
+
+#### `--fail-on-unreferenced`: the CI gate
+
+Exits 1 when any field comes back unreferenced. It gates on `unreferenced === true` **only** — a
+field whose status is unknown never fails a build, because the gate would then be firing on our
+inability to check rather than on anything about your repo, and the first thing anyone would do is
+delete the gate. When fields were skipped, the failure message says how many.
+
+```yaml
+- name: Flag unreferenced fields
+  run: npx --yes @sfdt/cli@latest field usage Account --offline --fail-on-unreferenced
+```
+
+This is deliberately **not** added to the generated CI templates. The audit gate belongs there
+because it is cheap and org-wide; a field sweep is per-object, so a generic template step would
+ship everyone a job with no object configured. Add the snippet where it fits your repo.
+
+#### Read the scan scope, not just the rows
+
+Both subcommands print a **Scan scope** section, and it is not decoration. A run that could not
+read half the org and a run that read all of it both end in "no writer found"; the notes are the
+only thing that tells them apart. They state:
+
+- **Which queries were refused.** A `CustomField` lookup rejected for permissions is reported as
+  refused — *not* as "this field has no dependency edge". A failed query is not a finding about
+  your org.
+- **Which caps bound the scan**, and what fell outside them.
+- **Which rule was applied.** A field with a dependency edge is scanned leniently (an unbindable
+  write is kept as a lead); a field without one falls back to a broad scan of recently-modified
+  active flows and is scanned *strictly* (only a write bound to the object counts). Results from
+  the two paths are not directly comparable, and the notes say so.
+- **What the Flow parser does not model** — Transform elements, invocable and quick actions, and
+  the bodies of called subflows. A flow that writes the field only that way produces no row.
+
+- For `usage`, additionally: that `MetadataComponentDependency` does not record an edge for every
+  kind of reference, how many fields were left unknown and why, and whether a batch came back at
+  its row cap.
+
+An empty result therefore means *no writer was found by the sources scanned*. It is never proof
+that nothing writes the field.
+
+---
+
+### sfdt record
+
+Read, update, or copy a **single** record. The editability model is
+[`@sfdt/flow-core`](../packages/flow-core)'s — the same module the Chrome extension's inspector
+uses — so a field is refused here for the identical stated reason it is refused in the browser.
+
+```bash
+sfdt record get 001800000000001AAA
+sfdt record edit 001800000000001AAA --set Name="Acme Corp" --set Phone=555-0100
+sfdt record edit 001800000000001AAA --set Name=X --dry-run     # print the body, send nothing
+sfdt record clone 006800000000001AAA --set Name="Renewal FY27"
+```
+
+**Arguments:**
+
+| Argument | Description |
+|---|---|
+| `<action>` | `get`, `edit`, or `clone` |
+| `<id>` | 15 or 18 character record Id |
+
+**Options:**
+
+| Option | Description |
+|---|---|
+| `--org <alias>` | Target org (defaults to `config.defaultOrg`) |
+| `--sobject <name>` | Name the object to skip key-prefix resolution (which costs a global describe) |
+| `--set <Field=Value>` | Repeatable. Splits on the **first** `=` only, so a value may contain one; an empty value is an explicit clear |
+| `--dry-run` | Print the exact request body without sending it |
+| `--json` | Emit machine-readable output |
+
+`get` prints every field — editable ones marked, read-only ones dimmed **with the reason**
+(`formula`, `auto-number`, `system`, `unsupported-type`, `no-permission`). Nothing is dropped
+from the view, only from the request body.
+
+`edit` refuses a non-editable or unknown field **locally, by name**, before anything reaches the
+org, and builds its PATCH from the shared diff — which also omits any field missing from the
+record payload, so a field hidden from you by field-level security can never be written to
+`null` over a value you were never allowed to see. A value that already matches is a no-op
+rather than a write (`100` is not different from `"100"`).
+
+A write reports one of four outcomes and the **exit code follows it**: `saved`, `no-op` and
+`dry-run` exit 0; `rejected` exits 1 with the org's message placed on the exact field; and
+**`unknown` also exits 1** — a timed-out write may have committed, so the command says the
+outcome is unknown rather than claiming nothing was saved, and a script is told to go and look.
+
+Exposed over MCP as `sfdt_record_get` (read-only) plus `sfdt_record_edit` and
+`sfdt_record_clone`, both `confirmExecution`-gated.
+
+---
+
+### sfdt data
+
+Manage data sets for sandbox and scratch-org seeding. A data set is a directory under
+`config.data.dir` (default `.sfdt/data`) and comes in one of two shapes:
+
+- **Tree** — `queries.json`, a list of SOQL statements. `export` writes a plan plus record
+  files via `sf data export tree`, `import` replays them. Preserves relationships; tops out in
+  the low thousands of records and cannot upsert.
+- **Bulk** — `bulk.json`, a list of CSV load operations run over Bulk API v2 by `load`. Scales,
+  and is the only path that can upsert by external id.
+
+A set carries one spec file or the other, never both.
+
+```bash
+sfdt data list
+sfdt data export accounts --org production
+sfdt data import accounts --org scratch1
+sfdt data load seed --org scratch1                  # bulk.json, Bulk API v2
+sfdt data load seed --org scratch1 --wait 30
+sfdt data delete accounts --org scratch1            # prompts for confirmation
+sfdt data delete accounts --org scratch1 --yes      # skip the prompt
+```
+
+**`bulk.json`:**
+
+```json
+{
+  "operations": [
+    { "sobject": "Account", "file": "accounts.csv", "operation": "insert" },
+    {
+      "sobject": "Contact",
+      "file": "contacts.csv",
+      "operation": "upsert",
+      "externalId": "External_Id__c",
+      "fieldMap": { "Company Name": "Name", "email": "Email" }
+    }
+  ]
+}
+```
+
+Operations run in declaration order — a bulk spec's order is usually a dependency order, and
+Bulk API v2 jobs are already parallel server-side. `file` must stay inside the data-set
+directory.
+
+`fieldMap` exists because `sf data import bulk` has no mapping flag: it matches CSV column
+headers to field API names verbatim. A declared map rewrites the header row (only the header,
+streamed, so a multi-hundred-MB CSV is never held in memory) into a sibling file under
+`.mapped/`, and that copy is what loads. A map key matching no column is reported as
+`unmatchedFieldMapKeys` and warned about — otherwise the load would succeed while the field
+silently failed to populate.
+
+**Arguments:**
+
+| Argument | Description |
+|---|---|
+| `<action>` | `list`, `export`, `import`, `load`, or `delete` |
+| `[set]` | Data-set name (required for `export`/`import`/`load`/`delete`) |
+
+**Options:**
+
+| Option | Description |
+|---|---|
+| `--org <alias>` | Target org (defaults to `config.defaultOrg`) |
+| `--wait <minutes>` | For `load`: minutes to wait for each job. Defaults to `config.data.bulk.waitMinutes` (10) |
+| `--async` | For `load`: queue each job and return immediately instead of waiting |
+| `--line-ending <LF\|CRLF>` | For `load`: CSV line ending. Defaults to `config.data.bulk.lineEnding`, else sf's own default |
+| `-y, --yes` | For `delete` and `load`: skip the confirmation prompt. **Required** for non-interactive runs (`--json`, no TTY, or `SFDT_NON_INTERACTIVE`), which otherwise refuse rather than auto-confirm |
+| `--production` | For `load` and `delete`: acknowledge that the target org is production. Detection fails safe — an org whose sandbox status cannot be read is treated as production |
+| `--json` | Emit machine-readable output |
+
+> `sfdt data load` inserts or **upserts**, and an upsert overwrites records that are already
+> there. It carries two brakes: a production guard (`--production`) and a confirmation that
+> refuses rather than auto-confirms when non-interactive. Note `load` is **not** recorded in the
+> ledger: `sfdt ledger undo` covers org *configuration* changes, not bulk data writes, so a load
+> has to be reversed by loading corrected data.
+
+> `sfdt data delete` bulk-removes every record a data set's queries match — by design for
+> scratch/sandbox seed cleanup. It carries the same two brakes as `load`, and the guard is checked
+> **before** the prompt, so a refused org is never one you are asked to confirm. Its confirmation
+> prints the actual queries and the objects they resolve to rather than a generic warning: for the
+> most destructive operation here, the blast radius is the thing worth showing.
+
+`load` reports per-operation results and **exits 1 if any operation failed**, so CI can branch
+on the exit code; the JSON envelope carries `errorCount` alongside the raw result. Records
+rejected by Salesforce count as a failure even though `sf` itself exits 0 for a job that
+processed some rows and rejected others — a half-loaded data set is not a successful seed.
 
 ---
 

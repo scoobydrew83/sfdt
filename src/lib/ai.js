@@ -193,6 +193,14 @@ export function aiUnavailableMessage(config) {
   }
 }
 
+/**
+ * Stands in for an EMPTY allowlist on the Claude CLI.
+ *
+ * Matches no real tool, so it grants nothing while keeping the `--allowedTools`
+ * flag unambiguously present. See the note in `runClaudePrompt`.
+ */
+const NO_TOOLS_SENTINEL = '__none__';
+
 // ─── Claude provider ──────────────────────────────────────────────────────────
 
 async function runClaudePrompt(prompt, options) {
@@ -205,8 +213,21 @@ async function runClaudePrompt(prompt, options) {
   }
 
   const args = ['-p', prompt];
-  if (allowedTools && allowedTools.length > 0) {
-    args.push('--allowedTools', allowedTools.join(','));
+  // Gated on the array EXISTING, not on it being non-empty. `allowedTools: []`
+  // means "no tools at all" — the most restrictive request a caller can make —
+  // and the old `.length > 0` test silently turned that into NO sandbox flag,
+  // falling back to claude's ambient permission defaults. Both sibling providers
+  // already carry this fix (runGeminiPrompt, runOpenAiPrompt); claude is the
+  // DEFAULT provider and was the one left behind. `buildSnapshotSummary` in
+  // notifier.js passes `[]` while feeding the model org-derived text, which is
+  // exactly where a prompt injection would land.
+  //
+  // An empty list is sent as a sentinel rather than as `--allowedTools ""`,
+  // because an empty flag value is ambiguous — a CLI that reads it as "unset"
+  // would reinstate the very bug this fixes. A name matching no real tool
+  // grants nothing, and cannot be misread.
+  if (Array.isArray(allowedTools)) {
+    args.push('--allowedTools', allowedTools.length > 0 ? allowedTools.join(',') : NO_TOOLS_SENTINEL);
   }
 
   const execOptions = {
