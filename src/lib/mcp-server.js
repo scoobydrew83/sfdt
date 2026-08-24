@@ -10,6 +10,7 @@ import os from 'os';
 import path from 'path';
 import fs from 'fs-extra';
 import { fileURLToPath } from 'url';
+import { AsyncLocalStorage } from 'node:async_hooks';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -971,6 +972,21 @@ export const TOOLS = [
   }
 ];
 
+const PROJECT_ROOT_SCHEMA = {
+  type: 'string',
+  description: 'Absolute or relative path to an initialized Salesforce DX project containing sfdx-project.json and .sfdt/. Required when the MCP server was launched outside a configured project.',
+};
+
+// projectRoot is request routing metadata shared by every tool. It remains
+// optional for backward compatibility with servers launched from an initialized
+// project; neutral servers require it at call time.
+for (const tool of TOOLS) {
+  tool.inputSchema.properties = {
+    projectRoot: PROJECT_ROOT_SCHEMA,
+    ...(tool.inputSchema.properties ?? {}),
+  };
+}
+
 // SEP-2549 cache metadata for tools/list: the catalog is a static module
 // constant that cannot change within a process, so clients may cache it
 // long-lived and share it across users.
@@ -1008,13 +1024,16 @@ function extractTraceContext(meta) {
 export class SfdtMcpServer {
   #server;
   #config;
+  #callConfig = new AsyncLocalStorage();
 
   async start() {
     try {
       this.#config = await loadConfig();
     } catch (err) {
-      console.error(`MCP Server start failed: Config not found. ${err.message}`);
-      process.exit(1);
+      // Neutral startup lets clients route each request with projectRoot while
+      // preserving legacy cwd-bound behavior when a default config is found.
+      this.#config = null;
+      console.error(`sfdt MCP starting without a default project: ${err.message}`);
     }
 
     this.#server = new Server(
@@ -1050,9 +1069,15 @@ export class SfdtMcpServer {
       console.error(`MCP Call: ${name} argKeys=[${argKeys.join(',')}] argBytes=${argBytes}${traceSuffix}`);
 
       try {
-        const result = await this.#executeTool(name, args ?? {});
-        // Automatically check if results exceed context budgets and park them
-        const processed = await parkIfNeeded(result, this.#config);
+        const callArgs = args ?? {};
+        const config = await this.#resolveCallConfig(callArgs.projectRoot);
+        const toolArgs = { ...callArgs };
+        delete toolArgs.projectRoot;
+        const processed = await this.#callConfig.run(config, async () => {
+          const result = await this.#executeTool(name, toolArgs);
+          // Automatically check if results exceed context budgets and park them.
+          return parkIfNeeded(result, config);
+        });
 
         return {
           ...(trace && { _meta: trace }),
@@ -1079,9 +1104,21 @@ export class SfdtMcpServer {
     });
   }
 
+  async #resolveCallConfig(projectRoot) {
+    if (projectRoot !== undefined) {
+      if (typeof projectRoot !== 'string' || projectRoot.trim() === '') {
+        throw new Error('projectRoot must be a non-empty path to an initialized Salesforce DX project.');
+      }
+      return loadConfig(projectRoot);
+    }
+    if (this.#config) return this.#config;
+    throw new Error('No default Salesforce project is configured. Pass projectRoot for this tool call.');
+  }
+
   async #executeTool(name, args) {
-    const projectRoot = this.#config._projectRoot;
-    const logDir = this.#config.logDir ?? path.join(projectRoot, 'logs');
+    const config = this.#callConfig.getStore() ?? this.#config;
+    const projectRoot = config._projectRoot;
+    const logDir = config.logDir ?? path.join(projectRoot, 'logs');
 
     // Handle standard tool calls
     switch (name) {
@@ -1704,7 +1741,7 @@ export class SfdtMcpServer {
       }
 
       case 'sfdt_get_parked_result': {
-        return await getParkedResult(args.ref, this.#config);
+        return await getParkedResult(args.ref, config);
       }
 
       default:
@@ -1729,7 +1766,8 @@ export class SfdtMcpServer {
   }
 
   async #runCliCommand(args, envOverrides = {}) {
-    const projectRoot = this.#config._projectRoot;
+    const config = this.#callConfig.getStore() ?? this.#config;
+    const projectRoot = config._projectRoot;
     
     // Explicitly run with stdout/stderr captured (never inherit)
     // so we do not corrupt standard stdio channels of the parent MCP process.
