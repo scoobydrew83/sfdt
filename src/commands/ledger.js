@@ -2,6 +2,8 @@ import chalk from 'chalk';
 import { loadConfig } from '../lib/config.js';
 import { listChanges, findChange, verifyLedger, undoChange } from '../lib/ledger.js';
 import { registerAllReversers } from '../lib/ledger-reversers.js';
+import { guardProduction } from '../lib/org-facts.js';
+import { confirmChange } from '../lib/confirm-change.js';
 import { resolveExitCode } from '../lib/exit-codes.js';
 import { emitJson, emitJsonError } from '../lib/output.js';
 
@@ -157,6 +159,8 @@ export function registerLedgerCommand(program) {
   ledger
     .command('undo <id>')
     .description('Reverse a recorded change, restoring the state it replaced')
+    .option('--yes', 'Skip the confirmation prompt')
+    .option('--production', 'Acknowledge that the target org is production')
     .option('--json', 'Emit structured JSON to stdout')
     .action(async (id, options) => {
       const jsonMode = !!options.json;
@@ -165,6 +169,25 @@ export function registerLedgerCommand(program) {
         const logDir = logDirFor(config);
         const change = await findChange(logDir, id);
         if (!change) throw new Error(`No recorded change with id "${id}".`);
+
+        // An undo is an org WRITE, and the same brakes apply to it as to the
+        // change it reverses. Without this, `automation disable` against
+        // production demands `--production` while undoing it back needs
+        // nothing — and undoing a `permissions grant` REVOKES access in
+        // production. The org comes from the entry, since undo takes no --org.
+        if (change.org) {
+          await guardProduction(change.org, options, 'reverse a recorded change in it');
+        }
+        const ok = await confirmChange(
+          `undo ${change.kind} on ${change.target ?? '(unknown target)'} in ${change.org ?? 'the recorded org'}`,
+          [
+            'This writes the previous state back to the org.',
+            'It appends a compensating entry; the original is never edited.',
+          ],
+          options,
+          jsonMode,
+        );
+        if (!ok) return;
 
         // Undo usually runs long after — and in a different process from — the
         // command that made the change, so nothing would have imported the

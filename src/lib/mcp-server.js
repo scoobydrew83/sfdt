@@ -567,11 +567,12 @@ export const TOOLS = [
   },
   {
     name: 'sfdt_ledger_undo',
-    description: 'Reverse a recorded org change, restoring the state it replaced. Appends a compensating entry rather than editing history. Refuses a second undo of the same change, and refuses one that was recorded as failed. Mutating — requires confirmExecution.',
+    description: 'Reverse a recorded org change, restoring the state it replaced. Appends a compensating entry rather than editing history. Refuses a second undo of the same change, and refuses one that was recorded as failed. An undo is itself an org write, so the production guard applies: pass production: true when the change was made in a production org. Mutating — requires confirmExecution.',
     inputSchema: {
       type: 'object',
       properties: {
         id: { type: 'string', description: 'The change id from sfdt_ledger_list.' },
+        production: { type: 'boolean', description: 'Acknowledge that the org the change was made in is production. Required there; detection fails safe.' },
         confirmExecution: { type: 'boolean', description: 'Must be true to change the org.' }
       },
       required: ['id', 'confirmExecution']
@@ -1243,7 +1244,12 @@ export class SfdtMcpServer {
         if (!args.confirmExecution) {
           throw new Error('Undoing a change writes to the org. Pass confirmExecution: true to proceed.');
         }
-        const { stdout } = await this.#runCliCommand(['ledger', 'undo', args.id, '--json']);
+        // `--yes` because confirmExecution above IS the confirmation at this
+        // layer, exactly as sfdt_automation_set does it — without it the CLI
+        // refuses, since --json is a non-interactive context.
+        const cmdArgs = ['ledger', 'undo', args.id, '--json', '--yes'];
+        if (args.production) cmdArgs.push('--production');
+        const { stdout } = await this.#runCliCommand(cmdArgs);
         return this.#parseCliJson(stdout);
       }
       case 'sfdt_dependencies': {

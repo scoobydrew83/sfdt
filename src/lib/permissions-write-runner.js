@@ -1,4 +1,5 @@
 import path from 'path';
+import { escapeSoql } from '@sfdt/flow-core';
 import { orgRest, restErrorMessage } from './org-rest.js';
 import { apiVersion } from './record-runner.js';
 import { query } from './org-query.js';
@@ -40,7 +41,10 @@ function permissionFlags(level) {
 
 /** Resolve a permission set by label, refusing profiles with the reason. */
 export async function resolveParent(orgAlias, label) {
-  const escaped = String(label).replace(/'/g, "\\'");
+  // flow-core's escapeSoql, not a local one: it escapes the BACKSLASH before the
+  // quote, so a value ending in `\` cannot escape its own closing delimiter and
+  // break out of the literal. Four other call sites in this repo already use it.
+  const escaped = escapeSoql(String(label));
   const rows = await query(
     orgAlias,
     `SELECT Id, Label, IsOwnedByProfile, Profile.Name FROM PermissionSet WHERE Label = '${escaped}' OR Name = '${escaped}'`,
@@ -64,7 +68,7 @@ export async function resolveParent(orgAlias, label) {
 
 /** The current FieldPermissions row for one parent+field, or null. */
 async function currentFieldPermission(orgAlias, parentId, object, field) {
-  const escaped = `${object}.${field}`.replace(/'/g, "\\'");
+  const escaped = escapeSoql(`${object}.${field}`);
   const rows = await query(
     orgAlias,
     `SELECT Id, PermissionsRead, PermissionsEdit FROM FieldPermissions` +

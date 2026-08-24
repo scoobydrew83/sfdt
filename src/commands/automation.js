@@ -1,10 +1,10 @@
 import ora from 'ora';
 import chalk from 'chalk';
-import inquirer from 'inquirer';
 import { AUTOMATION_TYPES } from '@sfdt/flow-core';
 import { loadConfig } from '../lib/config.js';
 import { runAutomationList, setAutomationState } from '../lib/automation-runner.js';
 import { guardProduction } from '../lib/org-facts.js';
+import { confirmChange } from '../lib/confirm-change.js';
 import { resolveExitCode } from '../lib/exit-codes.js';
 import { emitJson, emitJsonError } from '../lib/output.js';
 
@@ -12,29 +12,6 @@ function resolveOrg(config, options) {
   const org = options.org ?? config.defaultOrg;
   if (!org) throw new Error('No org specified — pass --org <alias> or set defaultOrg in .sfdt/config.json');
   return org;
-}
-
-/**
- * Confirm a change that alters org behaviour.
- *
- * Same shape `data.js` uses for a bulk delete: `--yes` skips it, and a
- * non-interactive context (JSON mode, CI, no TTY) REFUSES rather than
- * auto-confirming — a prompt in CI is either a hang or a silent yes, and both
- * are worse than an error telling you to pass `--yes`.
- */
-async function confirmChange(message, detail, options, jsonMode) {
-  if (options.yes) return true;
-  const nonInteractive = jsonMode || process.env.SFDT_NON_INTERACTIVE === 'true' || !process.stdin.isTTY;
-  if (nonInteractive) {
-    throw new Error(`Refusing to ${message} without confirmation — re-run with --yes to proceed.`);
-  }
-  console.log(chalk.yellow(`\n⚠  This will ${message}.`));
-  for (const line of detail) console.log(chalk.dim(`     ${line}`));
-  const { confirmed } = await inquirer.prompt([
-    { type: 'confirm', name: 'confirmed', message: 'Proceed?', default: false },
-  ]);
-  if (!confirmed) console.log(chalk.dim('Aborted — nothing changed.'));
-  return confirmed;
 }
 
 function printGrid(vm) {

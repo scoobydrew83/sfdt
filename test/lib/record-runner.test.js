@@ -127,6 +127,25 @@ describe('getRecord', () => {
   });
 });
 
+describe('a write describes the object ONCE', () => {
+  // editRecord used to call getRecord (which describes) and then describe
+  // again — two of the largest payloads in the API, per write, for one answer.
+  const describeCalls = () =>
+    orgRest.mock.calls.filter(([, url]) => String(url).includes('/describe')).length;
+
+  it('does not re-describe on edit', async () => {
+    routeRest({ onWrite: async () => ({}) });
+    await editRecord(config, REC, { Name: 'New' }, { org: 'dev' });
+    expect(describeCalls()).toBe(1);
+  });
+
+  it('does not re-describe on clone', async () => {
+    routeRest({ onWrite: async () => ({ id: '001800000000002AAA' }) });
+    await cloneRecord(config, REC, {}, { org: 'dev' });
+    expect(describeCalls()).toBe(1);
+  });
+});
+
 describe('editRecord', () => {
   it('PATCHes only what changed', async () => {
     const writes = [];

@@ -43,6 +43,28 @@ beforeEach(() => {
   vi.mocked(search).mockResolvedValue([]);
 });
 
+describe('SOQL identifiers are validated, not escaped', () => {
+  // `FROM ${object}` and `WHERE ${field} != null` are identifier positions.
+  // Quoting does not apply there, so escapeSoql has nothing to grip — the only
+  // defence is refusing a name that is not shaped like an API name.
+  it.each([
+    'Account WHERE Id != null OR Name != null',
+    "Account'",
+    'Account;DROP',
+    '1Account',
+    '',
+  ])('refuses %j', (bad) => {
+    expect(() => parseFieldRef(`${bad}.Region__c`)).toThrow(/not a valid object API name|Expected <Object>/);
+  });
+
+  it('accepts a namespaced custom field', () => {
+    expect(parseFieldRef('ns__Account__c.ns__Region__c')).toEqual({
+      object: 'ns__Account__c',
+      field: 'ns__Region__c',
+    });
+  });
+});
+
 describe('parseFieldRef', () => {
   it('splits Object.Field', () => {
     expect(parseFieldRef('Account.Region__c')).toEqual({ object: 'Account', field: 'Region__c' });

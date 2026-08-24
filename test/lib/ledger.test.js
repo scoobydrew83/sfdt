@@ -99,12 +99,51 @@ describe('append-only writing', () => {
     expect(b.seq).toBe(2);
   });
 
-  it('redacts a secret that strays into a payload', async () => {
+  it('stores the payload RAW — a redacted before-state cannot restore anything', async () => {
+    // `before` is what `undoChange` writes back to the org. Redaction is lossy
+    // and one-way, so a redacted copy would deploy `[REDACTED]` into the org
+    // during the recovery it exists to perform.
     await recordIntent(logDir, intent({ before: { accessToken: 'SECRET', ok: 'keep' } }));
     const [entry] = await readLedger(logDir);
 
-    expect(entry.before.accessToken).toBe('[REDACTED]');
+    expect(entry.before.accessToken).toBe('SECRET');
     expect(entry.before.ok).toBe('keep');
+  });
+
+  it('redacts on the READ side, so nothing shown or emitted carries a secret', async () => {
+    const written = await recordIntent(logDir, intent({ before: { accessToken: 'SECRET', ok: 'keep' } }));
+
+    // Both display paths — `ledger show` and `ledger list` — go through these.
+    const shown = await findChange(logDir, written.id);
+    expect(shown.before.accessToken).toBe('[REDACTED]');
+    expect(shown.before.ok).toBe('keep');
+
+    const [listed] = await listChanges(logDir);
+    expect(listed.before.accessToken).toBe('[REDACTED]');
+  });
+
+  it('keeps the chain intact under concurrent appends', async () => {
+    // `append` reads the last entry to compute seq/prevHash, then writes.
+    // Unserialised, two writers read the same last entry and both claim the
+    // same prevHash — and `verifyLedger` then reports the SECOND as tampering.
+    // A false tamper alarm on a tamper-evidence mechanism discredits the real
+    // ones, so the lock is load-bearing rather than cosmetic.
+    await Promise.all(
+      Array.from({ length: 12 }, (_, i) => recordIntent(logDir, intent({ target: `T${i}` }))),
+    );
+
+    const result = await verifyLedger(logDir);
+    expect(result).toMatchObject({ ok: true, entries: 12 });
+
+    // Every seq handed out exactly once — no two writers agreed on a number.
+    const entries = await readLedger(logDir);
+    expect(entries.map((e) => e.seq).sort((a, b) => a - b)).toEqual([...Array(12).keys()].map((n) => n + 1));
+    expect(new Set(entries.map((e) => e.target)).size).toBe(12);
+  });
+
+  it('leaves no lock file behind', async () => {
+    await recordIntent(logDir, intent());
+    expect(await fs.pathExists(`${ledgerFile()}.lock`)).toBe(false);
   });
 
   it('refuses an entry with no kind — the reverser lookup depends on it', async () => {
@@ -279,13 +318,22 @@ describe('undo', () => {
     await expect(undoChange(logDir, entry.id)).rejects.toThrow(/nothing to undo/);
   });
 
-  it('reports an unreversible kind WITH its before-state, rather than skipping it', async () => {
+  it('reports an unreversible kind and says WHERE the before-state is, rather than skipping it', async () => {
     // Silently skipping would leave the user believing the change was reversed.
-    const entry = await recordIntent(logDir, intent({ kind: 'unknown.kind' }));
+    // The payload itself is not echoed: it is a raw restore blob, and stdout is
+    // where it must not go. Naming the file and the id keeps a hand restore
+    // possible without printing a secret.
+    const entry = await recordIntent(logDir, intent({ kind: 'unknown.kind', before: { accessToken: 'SECRET' } }));
 
     expect(hasReverser('unknown.kind')).toBe(false);
     await expect(undoChange(logDir, entry.id)).rejects.toThrow(/cannot be undone automatically/);
-    await expect(undoChange(logDir, entry.id)).rejects.toThrow(/"active": true/);
+    await expect(undoChange(logDir, entry.id)).rejects.toThrow(new RegExp(LEDGER_FILE));
+    await expect(undoChange(logDir, entry.id)).rejects.toThrow(new RegExp(entry.id));
+
+    // What IS attached for the JSON envelope is the redacted copy.
+    const err = await undoChange(logDir, entry.id).catch((e) => e);
+    expect(err.before.accessToken).toBe('[REDACTED]');
+    expect(await fs.readFile(ledgerFile(), 'utf8')).toContain('SECRET');
   });
 
   it('records the undo as failed when the reverser throws, and leaves the original undone-free', async () => {

@@ -23,8 +23,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   appends a compensating entry and never rewrites the original, so the chain still verifies
   afterwards; a second undo of the same change is refused. `ledger.js` knows nothing about flows
   or permissions — each writing feature registers a reverser by `kind`, and an entry whose kind
-  has no reverser is reported as *not automatically reversible* with its before-state printed,
-  never silently skipped.
+  has no reverser is reported as *not automatically reversible*, naming the ledger file and the
+  entry id so it can be restored by hand, never silently skipped.
 
   This is a deliberate exception to golden principle #5, now written into that file rather than
   quietly contradicted: telemetry never throws, but `recordIntent` **does**, and callers let it.
@@ -255,6 +255,50 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   forget the `NO_COLOR` workaround (sf colorizes even without a TTY, which breaks `JSON.parse`).
   It also gains `restErrorDetails`, which pulls the `fields` array out of a rejection — the only
   thing that says *which* field the org refused.
+
+### Fixed
+
+- **The ledger redacted the very payload it exists to restore.** `recordIntent` ran the audit
+  redactor over the before-state, and `ledger undo` writes that state straight back to the org —
+  so an undo could deploy `[REDACTED]` into a flow, a validation rule or a `.workflow` in place of
+  a real value, and record itself as `applied`. Redaction is lossy and one-way; a restore payload
+  cannot survive it. The ledger now stores the payload raw and redacts on the **read** side
+  instead, so `ledger list`, `ledger show`, the JSON envelope and the MCP tools all still mask
+  secrets while the file stays faithful enough to restore from. The `undo` path that used to print
+  an unreversible entry's before-state now names the file and id instead — stdout is the one place
+  a raw restore payload must not go. The regression test that claimed to prove "restores the
+  recorded Metadata verbatim" could not have caught this: its fixture contained nothing the
+  redactor would touch. It now does.
+
+- **`sfdt automation enable|disable` could toggle the wrong workflow rule.** `flipStatusXml`
+  replaced the *first* `<active>` in the retrieved file, and a `.workflow` file can carry every
+  rule on the object — so a command naming one rule could deactivate another and deploy it. It now
+  flips the rule matching the requested `<fullName>`, and returns the file unchanged (which makes
+  the caller refuse) when the target cannot be located in a file holding more than one flag.
+
+- **`sfdt ledger undo` bypassed the production guard and the confirmation.** Undo is an org write —
+  reversing a `permissions grant` *revokes* access — yet it ran without the two brakes the forward
+  commands require, so a change that needed `--production` to make needed nothing to reverse. It
+  now guards on the org recorded in the entry and confirms before writing, refusing rather than
+  auto-confirming when non-interactive. `sfdt_ledger_undo` gained a matching `production` input.
+
+- **Concurrent ledger appends broke the hash chain.** Computing `seq` and `prevHash` requires
+  reading the file before appending, so two concurrent `sfdt` processes wrote two entries claiming
+  the same predecessor and `ledger verify` reported the second as tampering — a false alarm on the
+  mechanism whose whole job is tamper evidence. Appends now take a cross-process lock file, with a
+  30-second stale-lock reclaim so a killed process cannot wedge the ledger.
+
+- **`sfdt permissions grant|revoke` escaped quotes but not backslashes when building SOQL.** A
+  permission-set label ending in `\` escaped its own closing delimiter and broke out of the string
+  literal. It now uses `@sfdt/flow-core`'s `escapeSoql`, which every other query builder in this
+  repo already used.
+
+- **`sfdt field impact|usage` interpolated object and field names into SOQL unchecked.** These land
+  in identifier positions (`FROM x`, `WHERE y != null`) where quoting does not apply, so escaping
+  cannot help — the names are now validated against the API-name shape and refused otherwise.
+
+- **`sfdt record edit|clone` described the object twice per write**, once via `getRecord` and again
+  directly — two of the largest payloads in the API for one answer. Both now share a single fetch.
 
 ### Changed
 

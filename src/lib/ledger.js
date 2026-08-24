@@ -218,20 +218,103 @@ export function foldEntries(entries) {
   return [...changes.values()];
 }
 
+/**
+ * A change as it may be SHOWN — payloads redacted.
+ *
+ * The counterpart to storing `before`/`after` raw. Everything that displays a
+ * change, or puts one in the JSON envelope, goes through here; the reversers
+ * read the raw entry via `readLedger` instead. That split is what lets the
+ * ledger be both safe to print and faithful enough to restore from.
+ */
+export function redactForDisplay(change) {
+  if (!change) return change;
+  return { ...change, before: redactSensitiveData(change.before), after: redactSensitiveData(change.after) };
+}
+
 export async function listChanges(logDir, { limit = 50 } = {}) {
   const folded = foldEntries(await readLedger(logDir));
-  return folded.slice(-limit).reverse();
+  return folded.slice(-limit).reverse().map(redactForDisplay);
 }
 
 export async function findChange(logDir, id) {
-  return foldEntries(await readLedger(logDir)).find((c) => c.id === id) ?? null;
+  const found = foldEntries(await readLedger(logDir)).find((c) => c.id === id) ?? null;
+  return found && redactForDisplay(found);
 }
 
 // --------------------------------------------------------------------------
 // Writing
 // --------------------------------------------------------------------------
 
-async function append(logDir, partial) {
+/**
+ * How long a lock may sit before it is treated as abandoned.
+ *
+ * A held lock only ever spans one read + one append, so anything older than
+ * this belongs to a process that died holding it. Reclaiming it is safe
+ * precisely because the append it guarded is atomic: either the line landed or
+ * it did not, and a partially written one would be caught as malformed.
+ */
+export const LOCK_STALE_MS = 30_000;
+
+const LOCK_RETRY_MS = 25;
+const LOCK_ATTEMPTS = 200; // 200 × 25ms ≈ 5s before the stale check bites.
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+/**
+ * Serialise read-then-append across PROCESSES.
+ *
+ * `append` computes `seq` and `prevHash` from the current last entry, then
+ * writes. Without a lock, two concurrent `sfdt` runs both read the same last
+ * entry and both write a line claiming the same `prevHash` — and `verifyLedger`
+ * then reports "a line was edited or removed" at the second one. A false
+ * tamper alarm on the mechanism whose entire job is tamper evidence is worse
+ * than the collision itself, because it discredits every real alarm.
+ *
+ * An in-process mutex would not do: the racing writers are separate CLI
+ * invocations. `open(…, 'wx')` is O_EXCL — one atomic filesystem call, no
+ * dependency, and it works across processes because the kernel arbitrates it.
+ */
+async function withAppendLock(logDir, fn) {
+  await fs.ensureDir(logDir);
+  const lockFile = `${ledgerPath(logDir)}.lock`;
+  let handle = null;
+
+  for (let attempt = 0; attempt < LOCK_ATTEMPTS && !handle; attempt++) {
+    try {
+      handle = await fs.open(lockFile, 'wx');
+    } catch (err) {
+      if (err.code !== 'EEXIST') throw err;
+      // Reclaim a lock whose holder died. Checked on every attempt rather than
+      // only at the end, so a stale lock costs one retry instead of five
+      // seconds of waiting for a process that is never coming back.
+      const age = await fs.stat(lockFile).then((st) => Date.now() - st.mtimeMs).catch(() => 0);
+      if (age > LOCK_STALE_MS) await fs.remove(lockFile).catch(() => {});
+      else await sleep(LOCK_RETRY_MS);
+    }
+  }
+
+  if (!handle) {
+    throw new Error(
+      `Could not take the ledger lock at ${lockFile} — another sfdt process has held it for over ` +
+        `${Math.round((LOCK_ATTEMPTS * LOCK_RETRY_MS) / 1000)}s. If no sfdt command is running, ` +
+        `delete that file and retry.`,
+    );
+  }
+
+  try {
+    await fs.write(handle, `${process.pid}\n`).catch(() => {});
+    return await fn();
+  } finally {
+    await fs.close(handle).catch(() => {});
+    await fs.remove(lockFile).catch(() => {});
+  }
+}
+
+function append(logDir, partial) {
+  return withAppendLock(logDir, () => appendLocked(logDir, partial));
+}
+
+async function appendLocked(logDir, partial) {
   const entries = await readLedger(logDir);
   const last = entries[entries.length - 1];
   if (last?._malformed) {
@@ -248,7 +331,6 @@ async function append(logDir, partial) {
     prevHash: last?.hash ?? null,
   };
   entry.hash = hashEntry(entry);
-  await fs.ensureDir(logDir);
   // Append-only, by the open mode itself. Nothing in this module ever opens the
   // file for writing or truncation.
   await fs.appendFile(ledgerPath(logDir), `${JSON.stringify(entry)}\n`, 'utf8');
@@ -279,10 +361,18 @@ export async function recordIntent(logDir, { org, kind, target, summary, before,
     org: org ?? null,
     target: target ?? null,
     summary: summary ?? null,
-    // Redacted with the same function the GUI audit log uses, so a token that
-    // strays into a payload is masked here too.
-    before: redactSensitiveData(before ?? null),
-    after: redactSensitiveData(after ?? null),
+    // Stored RAW, deliberately. `before` is a RESTORE payload: `undoChange`
+    // hands it to a reverser that writes it straight back to the org. Redaction
+    // is lossy and one-way, so redacting it here would deploy `[REDACTED]` into
+    // a Flow, a validation rule or a `.workflow` during an undo — corrupting the
+    // org at the exact moment the user is relying on this file to repair it.
+    //
+    // Redaction moved to the READ side instead (`listChanges` / `findChange`),
+    // which is what every display, JSON envelope and MCP response goes through.
+    // Nothing that leaves this process carries an unredacted payload; the file
+    // on disk stays faithful because only a faithful copy can restore anything.
+    before: before ?? null,
+    after: after ?? null,
   });
 }
 
@@ -328,11 +418,16 @@ export async function undoChange(logDir, id, ctx = {}) {
 
   const reverse = reversers.get(original.kind);
   if (!reverse) {
+    // The before-state is NOT printed here. It is a raw restore payload, and
+    // stdout is the one place it must not go (golden principle #6). Point at
+    // the file that holds it instead — a hand restore needs the faithful copy,
+    // which is precisely the copy that cannot be echoed.
     const err = new Error(
       `No reverser is registered for kind "${original.kind}", so this change cannot be undone ` +
-        `automatically. Its recorded before-state is:\n${JSON.stringify(original.before, null, 2)}`,
+        `automatically. Its before-state is recorded verbatim in ${ledgerPath(logDir)}, in the ` +
+        `entry with id "${id}" — restore from there by hand.`,
     );
-    err.before = original.before;
+    err.before = redactSensitiveData(original.before);
     throw err;
   }
 

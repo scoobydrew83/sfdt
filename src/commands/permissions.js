@@ -1,9 +1,9 @@
 import ora from 'ora';
 import chalk from 'chalk';
-import inquirer from 'inquirer';
 import { loadConfig } from '../lib/config.js';
 import { applyPermissionChange, applyDriftFix } from '../lib/permissions-write-runner.js';
 import { guardProduction } from '../lib/org-facts.js';
+import { confirmChange } from '../lib/confirm-change.js';
 import {
   runPermissionMatrix,
   runOfflinePermissionMatrix,
@@ -119,27 +119,6 @@ function applyDriftGate(vm, options, jsonMode) {
       ),
     );
   }
-}
-
-/**
- * Confirm a change that alters who can see or edit data.
- *
- * Follows `data.js`'s bulk-delete pattern: `--yes` skips it, and a
- * non-interactive context REFUSES rather than auto-confirming.
- */
-async function confirmChange(message, detail, options, jsonMode) {
-  if (options.yes) return true;
-  const nonInteractive = jsonMode || process.env.SFDT_NON_INTERACTIVE === 'true' || !process.stdin.isTTY;
-  if (nonInteractive) {
-    throw new Error(`Refusing to ${message} without confirmation — re-run with --yes to proceed.`);
-  }
-  console.log(chalk.yellow(`\n⚠  This will ${message}.`));
-  for (const line of detail) console.log(chalk.dim(`     ${line}`));
-  const { confirmed } = await inquirer.prompt([
-    { type: 'confirm', name: 'confirmed', message: 'Proceed?', default: false },
-  ]);
-  if (!confirmed) console.log(chalk.dim('Aborted — nothing changed.'));
-  return confirmed;
 }
 
 function printWriteResult(result, level) {

@@ -77,6 +77,23 @@ describe('resolveParent', () => {
     routeQueries([[/FROM PermissionSet/, []]]);
     await expect(resolveParent('dev', 'Nope')).rejects.toThrow(/No permission set named/);
   });
+
+  it('escapes the BACKSLASH as well as the quote, so a label cannot break out of the literal', async () => {
+    // Escaping only `'` leaves a trailing backslash escaping the closing
+    // delimiter instead — `'Ops\'` — which ends the literal early and lets the
+    // rest of the label be read as SOQL. This is a permission-GRANTING path, so
+    // it uses flow-core's escapeSoql like every other query builder here.
+    let seen = '';
+    vi.mocked(query).mockImplementation(async (_org, soql) => {
+      seen = soql;
+      return [PERMSET];
+    });
+
+    await resolveParent('dev', "Ops\\");
+
+    expect(seen).toContain("Label = 'Ops\\\\'");
+    expect(seen).not.toContain("'Ops\\'");
+  });
 });
 
 describe('applyPermissionChange', () => {

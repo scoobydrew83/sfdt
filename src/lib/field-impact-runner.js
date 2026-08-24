@@ -18,6 +18,23 @@ import { getOrgInstanceUrl } from './org-session.js';
  * user would have no way to tell which answer to trust.
  */
 
+/**
+ * A Salesforce API name, and nothing else.
+ *
+ * Object and field names go into SOQL as IDENTIFIERS — `FROM ${object}`,
+ * `WHERE ${field} != null` — where quoting does not apply and `escapeSoql` has
+ * nothing to escape. The only defence is refusing anything that is not shaped
+ * like an API name in the first place.
+ */
+const API_NAME_RE = /^[A-Za-z][A-Za-z0-9_]*$/;
+
+function assertApiName(value, what) {
+  if (!API_NAME_RE.test(String(value ?? ''))) {
+    throw new Error(`"${value}" is not a valid ${what} API name.`);
+  }
+  return value;
+}
+
 /** `Account.Region__c` → `{ object, field }`. */
 export function parseFieldRef(ref) {
   const raw = String(ref ?? '').trim();
@@ -25,7 +42,10 @@ export function parseFieldRef(ref) {
   if (dot <= 0 || dot === raw.length - 1) {
     throw new Error(`Expected <Object>.<Field>, e.g. Account.Region__c — got "${ref}".`);
   }
-  return { object: raw.slice(0, dot), field: raw.slice(dot + 1) };
+  return {
+    object: assertApiName(raw.slice(0, dot), 'object'),
+    field: assertApiName(raw.slice(dot + 1), 'field'),
+  };
 }
 
 /**
@@ -89,6 +109,8 @@ export async function runFieldImpact(orgAlias, ref, { links = false } = {}) {
  */
 async function countPopulated(orgAlias, object, field) {
   try {
+    assertApiName(object, 'object');
+    assertApiName(field, 'field');
     return await count(orgAlias, `SELECT COUNT() FROM ${object} WHERE ${field} != null`);
   } catch {
     return null;
@@ -129,6 +151,7 @@ export const POPULATION_CONCURRENCY = 5;
  * @returns {Promise<import('@sfdt/flow-core').FieldUsageVM>}
  */
 export async function runFieldUsage(config, orgAlias, object, { population = false } = {}) {
+  assertApiName(object, 'object');
   const described = await describeSObject(config, object, { org: orgAlias });
   const fields = described.fields.map((f) => ({
     name: f.name,

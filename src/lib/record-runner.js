@@ -110,20 +110,35 @@ export function classifyWriteError(err) {
   return { outcome: 'rejected', message: restErrorMessage(err), details: restErrorDetails(err) };
 }
 
-/** Read one record plus the describe-derived editability of every field. */
-export async function getRecord(config, recordId, { org, sobject } = {}) {
+/**
+ * Everything a read or a write needs about one record: its type, its describe,
+ * and its current values — each fetched exactly ONCE.
+ *
+ * Private because `describe` must not escape into a command's output. A full
+ * describe is a very large payload, and `record get --json` is consumed by
+ * scripts and by the MCP tool; putting it in the envelope would bloat every
+ * response with data no caller asked for.
+ *
+ * This exists because `editRecord` used to call `getRecord` (which describes)
+ * and then `describeForEdit` again — two large round trips per write, for the
+ * same answer.
+ */
+async function loadRecordContext(config, recordId, { org, sobject } = {}) {
   if (!isRecordId(recordId)) {
     throw new Error(`"${recordId}" is not a 15 or 18 character Salesforce record Id.`);
   }
-  const orgAlias = org;
-  const type = sobject ?? (await resolveSObject(orgAlias, recordId, config));
+  const type = sobject ?? (await resolveSObject(org, recordId, config));
   if (!type) throw new Error(`Could not resolve an sObject for the key prefix "${recordId.slice(0, 3)}".`);
 
-  const describe = await describeForEdit(orgAlias, type, config);
-  const record = await orgRest(
-    orgAlias,
-    `/services/data/${apiVersion(config)}/sobjects/${type}/${recordId}`,
-  );
+  const describe = await describeForEdit(org, type, config);
+  const record = await orgRest(org, `/services/data/${apiVersion(config)}/sobjects/${type}/${recordId}`);
+  return { type, describe, record: record ?? {} };
+}
+
+/** Read one record plus the describe-derived editability of every field. */
+export async function getRecord(config, recordId, { org, sobject } = {}) {
+  const orgAlias = org;
+  const { type, describe, record } = await loadRecordContext(config, recordId, { org, sobject });
 
   const fields = describe.fields.map((f) => {
     const editability = classifyFieldEditability(f, 'update');
@@ -137,7 +152,7 @@ export async function getRecord(config, recordId, { org, sobject } = {}) {
     };
   });
 
-  return { id: recordId, sobject: type, org: orgAlias, fields, record: record ?? {} };
+  return { id: recordId, sobject: type, org: orgAlias, fields, record };
 }
 
 /**
@@ -150,8 +165,8 @@ export async function getRecord(config, recordId, { org, sobject } = {}) {
  * PATCHed to null over a value the user was never allowed to see.
  */
 export async function editRecord(config, recordId, values, { org, sobject, dryRun = false } = {}) {
-  const current = await getRecord(config, recordId, { org, sobject });
-  const describe = await describeForEdit(org, current.sobject, config);
+  const { type, describe, record } = await loadRecordContext(config, recordId, { org, sobject });
+  const current = { sobject: type, record };
 
   // Refuse locally, by name, before anything reaches the org.
   const refused = [];
@@ -215,9 +230,9 @@ export async function editRecord(config, recordId, values, { org, sobject, dryRu
  * while an auto-number or formula is excluded, exactly as the browser does it.
  */
 export async function cloneRecord(config, recordId, values, { org, sobject, dryRun = false } = {}) {
-  const current = await getRecord(config, recordId, { org, sobject });
-  const describe = await describeForEdit(org, current.sobject, config);
-  const seeded = { ...current.record, ...values };
+  const { type, describe, record } = await loadRecordContext(config, recordId, { org, sobject });
+  const current = { sobject: type };
+  const seeded = { ...record, ...values };
   const { body: created, includedFieldNames } = buildCreateBody(describe, seeded);
   const body = JSON.parse(JSON.stringify(created));
 

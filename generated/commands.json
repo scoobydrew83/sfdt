@@ -6315,6 +6315,20 @@
           ],
           "options": [
             {
+              "flags": "--yes",
+              "name": "yes",
+              "required": false,
+              "default": null,
+              "description": "Skip the confirmation prompt"
+            },
+            {
+              "flags": "--production",
+              "name": "production",
+              "required": false,
+              "default": null,
+              "description": "Acknowledge that the target org is production"
+            },
+            {
               "flags": "--json",
               "name": "json",
               "required": false,

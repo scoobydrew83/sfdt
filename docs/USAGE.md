@@ -1196,6 +1196,19 @@ sfdt ledger verify               # has the file been tampered with?
 sfdt ledger undo <id>            # put it back
 ```
 
+| Option | Description |
+|---|---|
+| `--limit <n>` | For `list`: how many to show (default 50) |
+| `--yes` | For `undo`: skip the confirmation prompt (required for non-interactive use) |
+| `--production` | For `undo`: acknowledge that the org the change was made in is production |
+| `--json` | Emit machine-readable output |
+
+**An undo is an org write, and carries the same brakes as the change it reverses.** It needs
+`--production` against a production org and a confirmation before it runs — the same two gates
+`automation disable` and `permissions grant` use. Without that, the forward change would demand
+`--production` while putting it back demanded nothing, and undoing a `permissions grant` *revokes*
+access. `undo` takes no `--org`: the target comes from the recorded entry.
+
 `automation disable` and `permissions grant` record the state that preceded them before they
 touch the org. That is what makes them reversible — and it is the thing a stage-and-approve UI
 cannot do, because approval only ever looks forward. You find out a change was wrong *after* it
@@ -1215,6 +1228,19 @@ all would present consequences as if they were problems.
 **Nothing is ever mutated.** Undo appends a compensating entry rather than flipping a flag on the
 original, so `ledger verify` still passes afterwards. A second undo of the same change is refused —
 it would re-apply it.
+
+**The before-state is stored raw, and redacted only when shown.** It is a *restore payload* —
+`undo` writes it straight back to the org — and redaction is lossy and one-way, so a redacted copy
+would deploy `[REDACTED]` into a flow or a validation rule during the recovery it exists to
+perform. Redaction happens on the read side instead: `ledger list`, `ledger show`, the JSON
+envelope and the MCP tools all mask secrets, and nothing carrying an unredacted payload leaves the
+process. Treat `logs/ledger.jsonl` with the same care as the org metadata it mirrors.
+
+**Appends are locked across processes.** Computing an entry's sequence number and previous-hash
+means reading the file before writing to it, so two concurrent `sfdt` runs could otherwise write
+two entries claiming the same predecessor — and `verify` would report the second as tampering. A
+lock file beside the ledger serialises that window; a lock left by a killed process is reclaimed
+after 30 seconds.
 
 | Status | Meaning |
 |---|---|

@@ -212,6 +212,31 @@ describe('flipStatusXml', () => {
     expect(flipStatusXml('<active>true</active>', t, false)).toBe('<active>false</active>');
   });
 
+  it('flips the NAMED rule, not whichever appears first in the file', () => {
+    // A .workflow file carries every rule on the object. Flipping the first
+    // <active> would deactivate an unrelated rule and deploy it — a silent
+    // production regression from a command that named a different rule.
+    const t = findAutomationType('workflow-rule');
+    const xml = [
+      '<Workflow>',
+      '  <rules><fullName>Other_Rule</fullName><active>true</active></rules>',
+      '  <rules><fullName>Region_Required</fullName><active>true</active></rules>',
+      '</Workflow>',
+    ].join('\n');
+
+    const out = flipStatusXml(xml, t, false, 'Region_Required');
+
+    expect(out).toContain('<fullName>Other_Rule</fullName><active>true</active>');
+    expect(out).toContain('<fullName>Region_Required</fullName><active>false</active>');
+  });
+
+  it('refuses an ambiguous file rather than guessing, when no rule is named', () => {
+    // Unchanged is the signal stageDeployToggle refuses on.
+    const t = findAutomationType('workflow-rule');
+    const xml = '<Workflow><rules><active>true</active></rules><rules><active>true</active></rules></Workflow>';
+    expect(flipStatusXml(xml, t, false)).toBe(xml);
+  });
+
   it('returns the input UNCHANGED when no flag is found, so the caller can refuse', () => {
     // Returning unchanged is the signal; the caller refuses to deploy rather
     // than guessing at an unfamiliar file shape.
@@ -253,6 +278,36 @@ describe('the production guard', () => {
 });
 
 describe('undo restores the recorded Metadata verbatim', () => {
+  // A payload the audit redactor WOULD mangle. `redactSensitiveData` rewrites
+  // `token = <value>` inside any string, and blanks any key named `token`.
+  // Both shapes occur in real component metadata, and the ledger's before-state
+  // is written straight back to the org — so if the ledger redacts what it
+  // stores, an undo deploys `[REDACTED]` into the org during the recovery it
+  // exists to perform. This fixture is the guard against that regression.
+  const REDACTION_HOSTILE_METADATA = {
+    active: true,
+    errorConditionFormula: 'ISBLANK(Region__c)',
+    errorMessage: 'Region is required — quote token = 4f9ab2c1 when contacting support',
+    description: 'keep me',
+  };
+
+  it('does NOT redact the restore payload — a redacted before-state corrupts the org', async () => {
+    routeQueries([
+      [/FROM ValidationRule WHERE Id/, [{ Id: '03dx', Metadata: REDACTION_HOSTILE_METADATA }]],
+      [/FROM ValidationRule/, [VR]],
+    ]);
+    const result = await setAutomationState(config, 'dev', 'validation-rule', 'Account.Region_Required', false, { logDir });
+
+    vi.mocked(execa).mockClear();
+    await undoChange(logDir, result.ledgerId, { org: 'dev', config });
+
+    const call = vi.mocked(execa).mock.calls.find(([, args]) => args?.includes('update'));
+    const written = JSON.parse(call[1][call[1].indexOf('--values') + 1].replace(/^Metadata=/, ''));
+
+    expect(written).toEqual(REDACTION_HOSTILE_METADATA);
+    expect(JSON.stringify(written)).not.toContain('[REDACTED]');
+  });
+
   it('writes back exactly what was read, with no re-derivation', async () => {
     routeQueries([
       [/FROM ValidationRule WHERE Id/, [{ Id: '03dx', Metadata: VR_METADATA }]],

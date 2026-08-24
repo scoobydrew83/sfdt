@@ -379,11 +379,12 @@
     },
     {
       "name": "sfdt_ledger_undo",
-      "description": "Reverse a recorded org change, restoring the state it replaced. Appends a compensating entry rather than editing history. Refuses a second undo of the same change, and refuses one that was recorded as failed. Mutating — requires confirmExecution.",
+      "description": "Reverse a recorded org change, restoring the state it replaced. Appends a compensating entry rather than editing history. Refuses a second undo of the same change, and refuses one that was recorded as failed. An undo is itself an org write, so the production guard applies: pass production: true when the change was made in a production org. Mutating — requires confirmExecution.",
       "confirmExecution": true,
       "internal": false,
       "inputProperties": [
         "id",
+        "production",
         "confirmExecution"
       ]
     },

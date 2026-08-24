@@ -196,7 +196,7 @@ export async function stageDeployToggle(orgAlias, type, row, enable) {
     }
 
     const before = await fs.readFile(target, 'utf8');
-    const after = flipStatusXml(before, type, enable);
+    const after = flipStatusXml(before, type, enable, row.name);
     if (after === before) {
       throw new Error(
         `Could not find the status field in ${path.basename(target)}. Refusing to deploy an ` +
@@ -228,15 +228,45 @@ async function pickStatusFile(files, type) {
  * deliberate and is the signal `stageDeployToggle` acts on: it refuses to
  * deploy rather than guessing at an unfamiliar file shape, because deploying a
  * file it did not understand is how a toggle turns into a regression.
+ *
+ * `fullName` matters for workflow rules and is not optional in practice: a
+ * `.workflow` file can carry EVERY rule on the object, each with its own
+ * `<active>`. Flipping the first one would deactivate an unrelated rule and
+ * deploy it — a silent production regression from a command that plainly named
+ * a different rule. When the named rule cannot be located and the file holds
+ * more than one flag, this returns the input unchanged so the caller refuses.
+ *
+ * @param {string} xml
+ * @param {object} type
+ * @param {boolean} enable
+ * @param {string} [fullName] - the rule to flip, for multi-rule files
  */
-export function flipStatusXml(xml, type, enable) {
+export function flipStatusXml(xml, type, enable, fullName) {
   if (type.id === 'apex-trigger') {
     return xml.replace(
       /<status>(Active|Inactive)<\/status>/,
       `<status>${enable ? 'Active' : 'Inactive'}</status>`,
     );
   }
-  return xml.replace(/<active>(true|false)<\/active>/, `<active>${enable ? 'true' : 'false'}</active>`);
+
+  const next = `<active>${enable ? 'true' : 'false'}</active>`;
+
+  if (fullName) {
+    let flippedOne = false;
+    const out = xml.replace(/<rules>[\s\S]*?<\/rules>/g, (block) => {
+      if (flippedOne) return block;
+      if (block.match(/<fullName>([^<]*)<\/fullName>/)?.[1]?.trim() !== fullName) return block;
+      const flipped = block.replace(/<active>(true|false)<\/active>/, next);
+      flippedOne = flipped !== block;
+      return flipped;
+    });
+    if (flippedOne) return out;
+  }
+
+  // No named rule, or the name matched nothing. Only safe when the file is
+  // unambiguous — more than one flag and we cannot know which was meant.
+  if ((xml.match(/<active>(true|false)<\/active>/g) ?? []).length > 1) return xml;
+  return xml.replace(/<active>(true|false)<\/active>/, next);
 }
 
 /** Write the staged change into the temp tree and deploy it. */
