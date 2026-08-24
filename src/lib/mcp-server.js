@@ -1021,6 +1021,37 @@ function extractTraceContext(meta) {
   return { traceparent };
 }
 
+/**
+ * A qualified `Object.Field` name, and nothing else.
+ *
+ * `sfdt_permissions_grant` is the ONLY tool that spreads a caller-supplied array
+ * into child argv, and its CLI target is a Commander **variadic** positional that
+ * also declares `--production`. Commander parses options anywhere in argv —
+ * including in the middle of a variadic — so any element beginning with `-` is
+ * consumed as a flag and silently removed from the field list. `--production` is
+ * the sole gate on `guardProduction()`, so an injected element turned the
+ * production refusal into a no-op and could redirect the write with `--org`.
+ *
+ * That input is attacker-reachable: this server is driven by an LLM whose context
+ * routinely carries org-controlled text (Apex comments, flow descriptions, record
+ * values). So the array is validated element-by-element here, AND passed after a
+ * `--` terminator below — either alone would close it; both together mean a future
+ * change to one cannot silently reopen it.
+ */
+const QUALIFIED_FIELD_RE = /^[A-Za-z][A-Za-z0-9_]*\.[A-Za-z][A-Za-z0-9_]*$/;
+
+function validateFieldNames(fields) {
+  if (!Array.isArray(fields) || fields.length === 0) {
+    throw new Error('`fields` must be a non-empty array of qualified names, e.g. ["Account.Region__c"].');
+  }
+  for (const f of fields) {
+    if (typeof f !== 'string' || !QUALIFIED_FIELD_RE.test(f)) {
+      throw new Error(`"${f}" is not a qualified <Object>.<Field> name. Field names cannot be flags or contain shell-significant characters.`);
+    }
+  }
+  return fields;
+}
+
 export class SfdtMcpServer {
   #server;
   #config;
@@ -1185,6 +1216,13 @@ export class SfdtMcpServer {
         return this.#parseCliJson(stdout);
       }
       case 'sfdt_events_publish': {
+        // The SDK does NOT validate a tool's inputSchema — `arguments` is typed
+        // `z.record(z.string(), z.unknown()).optional()` — so declaring
+        // confirmExecution in `required` is documentation, not a control. The
+        // handler check is the only thing that enforces it.
+        if (!args.confirmExecution) {
+          throw new Error('Publishing an event fires every real subscriber — flows, triggers, and any external system on the channel. Pass confirmExecution: true to proceed.');
+        }
         const cmdArgs = ['events', 'publish', args.event, '--json'];
         for (const [k, v] of Object.entries(args.fields ?? {})) {
           cmdArgs.push('--field', `${k}=${v}`);
@@ -1207,6 +1245,11 @@ export class SfdtMcpServer {
         return this.#parseCliJson(stdout);
       }
       case 'sfdt_packages_note': {
+        // Writes .sfdt/packages.json, a COMMITTED repo file. See the note on
+        // sfdt_events_publish: the schema's `required` is not enforced by the SDK.
+        if (!args.confirmExecution) {
+          throw new Error('Annotating a package writes .sfdt/packages.json, a committed repo file. Pass confirmExecution: true to proceed.');
+        }
         const cmdArgs = ['packages', 'note', args.namespace, '--json'];
         if (args.url !== undefined) cmdArgs.push('--url', args.url);
         if (args.latest !== undefined) cmdArgs.push('--latest', args.latest);
@@ -1252,11 +1295,14 @@ export class SfdtMcpServer {
           throw new Error('Changing field permissions alters who can see org data. Pass confirmExecution: true to proceed.');
         }
         const verb = args.level === 'none' ? 'revoke' : 'grant';
-        const cmdArgs = ['permissions', verb, ...args.fields, '--parent', args.parent, '--json', '--yes'];
+        const fields = validateFieldNames(args.fields);
+        const cmdArgs = ['permissions', verb, '--parent', args.parent, '--json', '--yes'];
         if (verb === 'grant') cmdArgs.push('--level', args.level);
         if (args.dryRun) cmdArgs.push('--dry-run');
         if (args.production) cmdArgs.push('--production');
         if (args.org) cmdArgs.push('--org', args.org);
+        // `--` LAST: everything after it is a positional, whatever it looks like.
+        cmdArgs.push('--', ...fields);
         const { stdout } = await this.#runCliCommand(cmdArgs);
         return this.#parseCliJson(stdout);
       }

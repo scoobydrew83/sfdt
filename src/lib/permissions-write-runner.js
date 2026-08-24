@@ -66,13 +66,21 @@ export async function resolveParent(orgAlias, label) {
   return { id: row.Id, label: row.Label ?? label };
 }
 
-/** The current FieldPermissions row for one parent+field, or null. */
+/**
+ * The current FieldPermissions row for one parent+field, or null.
+ *
+ * `parentId` is escaped, not trusted for being an Id. On the WRITE path it comes
+ * from `resolveParent` and really is org-supplied — but `reversePermissions`
+ * calls this with `before.parentId` read straight out of `logs/ledger.jsonl`,
+ * which is an ordinary file in the target project and can arrive with a cloned
+ * repo. One escaped interpolation covers both callers.
+ */
 async function currentFieldPermission(orgAlias, parentId, object, field) {
   const escaped = escapeSoql(`${object}.${field}`);
   const rows = await query(
     orgAlias,
     `SELECT Id, PermissionsRead, PermissionsEdit FROM FieldPermissions` +
-      ` WHERE ParentId = '${parentId}' AND Field = '${escaped}' LIMIT 1`,
+      ` WHERE ParentId = '${escapeSoql(String(parentId))}' AND Field = '${escaped}' LIMIT 1`,
   );
   if (rows.length === 0) return null;
   return {

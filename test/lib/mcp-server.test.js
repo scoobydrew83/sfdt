@@ -189,6 +189,62 @@ describe('SfdtMcpServer', () => {
       expect(result.content[0].text).toContain('preflight pass');
     });
 
+    describe('sfdt_permissions_grant cannot smuggle flags through its variadic', () => {
+      // `fields` is the ONLY caller-supplied array spread into child argv, and
+      // its CLI target is a Commander variadic that also declares --production.
+      // Commander consumes options anywhere in argv, including mid-variadic, so
+      // an element beginning with `-` became a FLAG and vanished from the field
+      // list. --production is the sole gate on guardProduction(), so a single
+      // injected element disabled the production brake — reachable from org
+      // text an LLM is holding in context.
+      it('rejects a field element that is really a flag', async () => {
+        const result = await callTool('sfdt_permissions_grant', {
+          parent: 'Sales Ops',
+          fields: ['Account.SSN__c', '--production'],
+          level: 'edit',
+          confirmExecution: true,
+        });
+
+        expect(result.isError).toBe(true);
+        expect(result.content[0].text).toMatch(/not a qualified <Object>\.<Field> name/);
+        expect(execa, 'the CLI must never be reached with an injected flag').not.toHaveBeenCalled();
+      });
+
+      it.each([
+        ['--org', ['Account.A', '--org', 'EVIL']],
+        ['-p shorthand', ['-p']],
+        ['non-string', ['Account.A', 42]],
+        ['empty array', []],
+        ['shell metacharacters', ['Account.A; rm -rf /']],
+        ['unqualified name', ['Account']],
+      ])('rejects %s', async (_label, fields) => {
+        const result = await callTool('sfdt_permissions_grant', {
+          parent: 'P', fields, level: 'read', confirmExecution: true,
+        });
+        expect(result.isError).toBe(true);
+        expect(execa).not.toHaveBeenCalled();
+      });
+
+      it('passes valid fields AFTER a `--` terminator so nothing later can be read as an option', async () => {
+        execa.mockResolvedValueOnce({ exitCode: 0, stdout: '{}', stderr: '' });
+
+        await callTool('sfdt_permissions_grant', {
+          parent: 'Sales Ops',
+          fields: ['Account.Region__c', 'Account.Tier__c'],
+          level: 'edit',
+          confirmExecution: true,
+        });
+
+        const argv = execa.mock.calls[0][1];
+        const dashDash = argv.indexOf('--');
+        expect(dashDash, 'a `--` terminator must precede the variadic').toBeGreaterThan(-1);
+        // Structural defence: everything after `--` is positional by definition,
+        // so even a future validator gap cannot reopen the injection.
+        expect(argv.slice(dashDash + 1)).toEqual(['Account.Region__c', 'Account.Tier__c']);
+        expect(argv.indexOf('--parent')).toBeLessThan(dashDash);
+      });
+    });
+
     it('executes sfdt_drift tool', async () => {
       const payload = { driftStatus: 'PASS' };
       execa.mockResolvedValueOnce({ exitCode: 0, stdout: JSON.stringify(payload), stderr: '' });

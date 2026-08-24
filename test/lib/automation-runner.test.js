@@ -15,7 +15,7 @@ import {
   flipStatusXml,
   setAutomationState,
 } from '../../src/lib/automation-runner.js';
-import { readLedger, foldEntries, undoChange, _resetReversersForTests } from '../../src/lib/ledger.js';
+import { readLedger, foldEntries, undoChange, recordIntent, recordOutcome, _resetReversersForTests } from '../../src/lib/ledger.js';
 import { isProductionOrg, guardProduction } from '../../src/lib/org-facts.js';
 
 // What is asserted here is what THIS layer decides: that a Metadata write is
@@ -274,6 +274,64 @@ describe('the production guard', () => {
   it('allows production when acknowledged', async () => {
     vi.mocked(execa).mockResolvedValue({ stdout: JSON.stringify({ result: { isSandbox: false } }) });
     await expect(guardProduction('prod', { production: true }, 'x')).resolves.toMatchObject({ acknowledged: true });
+  });
+});
+
+describe('a forged ledger entry cannot write outside the staging directory', () => {
+  // `logs/ledger.jsonl` is an ordinary file in the TARGET Salesforce project and
+  // `sfdt init` only recommends gitignoring it — so a cloned or forked repo can
+  // ship a forged entry. Verifying the chain would not help: it is an unkeyed
+  // SHA-256, so whoever can write the file can compute a valid chain.
+  // Containment is the control that actually holds.
+  it.each([
+    ['parent traversal', '../../../../../../tmp/sfdt-pwned'],
+    ['absolute path', '/tmp/sfdt-pwned-absolute'],
+    ['traversal mid-path', 'triggers/../../../../tmp/sfdt-pwned-mid'],
+  ])('refuses %s', async (_label, relPath) => {
+    const logDir2 = await fs.mkdtemp(path.join(os.tmpdir(), 'sfdt-forge-'));
+    try {
+      const entry = await recordIntent(logDir2, {
+        org: 'dev',
+        kind: 'automation.apex-trigger',
+        target: 'Evil',
+        summary: 'forged',
+        before: { mode: 'deploy', relPath, xml: '<pwned/>', id: '01q', active: true },
+        after: { mode: 'deploy', relPath, xml: '<x/>', id: '01q', active: false },
+      });
+      await recordOutcome(logDir2, entry.id, { status: 'applied' });
+
+      await expect(
+        undoChange(logDir2, entry.id, { org: 'dev', config }),
+      ).rejects.toThrow(/escapes the staging directory/);
+
+      // The write happened BEFORE the deploy in the vulnerable version, so it
+      // landed even when the deploy failed. Nothing may be written at all.
+      expect(await fs.pathExists('/tmp/sfdt-pwned-absolute')).toBe(false);
+      // And no deploy may have been attempted with the forged payload.
+      const deployed = vi.mocked(execa).mock.calls.some(([, a]) => a?.includes('deploy'));
+      expect(deployed).toBe(false);
+    } finally {
+      await fs.remove(logDir2);
+    }
+  });
+
+  it('still restores a legitimate relative path', async () => {
+    const logDir2 = await fs.mkdtemp(path.join(os.tmpdir(), 'sfdt-ok-'));
+    try {
+      const entry = await recordIntent(logDir2, {
+        org: 'dev',
+        kind: 'automation.apex-trigger',
+        target: 'Good',
+        summary: 'real',
+        before: { mode: 'deploy', relPath: 'triggers/Good.trigger-meta.xml', xml: '<status>Active</status>', id: '01q', active: true },
+        after: { mode: 'deploy', relPath: 'triggers/Good.trigger-meta.xml', xml: '<status>Inactive</status>', id: '01q', active: false },
+      });
+      await recordOutcome(logDir2, entry.id, { status: 'applied' });
+
+      await expect(undoChange(logDir2, entry.id, { org: 'dev', config })).resolves.toMatchObject({ ok: true });
+    } finally {
+      await fs.remove(logDir2);
+    }
   });
 });
 

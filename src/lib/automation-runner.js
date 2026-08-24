@@ -421,7 +421,25 @@ async function reverseAutomation(before, entry, ctx) {
     // bare directory silently deploys nothing.
     const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'sfdt-automation-undo-'));
     try {
-      const file = path.join(tmpDir, before.relPath);
+      // `before` is UNTRUSTED at this boundary, even though sfdt wrote it.
+      // `logs/ledger.jsonl` is an ordinary file in the target project, and
+      // `sfdt init` only recommends gitignoring it — so a cloned or forked
+      // Salesforce repo can ship a forged entry. Verifying the chain would not
+      // help: it is an unkeyed SHA-256, so anyone who can write the file can
+      // compute a valid chain. Containment is the control that actually holds.
+      //
+      // Without this, `relPath: "../../../../.zshrc"` escapes the temp dir and
+      // writes attacker-chosen content anywhere the user can write — and it
+      // lands BEFORE the deploy, so it persists even when the deploy fails.
+      // Same guard `resolveBulkOperation` uses in data-runner.js.
+      const file = path.resolve(tmpDir, before.relPath);
+      const rel = path.relative(tmpDir, file);
+      if (rel.startsWith('..') || path.isAbsolute(rel)) {
+        throw new Error(
+          `Refusing to undo: the recorded source path escapes the staging directory ` +
+            `(got "${before.relPath}"). The ledger entry is malformed or was tampered with.`,
+        );
+      }
       await fs.ensureDir(path.dirname(file));
       await fs.writeFile(file, before.xml, 'utf8');
       await execa('sf', ['project', 'deploy', 'start', '--source-dir', tmpDir, '--target-org', org, '--json']);
