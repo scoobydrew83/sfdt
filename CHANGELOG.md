@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.23.0] - 2026-08-24
+
 ### Added
 
 - **`sfdt automation list|enable|disable`, `sfdt permissions grant|revoke|fix`, and `sfdt ledger`
@@ -300,7 +302,68 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`sfdt record edit|clone` described the object twice per write**, once via `getRecord` and again
   directly — two of the largest payloads in the API for one answer. Both now share a single fetch.
 
+### Security
+
+Findings from the pre-release review (`pr-analysis/security/2026-08-23-combined-report.md`), run by
+two independent reviewers plus the deterministic contract checks. Each fix landed with a regression
+test verified to fail without it.
+
+- **Two mutating MCP tools declared `confirmExecution` and never enforced it.**
+  `sfdt_events_publish` and `sfdt_packages_note` listed it in `inputSchema.required`, but the MCP
+  SDK types `arguments` as `z.record(z.string(), z.unknown()).optional()` and **never validates a
+  tool's inputSchema** — so the declaration was documentation, not a control. Publishing an event
+  fires every real subscriber; annotating a package writes a committed repo file. Both now check in
+  the handler, and all 21 mutating tools were re-verified.
+
+  The test that should have caught this asserted only that the property was *declared in the
+  schema*, so it passed green while the gate was missing. `test/command-policy.test.js` now drives
+  the real CallTool handler and asserts, for every tool the policy marks mutating, that it refuses
+  **and that nothing was executed** — an error alone proves only that something failed, not that
+  the command was stopped. Three tools legitimately allow a bare call because they default to a
+  read-only sub-action (`apex trace` → list, `scratch pool` → status, `retrofit` → validate-only);
+  they carry an explicit exemption, itself guarded by a test that the exemption still names a real
+  mutating tool.
+
+- **`sfdt_permissions_grant` could smuggle flags through its variadic argument.** The caller-supplied
+  `fields` array was spread straight into child argv against a Commander variadic that also declares
+  `--production`. Commander consumes options anywhere in argv, including mid-variadic, so an element
+  beginning with `-` became a flag and vanished from the field list — disabling the production guard
+  and allowing `--org` redirection, from data an LLM routinely holds in context. Every element is now
+  validated against the qualified `Object.Field` shape, **and** the list is passed after a `--`
+  terminator, so a future change to either defence cannot silently reopen it.
+
+- **`sfdt ledger undo` could write outside its staging directory.** The deploy-mode reverser joined
+  a ledger-supplied `relPath` with no containment check and wrote the payload *before* deploying, so
+  a forged `logs/ledger.jsonl` — an ordinary file that arrives with a cloned repo — could overwrite
+  any file the user can write, and land even when the deploy failed. Verifying the chain would not
+  have helped: it is an unkeyed SHA-256, so whoever can write the file can compute a valid chain.
+  Containment is the control that holds, mirroring the guard `data-runner.js` already used. The
+  ledger-supplied `parentId` reaching SOQL on the undo path is now escaped as well.
+
+- **The Claude AI provider dropped its tool sandbox when handed an empty allowlist.**
+  `allowedTools: []` means "no tools at all" — the most restrictive request a caller can make — and
+  a `.length > 0` test turned it into no `--allowedTools` flag, falling back to ambient permission
+  defaults. Both sibling providers already carried this fix; the **default** provider did not. The
+  one caller passing `[]` is `buildSnapshotSummary`, which feeds org-derived text to the model. An
+  empty list now sends an explicit sentinel rather than an empty flag value, which a CLI reading as
+  "unset" would have reinstated the bug.
+
 ### Changed
+
+- **Every org-mutating command now carries the same brakes**, so the rule is uniform rather than
+  incidental. `sfdt events publish` and `sfdt data load` gained a production guard and a
+  confirmation; `sfdt data delete` gained the production guard, checked **before** its prompt so a
+  refused org is never one you are asked to confirm. `delete` keeps its bespoke confirmation rather
+  than the shared helper: it prints the actual queries and the objects they resolve to, and for the
+  most destructive operation here the blast radius is the part worth showing.
+
+  `publish` is gated because it is *behavioural* rather than a data write — the event fires every
+  flow, trigger and external listener on the channel, and a delivered event cannot be recalled.
+  `load` is gated because an upsert overwrites records that are already there. `record edit|clone`
+  remains deliberately unguarded as the low-blast-radius interactive case.
+
+  On MCP the matching tools forward `--production` and pass `--yes`, since `confirmExecution` is the
+  confirmation at that layer and `--json` is a non-interactive context the CLI would otherwise refuse.
 
 - **`sfdt audit audittrail` grew a severity model, a velocity baseline, and a gate that bites.**
   The check used to sweep `SetupAuditTrail` for 17 substrings and report every hit as an

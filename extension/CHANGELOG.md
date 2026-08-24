@@ -4,7 +4,32 @@ All notable changes to `@sfdt/extension` are documented here. Format follows [Ke
 
 ## [Unreleased]
 
+## [0.14.0] - 2026-08-24
+
 ### Added
+- **Bulk delete from the SOQL runner, shipped OFF by default (C-P4-2).** `soql-bulk-delete` is the
+  first feature in the extension with `enabledByDefault: false`; switched on, it puts a
+  "Delete N rows" action on the shared result toolbar whenever the rows carry an Id. The guard
+  rails ARE the feature. Exactly one function can reach a delete, and it re-plans the rows itself
+  rather than trusting a caller's plan, so eligibility cannot be skipped. Then two gates, in order:
+  a CSV backup that must resolve exactly `true` — a `false`, an `undefined` or a throw ends the
+  operation with nothing deleted and the confirmation never shown — and a typed confirmation
+  (`DELETE <n> <Object>`) that must also resolve exactly `true`, where a dialog that throws is a
+  refusal and never a consent. Only then does it delete, in waves of 25, aggregating per-row
+  failures by `sfApiErrorKind`'s discriminant rather than by matching error prose, and reporting a
+  timed-out row separately as *may still have committed*. Reuses `recordsToCsv`, `lib/download.ts`,
+  the focus-trapping `ui/confirm-dialog.ts`, `ui/panels.ts`'s `errorPanel` and `createResultActions()`
+  rather than reinventing any of them.
+- **Natural-language → SOQL in the runner (C-P4-5).** Describe a query in plain English and the
+  generated SOQL lands *in the editor for review*. The two properties that matter are structural,
+  not promises: it **cannot run what it generated** — `generateSoql()` is the only orchestrator and
+  its dependency interface contains a describe, a global-describe list, a prompt gate and the bridge
+  call, with nothing capable of executing SOQL, and its success value is a string; and **record data
+  cannot reach the prompt** — fields travel through an allowlist of five metadata properties that
+  rebuilds each entry property by property, the assembler has no records parameter at all, and a
+  leak gate scans the assembled prompt (minus the user's own words) for any value from the
+  on-screen result set and refuses the send on a hit. No new transport, dependency or permission:
+  generation reuses the existing AI bridge, so provider, key and redaction stay CLI-side.
 
 - **Delete a record from the inspector — off by default, and its own switch (P4-1 PR-4).** The
   record inspector could read, edit and clone; the one thing it could not do was the one thing
@@ -39,7 +64,6 @@ All notable changes to `@sfdt/extension` are documented here. Format follows [Ke
   No new permission: it is an ordinary REST call on the session you already have, over the same
   worker-proxied path as every other call. `PRIVACY.md` says so explicitly.
 
-### Added
 
 - **Clone a record into a form you can review before anything is created (P4-1 PR-3).** The inspector header gains **Clone**, which stages a new record prefilled from the one on screen and creates nothing until you press **Create**. That ordering is the feature, not a preference: a record with a unique constraint or a required lookup mostly fails a one-click insert, and a click that silently mints a duplicate is the kind of unguarded write this project does not ship. Prefilled fields are the ones Salesforce says are settable *on insert* — a different question from the one edit mode asks, which is why an org with Set Audit Fields enabled can prefill `CreatedDate` here while an auto-number or formula is excluded from both. Everything else still appears in the form, greyed and carrying its reason, so nothing vanishes from the view just because it is out of the request body.
 - **A blank box on the clone form means "let the org decide", so it is omitted rather than sent as null** — the two differ whenever a field has a default value. `false` and `0` are values and are sent. The POST body is built by `buildCreateBody` in `lib/record-edit.ts`, a sibling of `buildDirtyDiff` rather than a flag on it: a diff asks what changed against a baseline and carries a field-level-security guard that exists to stop an unreadable field being nulled over, while a create has no baseline at all, and folding them together would leave one caller reading a filter written for the other.
