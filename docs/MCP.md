@@ -84,6 +84,22 @@ Performs a dry-run metadata deployment on Salesforce.
 > [!CAUTION]
 > Dangerous and modifying operations require passing `confirmExecution: true` as an explicit safety gate. If omitted or set to false, the tool will return a validation error and abort execution.
 
+> [!IMPORTANT]
+> **`confirmExecution` is not the control for path arguments.** It authorises the
+> *operation*, while the model still supplies the *argument* — so since 0.23.1 every
+> path-shaped argument is contained independently of it:
+>
+> - `file` (`sfdt_apex_run`) and `manifest` (`sfdt_validate`, `sfdt_deploy`) must be
+>   relative paths that resolve **inside** the project. Absolute paths and `..` segments
+>   are rejected.
+> - `set` (`sfdt_data_export` / `_import` / `_load` / `_delete`) must be a bare
+>   identifier matching `^[A-Za-z0-9][A-Za-z0-9_-]*$` — no dots, slashes, or leading `-`.
+>
+> A rejected argument returns an error and the tool does not run. This is deliberate: MCP
+> arguments are chosen by a model, and this CLI's AI surfaces feed that model untrusted
+> org content (Apex compile errors, flow metadata, deploy failure text), so a path
+> argument is untrusted input. See `src/lib/safe-path.js`.
+
 #### `sfdt_deploy`
 Performs a full metadata deployment to the target org.
 * **Arguments:**
