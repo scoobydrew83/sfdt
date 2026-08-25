@@ -1,11 +1,12 @@
 # Chrome Web Store Listing
 
-> **Store-sync status:** Updated for **v0.14.0** (48 features — the count is read from
+> **Store-sync status:** Updated for **v0.15.0** (48 features — the count is read from
 > `generated/chrome-features.json`, never counted by hand; re-derive it each release
 > instead of incrementing it). Three of those 48 ship **off by default**: Delete records
 > (`record-delete`), Bulk delete from SOQL results (`soql-bulk-delete`), and Generate
 > SOQL from a description (`soql-nl-generate`). Since the last listing rewrite this
-> adds Inspect Record typed edit and clone, plus the off-by-default record delete,
+> adds **Deployment Status** (recent deploys, their component errors, read-only),
+> and before it Inspect Record typed edit and clone plus the off-by-default record delete,
 > on top of the surfaces already in the copy: Apex tooling (Test Runner, Code Coverage,
 > Trace Flags), a **Schema Browser**, **Field Impact Analysis**, **Dependency Explorer**,
 > **API Version Audit**, in-browser **Flow Scanner**, an **Org Release** badge, a
@@ -15,13 +16,16 @@
 > **syntax-highlighting editor** for SOQL and Apex, **Generate query** (NL→SOQL, off
 > by default), and **Bulk delete from SOQL results** (off by default).
 >
-> As of this writing the *live* CWS listing is **0.13.0**, titled **SFDT for Salesforce**,
-> with 45-feature copy. This file is ahead at 0.14.0 / 48. Paste the sections below
-> into the CWS dashboard during the v0.14.0 upload, then this file and the store are
-> back in sync.
+> The *published extension* on the Web Store is **0.14.0** — `extension.yml`'s release job
+> uploads with `--auto-publish` and its 2026-08-24 run logged `Publishing... / Publish
+> successful`. Note that is the **zip**, not this copy: the description and Privacy
+> practices fields are dashboard-only and change only when a human pastes them, so the
+> live *text* still lags the code. This file is ahead at 0.15.0 / 48. Paste the sections
+> below into the CWS dashboard during the v0.15.0 upload, then this file and the store
+> are back in sync.
 >
 > **The item name is already live as "SFDT for Salesforce".** It was renamed from
-> "SFDT SF Helper" in a dashboard edit and is what the store shows on 0.13.0. The
+> "SFDT SF Helper" in a dashboard edit and is what the store shows today. The
 > store's *item title* is still a dashboard field rather than a manifest field —
 > renaming it again has to be typed by hand or the store keeps the old name.
 >
@@ -29,7 +33,7 @@
 > tab** (not just the description) — the store rejects auto-publish until every
 > permission below has a justification saved. `contextMenus` + `sidePanel` were
 > the two that blocked the v0.8.0 auto-publish. The permission set is **unchanged in
-> 0.14.0** — `storage`, `clipboardWrite`, `cookies`, `contextMenus`, `sidePanel` plus the
+> 0.15.0** — `storage`, `clipboardWrite`, `cookies`, `contextMenus`, `sidePanel` plus the
 > ten host permissions, verified against `wxt.config.ts`.
 >
 > Screenshots, the store icon, and the small promo tile live alongside this file in
@@ -40,7 +44,7 @@
 ## Dashboard field map
 
 Everything below is ready to paste. This table says **which dashboard tab each field lives in**,
-so the whole listing can be staged before the `ext-v0.14.0` zip is uploaded. Lengths were
+so the whole listing can be staged before the `ext-v0.15.0` zip is uploaded. Lengths were
 measured from this file's own sections — the headroom column is what's left before the store
 truncates or rejects.
 

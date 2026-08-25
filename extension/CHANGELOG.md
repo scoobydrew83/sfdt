@@ -4,13 +4,22 @@ All notable changes to `@sfdt/extension` are documented here. Format follows [Ke
 
 ## [Unreleased]
 
+## [0.15.0] - 2026-08-25
+
 ### Added
 
 - **Deployment Status — a Workspace tool that watches org deploys the same way Setup › Deployment Status does, without a trip to Setup (C-P5-2).** Recent `DeployRequest` rows from the Tooling API: status, who, start/finish, component and test counts, validate-vs-deploy. Click a failed (or partial) row and the component errors come from SOAP `checkDeployStatus` with `includeDetails`, the same path Metadata Retrieve already uses — Tooling `DeployMessage` is not queried, because orgs refuse it. Auto-refresh is data-driven, not a toggle: a 15s interval runs only while any loaded row is `Pending` / `InProgress` / `Canceling`, and is cleared on teardown **and** on overlay dismiss (the Debug Logs viewer still leaks on that second path; this one does not). A DeployRequest query the org rejects — `INVALID_TYPE`, "requires a filter", or anything else — degrades to a warning callout, never the Salesforce error console, and never `feature.errored`, matching the CLI's `checkDeployHistory`. Default on, read-only, no new permission.
+
 ### Changed
 
-- **Chrome Web Store listing description/details updated for 0.14.0.** `extension/listing.md`
-  
+- **Chrome Web Store listing synced to the 48-feature catalog.** `extension/listing.md` had
+  drifted since `bf6f06d` added Deployment Status to `generated/chrome-features.json` without
+  adding its bullet, which left `listing-catalog.test.ts` red on develop. Counts corrected
+  47 → 48 and the missing bullet added. The store-sync note was also stale on a second point:
+  it still described the live Web Store item as 0.13.0, when 0.14.0 auto-published on
+  2026-08-24. Permission set is **unchanged** from 0.14.0 — verified against `wxt.config.ts`,
+  not assumed.
+
 ## [0.14.0] - 2026-08-24
 
 ### Added
