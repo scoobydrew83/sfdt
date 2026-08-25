@@ -66,9 +66,11 @@ const titles = bullets.map(bulletTitle);
 describe('listing.md tracks generated/chrome-features.json', () => {
   it('does not hand-count — the catalog is the count', () => {
     expect(features.length).toBeGreaterThan(0);
-    expect(listing).toMatch(
-      new RegExp(`Updated for \\*\\*v${pkg.version.replace(/\./g, '\\.')}\\*\\* \\(${features.length} features`),
-    );
+    // Plain substring, not a built regex: the assertion never needed one, and
+    // hand-escaping a version into a pattern is the incomplete-escape class
+    // CodeQL flags (js/incomplete-sanitization) — it escaped `.` but nothing
+    // else. Matches the sibling assertion on the next line.
+    expect(listing).toContain(`Updated for **v${pkg.version}** (${features.length} features`);
     expect(listing).toContain(`adds ${features.length} productivity features`);
   });
 
