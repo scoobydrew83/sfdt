@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import Link from "next/link";
 
 const NAV = [
@@ -15,7 +16,7 @@ export function Chrome({
 }: {
   title: string;
   path: string;
-  children: React.ReactNode;
+  children: ReactNode;
 }) {
   return (
     <div className="chrome">

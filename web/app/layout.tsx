@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import type { Metadata } from "next";
 import "./globals.css";
 
@@ -7,7 +8,7 @@ export const metadata: Metadata = {
     "Public Trailblazer hub and in-browser Flow Studio. Org data never leaves the browser.",
 };
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="en">
       <head>

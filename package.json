@@ -133,6 +133,10 @@
     "brace-expansion": "^5.0.8",
     "node-notifier": {
       "uuid": "^11.1.1"
+    },
+    "next": {
+      "postcss": "8.5.26",
+      "sharp": "0.35.3"
     }
   },
   "repository": {

@@ -9,9 +9,14 @@ function read(rel: string) {
   return readFileSync(join(ROOT, rel), "utf8");
 }
 
+/** Drop // and block comments so a warning in a comment is not an assignment. */
+function withoutComments(src: string) {
+  return src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
+}
+
 describe("WEB-1 scaffold", () => {
   it("does not static-export", () => {
-    expect(read("next.config.ts")).not.toMatch(/output:\s*['\"]export['\"]/);
+    expect(withoutComments(read("next.config.ts"))).not.toMatch(/output:\s*['"]export['"]/);
   });
 
   it("does not bind D1 yet", () => {

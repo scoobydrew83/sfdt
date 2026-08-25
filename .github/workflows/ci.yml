@@ -38,6 +38,7 @@ jobs:
         run: npm audit --audit-level=high --omit=dev
       - run: npm run lint
       - run: npm test
+      - run: npm run test:web
       - name: Surface contracts (catalog drift + license/node/auth consistency)
         run: npm run check:all-contracts
       - name: Build @sfdt/plugin (codegen + tsc — catches CLI command-tree drift)
