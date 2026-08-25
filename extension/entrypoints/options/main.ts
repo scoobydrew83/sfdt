@@ -37,6 +37,7 @@ import { createOrgLimitsFeature } from '../../features/org-limits.js';
 import { createRestExploreFeature } from '../../features/rest-explore.js';
 import { createApexAnonymousFeature } from '../../features/apex-anonymous.js';
 import { createDebugLogViewerFeature } from '../../features/debug-log-viewer.js';
+import { createDeployStatusFeature } from '../../features/deploy-status.js';
 import { createSavedSoqlFeature } from '../../features/saved-soql.js';
 import { createOrgSwitcherFeature } from '../../features/org-switcher.js';
 import { createContextMenuInspectFeature } from '../../features/context-menu-inspect.js';
@@ -250,6 +251,7 @@ async function render(): Promise<void> {
   registry.register(createRestExploreFeature());
   registry.register(createApexAnonymousFeature());
   registry.register(createDebugLogViewerFeature());
+  registry.register(createDeployStatusFeature());
   registry.register(createSavedSoqlFeature());
   registry.register(createOrgSwitcherFeature());
   registry.register(createContextMenuInspectFeature());

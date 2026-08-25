@@ -38,6 +38,7 @@ import { createEventMonitorFeature } from '../features/event-monitor.js';
 import { createDataImportFeature } from '../features/data-import.js';
 import { createFieldCreatorFeature } from '../features/field-creator.js';
 import { createMetadataRetrieveFeature } from '../features/metadata-retrieve.js';
+import { createDeployStatusFeature } from '../features/deploy-status.js';
 import { createExportForPromptFeature } from '../features/export-for-prompt.js';
 import { createCodeCoverageFeature } from '../features/code-coverage.js';
 import { createOrgHealthFeature } from '../features/org-health.js';
@@ -765,6 +766,7 @@ export function bootHost(root: HTMLElement, orgHost: string, opts: HostOptions):
     'data-import': () => createDataImportFeature(common),
     'field-creator': () => createFieldCreatorFeature(common),
     'metadata-retrieve': () => createMetadataRetrieveFeature(common),
+    'deploy-status': () => createDeployStatusFeature(common),
     'export-for-prompt': () => exportForPrompt,
     'apex-coverage': () => createCodeCoverageFeature(common),
     'apex-test-runner': () => createApexTestRunnerFeature(common),

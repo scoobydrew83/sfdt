@@ -170,6 +170,19 @@
       "bridgeRequired": false
     },
     {
+      "id": "deploy-status",
+      "name": "Deployment Status",
+      "contexts": [
+        "workspace",
+        "setup_other",
+        "setup_flows"
+      ],
+      "enabledByDefault": true,
+      "workspace": true,
+      "sideButton": true,
+      "bridgeRequired": false
+    },
+    {
       "id": "drift-check",
       "name": "Drift Check",
       "contexts": [

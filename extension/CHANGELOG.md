@@ -4,16 +4,13 @@ All notable changes to `@sfdt/extension` are documented here. Format follows [Ke
 
 ## [Unreleased]
 
+### Added
+
+- **Deployment Status — a Workspace tool that watches org deploys the same way Setup › Deployment Status does, without a trip to Setup (C-P5-2).** Recent `DeployRequest` rows from the Tooling API: status, who, start/finish, component and test counts, validate-vs-deploy. Click a failed (or partial) row and the component errors come from SOAP `checkDeployStatus` with `includeDetails`, the same path Metadata Retrieve already uses — Tooling `DeployMessage` is not queried, because orgs refuse it. Auto-refresh is data-driven, not a toggle: a 15s interval runs only while any loaded row is `Pending` / `InProgress` / `Canceling`, and is cleared on teardown **and** on overlay dismiss (the Debug Logs viewer still leaks on that second path; this one does not). A DeployRequest query the org rejects — `INVALID_TYPE`, "requires a filter", or anything else — degrades to a warning callout, never the Salesforce error console, and never `feature.errored`, matching the CLI's `checkDeployHistory`. Default on, read-only, no new permission.
 ### Changed
 
-- **Chrome Web Store listing copy is current for 0.14.0.** `extension/listing.md`
-  now reads the catalog count (47) from `generated/chrome-features.json` rather
-  than a hand-count, names the three features that ship off (`record-delete`,
-  `soql-bulk-delete`, `soql-nl-generate`), and covers Inspect Record typed edit
-  and clone plus the off-by-default record delete. A drift test pins the count
-  and every catalog name to a listing bullet. Promo tiles were regenerated from
-  the same catalog so they no longer bake "44 features" into pixels.
-
+- **Chrome Web Store listing description/details updated for 0.14.0.** `extension/listing.md`
+  
 ## [0.14.0] - 2026-08-24
 
 ### Added

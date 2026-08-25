@@ -35,6 +35,7 @@ export const FEATURE_ICONS: Record<string, FeatureIcon> = {
   'data-import': { icon: '📥', label: 'Data Import Wizard' },
   'field-creator': { icon: '🛠', label: 'Bulk Field Creator' },
   'metadata-retrieve': { icon: '📦', label: 'Metadata Retrieve & Deploy' },
+  'deploy-status': { icon: '🚀', label: 'Deployment Status' },
   'soap-explore': { icon: '💬', label: 'SOAP API Explorer' },
   'event-monitor': { icon: '📡', label: 'Event Streaming Monitor' },
   'export-for-prompt': { icon: '📋', label: 'Copy Schema for Prompt' },
@@ -86,6 +87,7 @@ export const WORKSPACE_TOOLS: readonly string[] = [
   'data-import',
   'field-creator',
   'metadata-retrieve',
+  'deploy-status',
   'export-for-prompt',
 ];
 

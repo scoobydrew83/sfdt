@@ -317,6 +317,7 @@ export const ICON_FOR_FEATURE: Record<string, string> = {
 
   // Metadata & bridge-backed
   'metadata-retrieve': 'metadata',
+  'deploy-status': 'rocket',
   'metadata-scan': 'layers',
   'dependency-explorer': 'graph',
   'flow-quality': 'check',
