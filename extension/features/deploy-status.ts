@@ -278,7 +278,7 @@ export function createDeployStatusFeature(options: DeployStatusOptions = {}): Fe
 
     // OUR prose, not an org-error console — see lib/ui-styles.ts at .sfdt-callout.
     const warnPanel = doc.createElement('div');
-    warnPanel.className = 'sfdt-callout sfdt-warn';
+    warnPanel.className = 'sfdt-callout sfdt-warn sfdt-msg';
     warnPanel.setAttribute('role', 'status');
     warnPanel.style.display = 'none';
     main.appendChild(warnPanel);
@@ -502,7 +502,7 @@ export function createDeployStatusFeature(options: DeployStatusOptions = {}): Fe
       } catch (err) {
         if (seq !== loadSeq || selectedId !== row.id) return;
         const callout = doc.createElement('div');
-        callout.className = 'sfdt-callout sfdt-warn';
+        callout.className = 'sfdt-callout sfdt-warn sfdt-msg';
         callout.setAttribute('role', 'status');
         callout.textContent = `Component errors unavailable: ${errorText(err)}`;
         detail.appendChild(callout);
@@ -556,15 +556,17 @@ export function createDeployStatusFeature(options: DeployStatusOptions = {}): Fe
 
         const comps = doc.createElement('td');
         comps.className = 'sfdt-cell-code';
-        comps.textContent = formatCountTriple(
+        const componentCounts = formatCountTriple(
           row.componentsDeployed,
           row.componentsTotal,
           row.componentErrors,
         );
+        comps.textContent = componentCounts;
 
         const tests = doc.createElement('td');
         tests.className = 'sfdt-cell-code';
-        tests.textContent = formatCountTriple(row.testsCompleted, row.testsTotal, row.testErrors);
+        const testCounts = formatCountTriple(row.testsCompleted, row.testsTotal, row.testErrors);
+        tests.textContent = testCounts;
 
         const kind = doc.createElement('td');
         kind.textContent = row.checkOnly ? 'Validate' : 'Deploy';
