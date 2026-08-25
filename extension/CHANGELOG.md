@@ -7,7 +7,10 @@ All notable changes to `@sfdt/extension` are documented here. Format follows [Ke
 ### Added
 
 - **Deployment Status — a Workspace tool that watches org deploys the same way Setup › Deployment Status does, without a trip to Setup (C-P5-2).** Recent `DeployRequest` rows from the Tooling API: status, who, start/finish, component and test counts, validate-vs-deploy. Click a failed (or partial) row and the component errors come from SOAP `checkDeployStatus` with `includeDetails`, the same path Metadata Retrieve already uses — Tooling `DeployMessage` is not queried, because orgs refuse it. Auto-refresh is data-driven, not a toggle: a 15s interval runs only while any loaded row is `Pending` / `InProgress` / `Canceling`, and is cleared on teardown **and** on overlay dismiss (the Debug Logs viewer still leaks on that second path; this one does not). A DeployRequest query the org rejects — `INVALID_TYPE`, "requires a filter", or anything else — degrades to a warning callout, never the Salesforce error console, and never `feature.errored`, matching the CLI's `checkDeployHistory`. Default on, read-only, no new permission.
+### Changed
 
+- **Chrome Web Store listing description/details updated for 0.14.0.** `extension/listing.md`
+  
 ## [0.14.0] - 2026-08-24
 
 ### Added

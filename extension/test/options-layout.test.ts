@@ -17,7 +17,7 @@ const SRC = readFileSync(path.resolve(HERE, '..', 'entrypoints', 'options', 'mai
 describe('options page — layout', () => {
   it('lays out in two columns via the shared bento grid', () => {
     // Nineteen cards in one 720px stack put theme and telemetry below a
-    // 44-row feature list, where nobody found them.
+    // 47-row feature list, where nobody found them.
     expect(SRC).toContain("el('div', { class: 'sfdt-bento' })");
     expect(SRC).toMatch(/const mainCol = el\('div', \{ class: 'sfdt-bento-col' \}\)/);
     expect(SRC).toMatch(/const sideCol = el\('div', \{ class: 'sfdt-bento-col' \}\)/);
@@ -59,7 +59,7 @@ describe('options page — layout', () => {
 
 describe('options page — feature list', () => {
   it('offers a filter over the feature rows', () => {
-    // 44 rows is a list you hunt through, not one you scan.
+    // 47 rows is a list you hunt through, not one you scan.
     expect(SRC).toContain("placeholder: 'Filter features…'");
     expect(SRC).toContain('applyFeatureFilter');
     // Matches contexts too, so "record_page" finds everything that runs on one.
