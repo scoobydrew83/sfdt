@@ -1,6 +1,7 @@
 import { execa } from 'execa';
 import { redactSensitiveData } from './audit-logger.js';
 import { resolveEnvHeaders } from './env-headers.js';
+import { isLoopbackUrl } from './config-trust.js';
 
 // ─── Provider helpers ─────────────────────────────────────────────────────────
 
@@ -62,7 +63,10 @@ export async function isHttpAvailable(config) {
   // `GET {baseURL}/models` (present on Ollama, LM Studio, llama.cpp, vLLM,
   // LocalAI, …) rather than Ollama's `/api/tags`, so non-Ollama local servers
   // aren't mis-flagged unavailable.
-  if (/^https?:\/\/(localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1\])/i.test(baseURL)) {
+  // Same loopback test the config sanitizer applies — imported rather than
+  // re-spelled, because this copy had drifted further (no trailing boundary, so
+  // it also accepted `http://127.0.0.1.evil.com`).
+  if (isLoopbackUrl(baseURL)) {
     try {
       const controller = new AbortController();
       const t = setTimeout(() => controller.abort(), 2000);

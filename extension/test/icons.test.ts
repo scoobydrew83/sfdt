@@ -107,6 +107,7 @@ describe('lib/icons', () => {
         'features/comparison-exporter.ts',
         'features/data-import.ts',
         'features/debug-log-viewer.ts',
+        'features/deploy-status.ts',
         'features/dependency-explorer.ts',
         'features/event-monitor.ts',
         'features/field-creator.ts',

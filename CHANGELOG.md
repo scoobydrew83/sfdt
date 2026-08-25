@@ -7,6 +7,54 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.23.1] - 2026-08-25
+
+A security patch. Both fixes close gaps where a path or URL chosen by someone
+other than the operator reached a sink that trusted it.
+
+### Security
+
+- **MCP path arguments are now contained to the project.** `sfdt_apex_run`'s `file` and
+  the `manifest` of `sfdt_validate` / `sfdt_deploy` were resolved with a bare
+  `path.resolve()`, which returns an absolute input verbatim and honours `../` — so the
+  schema's promise that `file` is "a path in the project" was never enforced. The data-set
+  name of `sfdt_data_export` / `_import` / `_load` / `_delete` was passed through with no
+  validation at all.
+
+  This matters because MCP tool arguments are chosen by a **model**, and this CLI's AI
+  surfaces feed that model untrusted org content — Apex compile errors, flow metadata,
+  deploy failure text. A path argument is therefore untrusted input, and `confirmExecution`
+  is not a mitigation: it authorises the *operation* while the model still supplies the
+  *argument*.
+
+  A new `src/lib/safe-path.js` holds both guards, and the GUI routes import the same
+  helpers, so the two surfaces cannot drift apart on these parameters again — the GUI had
+  guarded them since it was written, and the MCP handlers never had.
+
+  Two notes on scope. The data-set guard lives **inside `dataSetDir()`** rather than in
+  each handler, which also covers `sfdt_data_load` — a fourth caller not named in the
+  original report. And the sink guard alone is not sufficient: the set name becomes a
+  *positional argv element*, so a flag-shaped value (`--production`) is parsed by Commander
+  before `dataSetDir()` is ever reached. That is argv injection rather than traversal, so
+  the name is validated at both layers.
+
+- **`ai.baseURL` could point offsite while reading as loopback.** The loopback exemption —
+  which exists so a local inference server (Ollama, LM Studio, llama.cpp, vLLM) works with
+  no opt-in — anchored the host but not the authority. In `http://a:b@c/` everything before
+  the `@` is userinfo, so `http://127.0.0.1:80@evil.example/v1` was judged loopback while
+  the real host was `evil.example`.
+
+  The consequence was worse than a permitted request. The exemption keeps `ai.headersEnv`
+  and the `apiKeyEnv` `Authorization` header in place *precisely because* it judged the
+  destination safe — so a false positive attached the API key to the request and sent it,
+  along with every prompt body, to the attacker. Reaching it needed only a cloned repo:
+  `.sfdt/config.json` is committed and arrives with whatever was cloned.
+
+  The check now parses the URL and compares the resolved host, rejects userinfo outright,
+  and rejects non-http schemes. A second, further-drifted copy in `ai.js` — which had no
+  trailing boundary and so also accepted `http://127.0.0.1.evil.com` — now imports the same
+  implementation. Local inference servers are unaffected.
+
 ## [0.23.0] - 2026-08-24
 
 ### Added

@@ -36,7 +36,7 @@ The extension's **runtime** icons live in `../public/icon/{16,32,48,128}.png` �
 ### The featured 5 — recapture plan for 0.11.0
 
 **The whole pool is 0.3.x-era and the current featured set now undersells the product.**
-Slot 1 (`final_06`) shows a Workspace nav from when there were 13 tools; there are now 45.
+Slot 1 (`final_06`) shows a Workspace nav from when there were 13 tools; there are now 47.
 Nothing that shipped after 0.3.x has a frame at all.
 
 Only **5** are ever displayed, so recapturing the whole pool is wasted work — capture these

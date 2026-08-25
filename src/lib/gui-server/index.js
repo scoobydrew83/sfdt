@@ -48,6 +48,7 @@ import {
   searchSObjects, describeSObject, discoverRelationships,
   validateQuery, explainQuery, runQuery, runSearch, toCsv,
 } from '../soql-runner.js';
+import { resolveInProject } from '../safe-path.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -1941,11 +1942,10 @@ export function createGuiApp(config, version, port = DEFAULT_UI_PORT) {
     const projectRoot = config._projectRoot ?? process.cwd();
 
     if (manifest !== undefined && manifest !== null) {
-      if (typeof manifest !== 'string' || path.isAbsolute(manifest) || manifest.includes('..')) {
-        return res.status(400).json({ error: 'Invalid manifest path' });
-      }
-      const absManifest = path.resolve(projectRoot, manifest);
-      if (!absManifest.startsWith(projectRoot + path.sep)) {
+      // Same guard the MCP handlers apply to this parameter — see safe-path.js.
+      try {
+        resolveInProject(projectRoot, manifest, 'manifest');
+      } catch {
         return res.status(400).json({ error: 'Invalid manifest path' });
       }
     }
