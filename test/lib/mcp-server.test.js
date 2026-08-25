@@ -586,6 +586,91 @@ describe('SfdtMcpServer', () => {
       expect(result.isError).toBe(true);
       expect(result.content[0].text).toContain('Unknown tool');
     });
+
+    describe('path containment (sfdt-private#5, #6)', () => {
+      // MCP arguments are chosen by a model, and this CLI's AI surfaces feed
+      // that model untrusted org content. A path argument is an untrusted
+      // input, so each case below is an exploit path in the issues, not a
+      // hypothetical.
+
+      it('rejects an absolute file for sfdt_apex_run despite confirmExecution', async () => {
+        // confirmExecution authorises running Apex; the model still supplies
+        // the file, so it is not a mitigation for arbitrary file read.
+        const result = await callTool('sfdt_apex_run', {
+          file: '/Users/victim/.sf/alias.json',
+          confirmExecution: true,
+        });
+        expect(result.isError).toBe(true);
+        expect(result.content[0].text).toContain('absolute');
+        expect(execa).not.toHaveBeenCalled();
+      });
+
+      it('rejects a traversing file for sfdt_apex_run', async () => {
+        const result = await callTool('sfdt_apex_run', {
+          file: '../../etc/passwd',
+          confirmExecution: true,
+        });
+        expect(result.isError).toBe(true);
+        expect(execa).not.toHaveBeenCalled();
+      });
+
+      it('still runs a legitimate in-project apex file', async () => {
+        execa.mockResolvedValueOnce({ exitCode: 0, stdout: '{"result":{}}', stderr: '' });
+        const result = await callTool('sfdt_apex_run', {
+          file: 'scripts/seed.apex',
+          confirmExecution: true,
+        });
+        expect(result.isError).toBeFalsy();
+        expect(execa).toHaveBeenCalledWith(
+          'node',
+          expect.arrayContaining(['--file', '/project/scripts/seed.apex']),
+          expect.anything()
+        );
+      });
+
+      it.each([
+        ['sfdt_validate', { targetOrg: 'prod' }],
+        ['sfdt_deploy', { targetOrg: 'prod', confirmExecution: true }],
+      ])('rejects an out-of-tree manifest for %s', async (name, base) => {
+        const result = await callTool(name, { ...base, manifest: '/tmp/attacker/package.xml' });
+        expect(result.isError, name).toBe(true);
+        expect(result.content[0].text).toContain('manifest');
+        expect(execa).not.toHaveBeenCalled();
+      });
+
+      it.each(['sfdt_data_export', 'sfdt_data_import', 'sfdt_data_load', 'sfdt_data_delete'])(
+        'rejects a traversing data-set name for %s',
+        async (name) => {
+          // sfdt_data_load is the fourth caller the original report missed —
+          // guarding dataSetDir() rather than each handler is what covers it.
+          const result = await callTool(name, { set: '../../../../tmp/stage' });
+          expect(result.isError, name).toBe(true);
+          expect(execa).not.toHaveBeenCalled();
+        }
+      );
+
+      it.each(['--production', '-f', '--org'])(
+        'rejects a flag-shaped data-set name (%s)',
+        async (flag) => {
+          // Not path traversal: the name is a positional argv element, so a
+          // flag-shaped value would reach Commander before dataSetDir() runs.
+          const result = await callTool('sfdt_data_export', { set: flag });
+          expect(result.isError, flag).toBe(true);
+          expect(execa).not.toHaveBeenCalled();
+        }
+      );
+
+      it('still runs a legitimate data-set name', async () => {
+        execa.mockResolvedValueOnce({ exitCode: 0, stdout: '{"result":{}}', stderr: '' });
+        const result = await callTool('sfdt_data_export', { set: 'seed-data' });
+        expect(result.isError).toBeFalsy();
+        expect(execa).toHaveBeenCalledWith(
+          'node',
+          expect.arrayContaining(['data', 'export', 'seed-data']),
+          expect.anything()
+        );
+      });
+    });
   });
 
   describe('W3C trace context', () => {

@@ -428,6 +428,11 @@ export const COMMAND_POLICY = {
     docsCategory: 'org-health',
     surfaces: { gui: true, vscode: true, chrome: false },
     mcpTools: {
+      // Deliberately un-gated (sfdt-private#6). It reads an in-project
+      // queries.json, runs SOQL, and writes results under the data dir — no
+      // org mutation. The reason it was questioned was that an unvalidated
+      // set name could point it outside the project; that is closed at the
+      // argv boundary and inside dataSetDir(), so the gate is not the control.
       sfdt_data_export: { mutating: false },
       sfdt_data_import: { mutating: true },
       sfdt_data_load: { mutating: true },

@@ -11,6 +11,7 @@ import path from 'path';
 import fs from 'fs-extra';
 import { fileURLToPath } from 'url';
 import { AsyncLocalStorage } from 'node:async_hooks';
+import { resolveInProject, assertSetName } from './safe-path.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -1435,6 +1436,10 @@ export class SfdtMcpServer {
       }
 
       case 'sfdt_data_export': {
+        // The set name becomes a positional argv element before the child's
+        // dataSetDir() ever sees it, so a flag-shaped value would be parsed by
+        // Commander rather than rejected. Validate at the argv boundary too.
+        assertSetName(args.set);
         const cliArgs = ['data', 'export', args.set, '--json'];
         if (args.org) cliArgs.push('--org', args.org);
         const { stdout } = await this.#runCliCommand(cliArgs);
@@ -1445,6 +1450,10 @@ export class SfdtMcpServer {
         if (!args.confirmExecution) {
           throw new Error('Importing a data set writes records to the org. Pass confirmExecution: true to proceed.');
         }
+        // The set name becomes a positional argv element before the child's
+        // dataSetDir() ever sees it, so a flag-shaped value would be parsed by
+        // Commander rather than rejected. Validate at the argv boundary too.
+        assertSetName(args.set);
         const cliArgs = ['data', 'import', args.set, '--json'];
         if (args.org) cliArgs.push('--org', args.org);
         const { stdout } = await this.#runCliCommand(cliArgs);
@@ -1457,6 +1466,10 @@ export class SfdtMcpServer {
         }
         // `--yes` because confirmExecution above IS the confirmation at this
         // layer; --json is non-interactive, so the CLI would otherwise refuse.
+        // The set name becomes a positional argv element before the child's
+        // dataSetDir() ever sees it, so a flag-shaped value would be parsed by
+        // Commander rather than rejected. Validate at the argv boundary too.
+        assertSetName(args.set);
         const cliArgs = ['data', 'load', args.set, '--json', '--yes'];
         if (args.production) cliArgs.push('--production');
         if (args.org) cliArgs.push('--org', args.org);
@@ -1470,6 +1483,10 @@ export class SfdtMcpServer {
         if (!args.confirmExecution) {
           throw new Error('Deleting a data set is destructive. Pass confirmExecution: true to proceed.');
         }
+        // The set name becomes a positional argv element before the child's
+        // dataSetDir() ever sees it, so a flag-shaped value would be parsed by
+        // Commander rather than rejected. Validate at the argv boundary too.
+        assertSetName(args.set);
         const cliArgs = ['data', 'delete', args.set, '--yes', '--json'];
         if (args.production) cliArgs.push('--production');
         if (args.org) cliArgs.push('--org', args.org);
@@ -1509,7 +1526,7 @@ export class SfdtMcpServer {
         if (!args.file && !args.apexCode) {
           throw new Error('Provide "file" (a path in the project) or "apexCode" (inline Apex).');
         }
-        let apexFile = args.file ? path.resolve(projectRoot, args.file) : null;
+        let apexFile = args.file ? resolveInProject(projectRoot, args.file, 'file') : null;
         let tmpDir = null;
         if (!apexFile) {
           tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'sfdt-mcp-apex-'));
@@ -1675,7 +1692,7 @@ export class SfdtMcpServer {
           SFDT_TARGET_ORG: args.targetOrg,
           SFDT_DRY_RUN: 'true',
         };
-        if (args.manifest) env.SFDT_MANIFEST_PATH = path.resolve(projectRoot, args.manifest);
+        if (args.manifest) env.SFDT_MANIFEST_PATH = resolveInProject(projectRoot, args.manifest, 'manifest');
         if (args.testLevel) env.SFDT_TEST_LEVEL = args.testLevel;
         if (Array.isArray(args.testClasses) && args.testClasses.length > 0) {
           env.SFDT_SPECIFIED_TESTS = args.testClasses.join(' ');
@@ -1706,7 +1723,7 @@ export class SfdtMcpServer {
           SFDT_TARGET_ORG: args.targetOrg,
           SFDT_DRY_RUN: args.dryRun ? 'true' : 'false',
         };
-        if (args.manifest) env.SFDT_MANIFEST_PATH = path.resolve(projectRoot, args.manifest);
+        if (args.manifest) env.SFDT_MANIFEST_PATH = resolveInProject(projectRoot, args.manifest, 'manifest');
         if (args.testLevel) env.SFDT_TEST_LEVEL = args.testLevel;
         if (args.destructiveTiming) env.SFDT_DESTRUCTIVE_TIMING = args.destructiveTiming;
         if (Array.isArray(args.testClasses) && args.testClasses.length > 0) {

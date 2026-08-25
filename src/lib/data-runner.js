@@ -3,6 +3,7 @@ import fs from 'fs-extra';
 import { glob } from 'glob';
 import { execa } from 'execa';
 import { safeParse } from './org-query.js';
+import { assertSetName } from './safe-path.js';
 
 /**
  * Data set import/export runner.
@@ -29,8 +30,15 @@ import { safeParse } from './org-query.js';
  * unit-tested without a live org.
  */
 
-/** Resolve the directory holding a named data set. */
+/**
+ * Resolve the directory holding a named data set.
+ *
+ * The name is validated here rather than at each call site: it reaches this
+ * function from the CLI, the GUI routes and four MCP handlers, and guarding
+ * the sink covers all of them at once (sfdt-private#6).
+ */
 export function dataSetDir(config, setName) {
+  assertSetName(setName);
   const root = config._projectRoot ?? process.cwd();
   const base = config.data?.dir ?? '.sfdt/data';
   const baseAbs = path.isAbsolute(base) ? base : path.join(root, base);
