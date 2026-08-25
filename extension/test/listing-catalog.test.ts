@@ -41,8 +41,9 @@ function listingTitle(feature: CatalogFeature): string {
 
 function parseBullets(listing: string): string[] {
   const m = listing.match(/Features include:\n((?:- .+\n)+)/);
-  if (!m) throw new Error('listing.md has no "Features include:" bullet list');
-  return m[1]
+  const block = m?.[1];
+  if (!block) throw new Error('listing.md has no "Features include:" bullet list');
+  return block
     .trim()
     .split('\n')
     .map((line) => line.replace(/^- /, ''));
