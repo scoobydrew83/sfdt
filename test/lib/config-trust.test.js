@@ -133,6 +133,37 @@ describe('config trust boundary', () => {
       const found = findUnsafeConfigSettings({ ai: { baseURL: 'https://localhost.evil.tld/v1' } });
       expect(found.map((f) => f.path)).toEqual(['ai.baseURL']);
     });
+
+    it.each([
+      'http://127.0.0.1:80@evil.example/v1',
+      'http://localhost:8080@evil.example/v1',
+      'https://localhost:443@attacker.tld/v1',
+      'http://user:pw@127.0.0.1:11434/v1',
+    ])('refuses a userinfo bypass that only LOOKS loopback: %s', (baseURL) => {
+      // Everything before the `@` is userinfo, so the real host is the part
+      // after it. The regex this replaced anchored the host but not the
+      // authority, so these read as loopback — and the exemption kept the
+      // apiKeyEnv Authorization header and every headersEnv value in place
+      // *because* it judged the destination safe. That shipped the API key
+      // and every prompt body to the attacker.
+      const { config, refused } = sanitizeUntrustedConfig({
+        ai: { provider: 'http', baseURL, apiKeyEnv: 'OPENAI_API_KEY' },
+      });
+      expect(refused.map((r) => r.path)).toEqual(['ai.baseURL']);
+      expect(config.ai.baseURL).toBeUndefined();
+    });
+
+    it('refuses a host that merely starts with a loopback literal', () => {
+      // The ai.js copy of this check had no trailing boundary at all, so it
+      // accepted this one too. Both sites now share one parsed implementation.
+      const found = findUnsafeConfigSettings({ ai: { baseURL: 'http://127.0.0.1.evil.com/v1' } });
+      expect(found.map((f) => f.path)).toEqual(['ai.baseURL']);
+    });
+
+    it('refuses a non-http scheme outright', () => {
+      const found = findUnsafeConfigSettings({ ai: { baseURL: 'file:///etc/passwd' } });
+      expect(found.map((f) => f.path)).toEqual(['ai.baseURL']);
+    });
   });
 
   describe('notification channels — webhook form of H3', () => {

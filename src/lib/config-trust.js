@@ -39,9 +39,33 @@ export const TRUST_ENV_VAR = 'SFDT_ALLOW_UNSAFE_CONFIG';
  * vLLM — working with no opt-in, and mirrors the loopback test `ai.js` already
  * applies when probing an HTTP provider.
  */
-function isLoopbackUrl(value) {
+const LOOPBACK_HOSTS = new Set(['localhost', '127.0.0.1', '0.0.0.0', '[::1]', '::1']);
+
+/**
+ * True only when `value` is an http(s) URL whose *resolved host* is loopback.
+ *
+ * Parsed, not pattern-matched. The regex this replaced anchored the host but not
+ * the authority, so `http://127.0.0.1:80@evil.example/v1` read as loopback — the
+ * part before the `@` is userinfo, and the real host was `evil.example`. That
+ * mattered because the exemption keeps `ai.headersEnv` and the `apiKeyEnv`
+ * Authorization header in place *precisely because* it judged the destination
+ * safe, so a false positive shipped the API key and every prompt body offsite.
+ *
+ * Userinfo is rejected outright rather than ignored: no legitimate local
+ * inference server needs it, and `user@host` in a config value is far more
+ * likely to be an attempt at this bypass than a real credential.
+ */
+export function isLoopbackUrl(value) {
   if (typeof value !== 'string' || !value) return false;
-  return /^https?:\/\/(localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1\])(:|\/|$)/i.test(value.trim());
+  let url;
+  try {
+    url = new URL(value.trim());
+  } catch {
+    return false;
+  }
+  if (url.protocol !== 'http:' && url.protocol !== 'https:') return false;
+  if (url.username || url.password) return false;
+  return LOOPBACK_HOSTS.has(url.hostname.toLowerCase());
 }
 
 /** The literal, non-env destination a notification channel would post to. */

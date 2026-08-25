@@ -428,11 +428,18 @@ export const COMMAND_POLICY = {
     docsCategory: 'org-health',
     surfaces: { gui: true, vscode: true, chrome: false },
     mcpTools: {
-      // Deliberately un-gated (sfdt-private#6). It reads an in-project
-      // queries.json, runs SOQL, and writes results under the data dir — no
-      // org mutation. The reason it was questioned was that an unvalidated
-      // set name could point it outside the project; that is closed at the
-      // argv boundary and inside dataSetDir(), so the gate is not the control.
+      // Deliberately un-gated (sfdt-private#6): it reads a queries.json, runs
+      // SOQL, and writes results under the data dir — no org mutation.
+      //
+      // What the fix closed is the *set name*: it is validated at the argv
+      // boundary and again inside dataSetDir(). What it does NOT close is
+      // `config.data.dir` itself, which dataSetDir() honours absolutely
+      // (data-runner.js:44) and config-trust.js does not strip — so a cloned
+      // repo's committed config can point the data dir out of the project.
+      // Not currently exploitable (export/import/delete all short-circuit on a
+      // queries.json or *-plan.json that must already exist there, which the
+      // repo author does not control), but the containment claim stops at the
+      // set name and this comment should not read wider than it is.
       sfdt_data_export: { mutating: false },
       sfdt_data_import: { mutating: true },
       sfdt_data_load: { mutating: true },
