@@ -1,46 +1,46 @@
 # Chrome Web Store Listing
 
-> **Store-sync status:** Updated for **v0.12.0** (44 features — the count is read from
+> **Store-sync status:** Updated for **v0.14.0** (47 features — the count is read from
 > `generated/chrome-features.json`, never counted by hand; re-derive it each release
-> instead of incrementing it). Since the last manual store upload (0.3.x era) this adds
-> Apex tooling (Test Runner, Code Coverage, Trace Flags), a **Schema Browser**, **Field
-> Impact Analysis**, **Dependency Explorer**, **API Version Audit**, in-browser **Flow
-> Scanner**, an **Org Release** badge, a **Command Palette**, a
-> docked **side panel**, **SOSL** mode in the SOQL Runner, and a right-click record
-> inspector, plus the bridge tools **Org Compare / Drift Check / Metadata Scan**. 0.12.0
-> adds the **Workspace Overview** home (org-health tiles, quick actions, recent activity),
-> a line-numbered **syntax-highlighting editor** for SOQL and Apex, and a rebuilt design
-> system across every surface. As of the last manual upload the *live* CWS listing still
-> reflects the older 29-feature copy — this file is ahead of the store. Paste the sections
-> below into the CWS dashboard during the v0.12.0 upload, then this file and the store are
+> instead of incrementing it). Three of those 47 ship **off by default**: Delete records
+> (`record-delete`), Bulk delete from SOQL results (`soql-bulk-delete`), and Generate
+> SOQL from a description (`soql-nl-generate`). Since the last listing rewrite this
+> adds Inspect Record typed edit and clone, plus the off-by-default record delete,
+> on top of the surfaces already in the copy: Apex tooling (Test Runner, Code Coverage,
+> Trace Flags), a **Schema Browser**, **Field Impact Analysis**, **Dependency Explorer**,
+> **API Version Audit**, in-browser **Flow Scanner**, an **Org Release** badge, a
+> **Command Palette**, a docked **side panel**, **SOSL** mode in the SOQL Runner, a
+> right-click record inspector, the bridge tools **Org Compare / Drift Check /
+> Metadata Scan**, the **Workspace Overview** home, a line-numbered
+> **syntax-highlighting editor** for SOQL and Apex, **Generate query** (NL→SOQL, off
+> by default), and **Bulk delete from SOQL results** (off by default).
+>
+> As of this writing the *live* CWS listing is **0.13.0**, titled **SFDT for Salesforce**,
+> with 45-feature copy. This file is ahead at 0.14.0 / 47. Paste the sections below
+> into the CWS dashboard during the v0.14.0 upload, then this file and the store are
 > back in sync.
 >
-> **The item name changed in 0.11.0.** The packaged manifest now reads "SFDT for
-> Salesforce"; it was "SFDT SF Helper". The store's *item title* is a dashboard field
-> rather than a manifest field, so it has to be renamed by hand in CWS during the same
-> upload or the store keeps showing the old name.
+> **The item name is already live as "SFDT for Salesforce".** It was renamed from
+> "SFDT SF Helper" in a dashboard edit and is what the store shows on 0.13.0. The
+> store's *item title* is still a dashboard field rather than a manifest field —
+> renaming it again has to be typed by hand or the store keeps the old name.
 >
 > **Permission justifications must be pasted into the item's Privacy practices
 > tab** (not just the description) — the store rejects auto-publish until every
 > permission below has a justification saved. `contextMenus` + `sidePanel` were
 > the two that blocked the v0.8.0 auto-publish. The permission set is **unchanged in
-> 0.11.0** — `storage`, `clipboardWrite`, `cookies`, `contextMenus`, `sidePanel` plus the
-> ten host permissions, verified against the built `.output/chrome-mv3/manifest.json`.
+> 0.14.0** — `storage`, `clipboardWrite`, `cookies`, `contextMenus`, `sidePanel` plus the
+> ten host permissions, verified against `wxt.config.ts`.
 >
 > Screenshots, the store icon, and the small promo tile live alongside this file in
 > `extension/store-assets/` (`store-icon-128.png`, `promo-small-440x280.png`, and the
-> `final_*` shots). **The screenshot set is 0.3.x-era and has not been recaptured since.**
-> `final_14` and `final_15` were deleted pending recapture (one showed a live API-version
-> error, the other leaked a real org id and email), and nothing that shipped after 0.3.x
-> has a shot at all — no Schema Browser, Command Palette, Trace Flags, Field Impact
-> Analysis, side panel, or SOSL mode. `final_06`, the hero shot, shows a Workspace nav
-> from when there were 13 tools. Recapturing is a human task; see this folder's README for
-> the featured-5 rationale and which shots to avoid.
+> featured-5 `final_*` shots). Recapture is a separate human task, not this listing
+> sync. CWS keeps the existing screenshots if none are uploaded.
 
 ## Dashboard field map
 
 Everything below is ready to paste. This table says **which dashboard tab each field lives in**,
-so the whole listing can be staged before the `ext-v0.11.0` zip is uploaded. Lengths were
+so the whole listing can be staged before the `ext-v0.14.0` zip is uploaded. Lengths were
 measured from this file's own sections — the headroom column is what's left before the store
 truncates or rejects.
 
@@ -49,7 +49,7 @@ truncates or rejects.
 | Item name | Store listing | 19 | 75 | **dashboard only — not the manifest** |
 | Short description | Store listing | 119 | 132 | matches manifest `description` byte-for-byte |
 | Category / Language | Store listing | — | — | dashboard only |
-| Detailed description | Store listing | 5,987 | 16,000 | this file |
+| Detailed description | Store listing | 6,671 | 16,000 | this file |
 | Screenshots (5) | Store listing | — | 1280×800 | `store-assets/` |
 | Single purpose | Privacy practices | 287 | 1,000 | this file |
 | Permission justifications (8) | Privacy practices | ≤403 each | 1,000 each | this file |
@@ -59,8 +59,8 @@ truncates or rejects.
 **Four fields never come from the zip** and are the ones that silently keep showing stale values:
 the item name, the category, the data-usage disclosures, and the distribution settings.
 
-The **item name is the live one this release** — the packaged manifest reads "SFDT for
-Salesforce" but the store will keep displaying "SFDT SF Helper" until it is retyped here by hand.
+The **item name is already live** — CWS currently displays "SFDT for Salesforce". It remains a
+dashboard-only field: a future rename still has to be retyped by hand.
 
 ## Item name
 SFDT for Salesforce
@@ -75,7 +75,7 @@ Developer Tools (alt: Workflow & Planning)
 English (United States)
 
 ## Detailed description
-SFDT for Salesforce adds 45 productivity features for Salesforce admins and developers across Flow Builder, Setup, Object Manager, and record pages — now including a standalone Workspace tab that runs SOQL, Apex, and other tools in their own browser tab so they never disturb the Salesforce page you're on. Features span flow analysis, schema and dependency exploration, data tooling, SOQL/REST/SOAP exploration, anonymous Apex, Apex test running and coverage, debug-log/trace-flag and event monitoring, org health diagnostics, and optional AI assistance. Every feature is opt-in via the options page, and any feature can be remotely disabled without a Web Store re-review.
+SFDT for Salesforce adds 47 productivity features for Salesforce admins and developers across Flow Builder, Setup, Object Manager, and record pages — now including a standalone Workspace tab that runs SOQL, Apex, and other tools in their own browser tab so they never disturb the Salesforce page you're on. Features span flow analysis, schema and dependency exploration, data tooling, SOQL/REST/SOAP exploration, anonymous Apex, Apex test running and coverage, debug-log/trace-flag and event monitoring, org health diagnostics, and optional AI assistance. Every feature can be switched off via the options page; three ship off by default (Delete records, Bulk delete from SOQL results, Generate SOQL from a description); and any feature can be remotely disabled without a Web Store re-review.
 
 Features include:
 - Setup Tabs — adds an Automation Home tab plus reorderable, groupable tabs to the Setup tab bar
@@ -91,11 +91,14 @@ Features include:
 - Comparison Exporter — export org-vs-org compare reports from the canvas
 - AI Assistant — surface answers about the current Flow via Claude, Gemini, or OpenAI through the bridge
 - SOQL Query Runner — run SOQL (REST or Tooling) or SOSL text searches with field/object autocomplete, query history and bookmarks, CSV export, query plans, and a LangGraph node generator; SOSL results are grouped per object with per-object copy and export
+- Bulk delete from SOQL results — delete rows from a result set after a backup CSV download and a typed confirmation; ships off
+- Generate SOQL from a description (AI) — describe a query in plain English and the SOQL lands in the editor, never in the org; ships off and needs the local CLI bridge
 - Org Limits — current org limit utilization at a glance
 - REST API Explorer — explore the REST API of the current org
 - Subflow Caller Graph — visualize which Flows call the current Flow
 - Trigger Conflicts — surface conflicting Flow Triggers on the same object
-- Inspect Record — view a record's complete field set (including empty and system fields) via the REST API
+- Inspect Record — view a record's complete field set (including empty and system fields) via the REST API, edit fields with the control that field deserves (picklists, dates, numbers), and clone into a form you review before anything is created
+- Delete records (opt-in) — delete the inspected record after typing the object's API name; ships off, with its own feature id so it can be killed without taking the inspector with it
 - Data Import Wizard — guided CSV-based data import into the org
 - Bulk Field Creator — create multiple custom fields at once
 - Metadata Retrieve & Deploy — retrieve and deploy metadata directly from the browser
@@ -218,19 +221,11 @@ All three are truthful for this item and must be ticked or the submission will n
 
 ## Screenshots — upload plan
 
-**Specs:** 1280×800 (all 15 present frames already conform), PNG, max 5 shown as the featured
-set, and **slot 1 is the hero**. The featured-5 order and the rationale for it live in
-`store-assets/README.md` — that file is the source of truth, not duplicated here.
+**Specs:** 1280×800, PNG, max 5 shown as the featured set, and **slot 1 is the hero**. The featured-5 order and the rationale for it live in `store-assets/README.md` — that file is the source of truth, not duplicated here.
 
-**These are 0.3.x-era and this is the release's weakest point.** Nothing that shipped after
-0.3.x has a frame at all — no Schema Browser, Command Palette, Trace Flags, Field Impact
-Analysis, side panel, or SOSL mode — and `final_06`, the hero, shows a Workspace nav from when
-there were 13 tools. `final_14` and `final_15` are deleted pending recapture (one captured the
-now-fixed SOAP API-version error live, the other leaked a real org id, company name and email).
+The featured-5 files in `store-assets/` (`final_01-workspace.png`, `final_02-field-impact.png`, `final_03-schema-browser.png`, `final_04-SOQL-Runner.png`, `final_05-cmd-pallet.png`) are the current set. Recapturing is a separate human task against a scratch org, never a production one.
 
-The listing can be fully pre-positioned without touching these — the store keeps the existing
-screenshots if none are uploaded. Recapturing is a separate human task against a scratch org,
-never a production one, given what `final_15` leaked.
+The listing can be fully pre-positioned without touching these — the store keeps the existing screenshots if none are uploaded.
 
 ## Distribution
 - Visibility: Public

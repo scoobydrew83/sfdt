@@ -286,7 +286,7 @@ async function render(): Promise<void> {
   wrap.appendChild(subtitle);
 
   // Two columns. The split is by WEIGHT, not by topic: the left column holds
-  // the things you scroll and read (bridge setup, 44 feature toggles, every
+  // the things you scroll and read (bridge setup, 47 feature toggles, every
   // per-feature schema), the right holds the short preference cards. A single
   // 720px column put nineteen cards in one stack, so the small ones — theme,
   // telemetry — sat below a very long list and were effectively unfindable.
