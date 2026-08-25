@@ -4,6 +4,16 @@ All notable changes to `@sfdt/extension` are documented here. Format follows [Ke
 
 ## [Unreleased]
 
+### Changed
+
+- **Chrome Web Store listing copy is current for 0.14.0.** `extension/listing.md`
+  now reads the catalog count (47) from `generated/chrome-features.json` rather
+  than a hand-count, names the three features that ship off (`record-delete`,
+  `soql-bulk-delete`, `soql-nl-generate`), and covers Inspect Record typed edit
+  and clone plus the off-by-default record delete. A drift test pins the count
+  and every catalog name to a listing bullet. Promo tiles were regenerated from
+  the same catalog so they no longer bake "44 features" into pixels.
+
 ## [0.14.0] - 2026-08-24
 
 ### Added
