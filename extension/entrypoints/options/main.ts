@@ -37,6 +37,7 @@ import { createOrgLimitsFeature } from '../../features/org-limits.js';
 import { createRestExploreFeature } from '../../features/rest-explore.js';
 import { createApexAnonymousFeature } from '../../features/apex-anonymous.js';
 import { createDebugLogViewerFeature } from '../../features/debug-log-viewer.js';
+import { createDeployStatusFeature } from '../../features/deploy-status.js';
 import { createSavedSoqlFeature } from '../../features/saved-soql.js';
 import { createOrgSwitcherFeature } from '../../features/org-switcher.js';
 import { createContextMenuInspectFeature } from '../../features/context-menu-inspect.js';
@@ -250,6 +251,7 @@ async function render(): Promise<void> {
   registry.register(createRestExploreFeature());
   registry.register(createApexAnonymousFeature());
   registry.register(createDebugLogViewerFeature());
+  registry.register(createDeployStatusFeature());
   registry.register(createSavedSoqlFeature());
   registry.register(createOrgSwitcherFeature());
   registry.register(createContextMenuInspectFeature());
@@ -286,7 +288,7 @@ async function render(): Promise<void> {
   wrap.appendChild(subtitle);
 
   // Two columns. The split is by WEIGHT, not by topic: the left column holds
-  // the things you scroll and read (bridge setup, 44 feature toggles, every
+  // the things you scroll and read (bridge setup, 47 feature toggles, every
   // per-feature schema), the right holds the short preference cards. A single
   // 720px column put nineteen cards in one stack, so the small ones — theme,
   // telemetry — sat below a very long list and were effectively unfindable.

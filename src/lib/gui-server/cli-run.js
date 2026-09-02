@@ -18,14 +18,15 @@
  * confirmation dialog before calling the endpoint.
  */
 
+// Data-set names become a path segment under the data dir; the charset check
+// is shared with the MCP surface so the two cannot drift apart.
+import { SET_RE } from '../safe-path.js';
+
 // Mirrors the ORG_ALIAS_RE used by the sibling gui-server routes (session
 // org, compare, pull): first char alphanumeric or '@' so a flag-style value
 // can't sneak into the child argv.
 const ORG_RE = /^[A-Za-z0-9@][A-Za-z0-9_.\-@]*$/;
 
-// Data-set names become a path segment under the data dir — keep them to a
-// conservative identifier charset (no dots, slashes, or leading '-').
-const SET_RE = /^[A-Za-z0-9][A-Za-z0-9_-]*$/;
 
 // AiEvaluationDefinition API name (agent-test spec) — a Salesforce DeveloperName.
 const DEV_NAME_RE = /^[A-Za-z][A-Za-z0-9_]*$/;

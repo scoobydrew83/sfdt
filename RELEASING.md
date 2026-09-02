@@ -100,11 +100,40 @@ already a hard gate that must pass before either job starts. Re-running all ~5,2
 test to flake, at the worst possible moment: *after* the version-bump commit has merged to
 `main`, where a failure leaves a tagged release with nothing on npm.
 
-That is not hypothetical. `test/lib/bridge-routes-extra.test.js` and
-`test/lib/gui-server-routes3.test.js` each fail intermittently under full-suite load (roughly 1
-run in 8), asserting a status code while a security guard legitimately returns 403. The product
-fails *safe* in both cases — these are test-isolation defects, not product defects — but either
-one could have failed a publish.
+That is not hypothetical. The `test/lib/gui-server-*` suites are **a single flake class**, not
+a fixed list of two or three files. Measured 2026-08-25 on a clean `develop`: six consecutive
+`npx vitest run --project cli` runs produced **three failures**, each in a different file.
+Confirmed members so far — `bridge-routes-extra`, `gui-server-routes`, `gui-server-routes3`,
+`gui-server-routes6`, `gui-server-routes8`, `gui-server-run-endpoints` — and the list should be
+read as "the gui-server route suites", not as an enumeration.
+
+The symptoms vary, which is why this was previously mistaken for separate defects:
+
+| Symptom | Example |
+|---|---|
+| Status assertion vs. a legitimate 403 | `bridge-routes-extra`, `gui-server-routes3` |
+| `socket hang up` on an SSE route | `gui-server-routes8` — `POST /api/pull` |
+| 5s timeout | `gui-server-routes` — `GET /api/audit` |
+| Wrong snapshot state (`expected 404 to be 204`) | `gui-server-routes6` — `GET /api/flow/graph` |
+| Whole-file cascade (8+ tests) | `gui-server-run-endpoints` |
+
+Two things narrow the cause (sfdt-private#8):
+
+- **It is not rate-limit bleed.** `apiLimiter` and `csrfLimiter` are created per-`createServer()`
+  call (`src/lib/gui-server/index.js:147-148`), so limiter state cannot cross files.
+- **It scales with concurrency.** `npx vitest run --project cli` fails *more often* (~50%) than
+  the full `npm test` across all seven projects, because the cli project alone gets more
+  workers. That points at shared state between gui-server suites running concurrently in the
+  same pool — mocked-`fs` module state or port reuse — not at any one test's logic.
+
+Reproduce with:
+
+```bash
+for i in 1 2 3 4 5 6; do npx vitest run --project cli 2>&1 | grep -E '^ *(Test Files|Tests) '; done
+```
+
+The product fails *safe* in every observed case — these are test-isolation defects, not product
+defects — but any of them could have failed a publish.
 
 What replaced it is deterministic and catches things the test job does not: `check:all-contracts`
 fails on catalog drift (which would otherwise ship a `generated/` snapshot that disagrees with

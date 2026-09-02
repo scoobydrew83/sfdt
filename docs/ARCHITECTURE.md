@@ -289,7 +289,17 @@ catalog-derived, see `generated/summary.json`). Design rules:
   `confirmExecution: true` (deploys, rollback, release, scratch create/delete, data import, …).
   The mapping of tools to commands and their mutating classification lives in
   `src/lib/command-policy.js` and is *enforced* by `test/command-policy.test.js` — a mutating
-  tool without the gate fails the suite.
+  tool without the gate fails the suite. `sfdt_data_export` is deliberately **not** gated: it
+  runs SOQL and writes files but mutates nothing in the org. Its containment comes from
+  `src/lib/safe-path.js` instead — see below.
+- **Path containment** (`src/lib/safe-path.js`): MCP arguments are chosen by a model, and this
+  CLI's AI surfaces feed that model untrusted org content, so any path-shaped argument is an
+  untrusted input. `resolveInProject()` guards `sfdt_apex_run`'s `file` and the `manifest` of
+  `sfdt_validate`/`sfdt_deploy`; `assertSetName()` guards the data-set name of the four
+  `sfdt_data_*` tools at the argv boundary, and `dataSetDir()` re-checks it at the path sink.
+  The GUI routes import the same helpers, so the two surfaces cannot drift apart on the same
+  parameter again. `confirmExecution` is not a substitute — it authorises the *operation* while
+  the model still supplies the argument.
 - **Parking** (`src/lib/mcp-parking.js`): results larger than ~50 KB are written to a local
   cache (24h TTL) and replaced by a descriptor envelope; `sfdt_get_parked_result` retrieves
   them. This keeps giant audit snapshots from blowing out an agent's context window.
@@ -407,7 +417,7 @@ Publishing is **CI-first** (`.github/workflows/ci.yml`); humans merge, CI ships:
 | HTTP bridge | User-global bearer token (`~/.sfdt/bridge-token`, 0600); anchored-regex origin allowlist (Salesforce domains + `chrome-extension://`); payload validation + size caps before parsing |
 | Native host | **Read-only** — mutating kinds and `ai` are `nativeHost: false` in the contract; project access only via the explicit install-host pointer file |
 | GitHub Action | `args-json` input is spawned **with no shell** (a JSON argv array); the legacy `command` string is restricted to shell-neutral characters unless `allow-shell-command: true` is explicitly set |
-| MCP | Every mutating tool requires `confirmExecution: true`; enforced by tests, not convention |
+| MCP | Every mutating tool requires `confirmExecution: true`; enforced by tests, not convention. Path-shaped arguments (`file`, `manifest`, data-set `set`) are contained by `src/lib/safe-path.js` — the model supplies them, so the confirm gate is not the control |
 | `.sfdt/config.json` | **Untrusted input.** `sfdt init` gitignores only `*.local.json`, so `config.json` is committed and arrives with whatever repo was cloned. `loadConfig()` strips the keys that execute code or choose a destination for secrets — `plugins[]`, `pluginOptions.autoDiscover`, `mcp.salesforce.command`/`args`, non-loopback `ai.baseURL`, and a channel's `headersEnv` beside a literal remote URL — unless `SFDT_ALLOW_UNSAFE_CONFIG=1`. Note `autoDiscover` is guarded for the same reason as `plugins[]`, not as a lesser sibling: it imports every `sfdt-plugin-*` in the project's `node_modules/` **and** every file in `.sfdt/plugins/`, so guarding only `plugins[]` would leave two equivalent paths open. The opt-in is an env var **by necessity**: an in-config flag would be set by the same attacker. See `src/lib/config-trust.js` |
 | Secrets | Config stores env-var **names**, never values (`ai.apiKeyEnv`, `webhookUrlEnv`, `headersEnv`, SMTP `*Env`); AI payloads pass through `redactSensitiveData`. Note the name alone is a primitive: whoever controls the config picks *which* var is read, so the guard above removes the attacker-chosen **destination** rather than the name |
 | AI subprocesses | CLI providers run in read-only sandboxes; write-capable agent loop is double-opt-in and dry-run-verified per turn. The sandbox is gated on `allowedTools` **existing**, not on it being non-empty — `[]` means "no tools", the most restrictive request, and must not read as "unrestricted" |
