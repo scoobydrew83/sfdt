@@ -1,5 +1,6 @@
 import path from 'path';
 import { runAiPrompt, providerSupportsAgenticTools } from './ai.js';
+import { AI_WRITE_ENV_VAR } from './config-trust.js';
 import { getPrompt } from './prompts.js';
 import { redactSensitiveData } from './audit-logger.js';
 import { recordRun } from './run-history.js';
@@ -11,7 +12,17 @@ import { mirrorTelemetry } from './harness-telemetry.js';
  * Highest-risk feature in the suite: it grants the AI WRITE access to the repo,
  * intentionally overriding the read-only default elsewhere. Mitigations are
  * mandatory and layered:
- *   1. Off by default — requires ai.agent.enabled AND ai.agent.allowWrite.
+ *   1. Off by default — requires `SFDT_ALLOW_AI_WRITE=1` in the *operator's*
+ *      environment. It used to require `ai.agent.enabled` AND
+ *      `ai.agent.allowWrite`, both read from `.sfdt/config.json` — a file that
+ *      is committed, so a cloned repo could set both and hand its own
+ *      attacker-authored prompt an `Edit` tool in the victim's checkout
+ *      (sfdt-private#14, H1). Two booleans in an attacker-controlled file are
+ *      one gate, not two. The grant has to arrive over a channel the repository
+ *      does not control, which is the same reasoning `config-trust.js` sets out
+ *      for `SFDT_ALLOW_UNSAFE_CONFIG` — and a separate variable from it,
+ *      because trusting a repo's plugin list is a far smaller decision than
+ *      handing a model write access.
  *   2. CLI providers only — the http provider can't run tools, so it's excluded.
  *   3. Bounded — at most maxTurns iterations.
  *   4. Re-validates via the caller's dry-run `validate()` each turn before any
@@ -32,8 +43,13 @@ import { mirrorTelemetry } from './harness-telemetry.js';
  */
 export async function runFixLoop({ failureOutput, config, projectRoot, org, validate, maxTurns } = {}) {
   const agentCfg = config?.ai?.agent || {};
-  if (!agentCfg.enabled || !agentCfg.allowWrite) {
-    return { ran: false, reason: 'ai.agent.enabled and ai.agent.allowWrite must both be true' };
+  if (process.env[AI_WRITE_ENV_VAR] !== '1') {
+    return {
+      ran: false,
+      reason:
+        `the write-capable auto-fix loop must be granted from your environment, not from ` +
+        `.sfdt/config.json — export ${AI_WRITE_ENV_VAR}=1 to enable it`,
+    };
   }
   if (!providerSupportsAgenticTools(config)) {
     return { ran: false, reason: 'auto-fix requires an agentic CLI provider (claude | gemini | openai), not http' };

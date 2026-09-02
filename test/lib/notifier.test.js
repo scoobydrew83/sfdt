@@ -386,3 +386,51 @@ describe('dispatchSnapshot (severity routing)', () => {
     delete process.env.SFDT_SMTP_PORT;
   });
 });
+
+/**
+ * Every rendered body leaves the machine over the network, so every renderer is
+ * redacted — not just the `webhook` type. Slack, Teams and Google Chat were
+ * left raw while the branch beside them carried a comment explaining exactly why
+ * they should not be (sfdt-private#14, M2).
+ */
+describe('redaction covers every renderer, not just webhook', () => {
+  const SECRET = 'force://PlatformCLI::5Aep861_REPLAYABLE_ORG_CREDENTIAL@example.my.salesforce.com';
+
+  function cfgFor(type) {
+    return {
+      notifications: {
+        enabled: true,
+        channels: [{ type, name: type, webhookUrl: 'https://hooks.example.com/x' }],
+      },
+    };
+  }
+
+  it.each(['slack', 'teams', 'googlechat', 'webhook'])(
+    'redacts an sfdx auth URL carried in the message for a %s channel',
+    async (type) => {
+      const fetchMock = vi.fn().mockResolvedValue({ ok: true });
+      vi.stubGlobal('fetch', fetchMock);
+
+      const results = await dispatch(
+        'deploy-failure',
+        { org: 'dev', message: `Deploy failed. ${SECRET}` },
+        cfgFor(type),
+      );
+
+      expect(results[0].ok).toBe(true);
+      const sent = JSON.stringify(fetchMock.mock.calls[0][1].body);
+      expect(sent).not.toContain('force://PlatformCLI');
+      expect(sent).toContain('REDACTED');
+    },
+  );
+
+  it('still sends a usable body — redaction replaces the secret, not the message', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true });
+    vi.stubGlobal('fetch', fetchMock);
+
+    await dispatch('deploy-failure', { org: 'dev', message: 'Apex test AccountTest failed' }, cfgFor('slack'));
+
+    const sent = JSON.stringify(fetchMock.mock.calls[0][1].body);
+    expect(sent).toContain('AccountTest');
+  });
+});

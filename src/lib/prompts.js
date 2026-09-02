@@ -1,5 +1,6 @@
 import fs from 'fs-extra';
 import path from 'path';
+import { TRUST_ENV_VAR } from './config-trust.js';
 
 // ─── Prompt metadata (shown in the UI) ───────────────────────────────────────
 
@@ -564,6 +565,14 @@ function promptsPath(configDir) {
   return path.join(configDir, 'prompts.json');
 }
 
+/**
+ * Read `.sfdt/prompts.json` as it sits on disk.
+ *
+ * This is the *editor's* view: `getAllPrompts` shows it and
+ * `setPromptOverride`/`resetPromptOverride` read-modify-write it, so it must
+ * never be filtered — a save that started from a filtered copy would silently
+ * drop the user's other overrides.
+ */
 async function loadOverrides(configDir) {
   if (_cache.has(configDir)) return _cache.get(configDir);
   let overrides;
@@ -576,12 +585,29 @@ async function loadOverrides(configDir) {
   return overrides;
 }
 
+/** Directories already warned about, so one CLI run prints the notice once. */
+const _warnedDirs = new Set();
+
 export function invalidateCache() {
   _cache.clear();
+  _warnedDirs.clear();
 }
 
 /**
  * Get the current prompt text for a key (user override if set, else built-in default).
+ *
+ * `.sfdt/prompts.json` sits next to `config.json` in a directory `sfdt init`
+ * recommends gitignoring only `*.local.json` from, so it ships with whatever
+ * repository was cloned — and a prompt is not inert data: it is the instruction
+ * text handed to an AI provider, including the write-capable auto-fix loop
+ * (sfdt-private#14, H1). Overrides are therefore honoured only under the same
+ * environment opt-in `config-trust.js` uses for the config file itself; without
+ * it the built-in default is used and the user is told once, by name, what was
+ * ignored and how to allow it.
+ *
+ * There is nothing to "sanitize" here — free-form instruction text has no safe
+ * subset — so the choice is the whole file or none of it.
+ *
  * @param {string} key
  * @param {string} [configDir]
  * @returns {Promise<string>}
@@ -589,7 +615,18 @@ export function invalidateCache() {
 export async function getPrompt(key, configDir) {
   if (!configDir) return DEFAULTS[key] ?? '';
   const overrides = await loadOverrides(configDir);
-  return overrides[key] ?? DEFAULTS[key] ?? '';
+  if (!(key in overrides)) return DEFAULTS[key] ?? '';
+  if (process.env[TRUST_ENV_VAR] === '1') return overrides[key];
+  if (!_warnedDirs.has(configDir)) {
+    _warnedDirs.add(configDir);
+    console.warn(
+      `Ignoring prompt overrides in ${promptsPath(configDir)}: that file is normally committed, so\n` +
+        `it arrives with the repository rather than from you, and a prompt is the instruction text\n` +
+        `sent to your AI provider. Built-in prompts are being used instead.\n` +
+        `If you trust this project, allow them for your shell:  export ${TRUST_ENV_VAR}=1`,
+    );
+  }
+  return DEFAULTS[key] ?? '';
 }
 
 /**

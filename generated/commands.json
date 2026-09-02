@@ -118,7 +118,7 @@
           "name": "aiFix",
           "required": false,
           "default": null,
-          "description": "On failure, run AI deploy-error analysis, or the bounded auto-fix loop when ai.agent is enabled (CLI providers only)"
+          "description": "On failure, run AI deploy-error analysis, or the bounded write-capable auto-fix loop when SFDT_ALLOW_AI_WRITE=1 (CLI providers only)"
         },
         {
           "flags": "--max-turns <n>",

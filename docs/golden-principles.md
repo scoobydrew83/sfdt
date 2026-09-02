@@ -15,8 +15,20 @@ enforcement (existing check, planned lint, or gc-scan).
    (`src/templates/sfdt.config.json`), schema (`src/lib/config-schema.json`,
    `additionalProperties:false`), consumer. *(candidate lint: key-set diff
    between template and schema)*
+   **A fourth place when the key has teeth.** `.sfdt/config.json` is committed,
+   so it arrives with whatever repo was cloned. If the new key's value becomes a
+   filesystem path, a network destination, a spawned command, or a privilege,
+   it belongs to a capability class in `src/lib/config-trust.js` — path keys
+   join `PROJECT_PATH_CONFIG_KEYS` in `safe-path.js` and are guarded with no
+   further code. Classify; do not add a sixth name to a list of five.
 4. **Secrets by env-var NAME only.** Config and logs carry the name of the
    variable, never its value. *(gc-scan + existing redaction in audit-logger)*
+   A key that could hold a secret value is not made safe by nothing reading it —
+   `ai.apiKey` sat in the schema unread until it was removed, which is exactly
+   how long it takes for someone to start populating it.
+   The same reasoning forbids putting a *grant* in the file: `SFDT_ALLOW_AI_WRITE`
+   and `SFDT_ALLOW_UNSAFE_CONFIG` are environment variables because a flag inside
+   `config.json` would be set by whoever set the dangerous key.
 5. **Telemetry is best-effort and never throws.** Anything writing history,
    audit logs, or notifications wraps in try/catch and degrades silently —
    measurement must never break the work being measured. *(pattern source:

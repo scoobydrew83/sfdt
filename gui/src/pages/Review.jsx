@@ -6,8 +6,8 @@ import { ChatContext } from '../App.jsx';
 const AI_CONFIG_HINT = (
   <div style={{ marginTop: 8, fontSize: 12, color: 'var(--status-modified-fg)' }}>
     <strong>To enable AI features:</strong> set <code>features.ai: true</code> and <code>ai.provider</code> in{' '}
-    <code>.sfdt/config.json</code>. For Claude, install the Claude Code CLI. For OpenAI or Gemini, set{' '}
-    <code>ai.apiKey</code>.
+    <code>.sfdt/config.json</code>. For Claude, install the Claude Code CLI. For OpenAI or Gemini, name the environment variable holding your key in{' '}
+    <code>ai.apiKeyEnv</code>.
   </div>
 );
 
