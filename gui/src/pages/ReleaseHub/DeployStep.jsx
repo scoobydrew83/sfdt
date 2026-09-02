@@ -5,6 +5,12 @@ import { IconRocket, IconRotateCcw } from '../../Icons.jsx';
 
 // ─── Deploy Step ─────────────────────────────────────────────────────────────
 
+// How long a captured validation job id stays offerable for Quick Deploy.
+// Deliberately short: the banner makes a claim about a *specific* validation
+// run, and an hours-old id is far more likely to describe org state that has
+// since moved on than to save a real test re-run (issue #346).
+const VALIDATION_TTL_MS = 60 * 60 * 1000; // 1 hour
+
 export default function DeployStep({ manifest, sourceDir, onMarkDone }) {
   const [orgs, setOrgs]             = useState([]);
   const [targetOrg, setTargetOrg]   = useState('');
@@ -25,6 +31,11 @@ export default function DeployStep({ manifest, sourceDir, onMarkDone }) {
   // Captured from a successful validate run so the next Quick Deploy can
   // reuse the validation job and skip the test re-run.
   const [validationJobId, setValidationJobId] = useState(null);
+  // True only once a validate run has actually finished with exit code 0.
+  // The completion banner is gated on this: it used to render off
+  // `deploymentMode === 'validate'` alone, so it appeared the instant the
+  // stream opened and claimed success before anything had run (issue #346).
+  const [validationComplete, setValidationComplete] = useState(false);
 
   const updateValidationJobId = (jobId) => {
     setValidationJobId(jobId);
@@ -47,27 +58,34 @@ export default function DeployStep({ manifest, sourceDir, onMarkDone }) {
     }
   };
 
+  // Rehydrate a previously captured validation job id — but only when it
+  // belongs to the org that is currently selected. This used to restore the id
+  // unconditionally and *overwrite* targetOrg from the stored record, so a
+  // stale entry could silently retarget the deploy and make the banner offer a
+  // Quick Deploy job that belongs to a different org (issue #346).
   useEffect(() => {
-    if (manifest?.relPath) {
-      const key = `sfdt_validation_${manifest.relPath}`;
-      try {
-        const stored = localStorage.getItem(key);
-        if (stored) {
-          const parsed = JSON.parse(stored);
-          if (parsed && Date.now() - parsed.timestamp < 24 * 60 * 60 * 1000) {
-            setValidationJobId(parsed.validationJobId);
-            if (parsed.targetOrg) setTargetOrg(parsed.targetOrg);
-          } else {
-            localStorage.removeItem(key);
-          }
-        } else {
-          setValidationJobId(null);
-        }
-      } catch (e) {
-        console.error('Failed to load validation from localStorage', e);
+    if (!manifest?.relPath) return;
+    const key = `sfdt_validation_${manifest.relPath}`;
+    try {
+      const stored = localStorage.getItem(key);
+      if (!stored) {
+        setValidationJobId(null);
+        return;
       }
+      const parsed = JSON.parse(stored);
+      const fresh = parsed && Date.now() - parsed.timestamp < VALIDATION_TTL_MS;
+      if (!fresh) {
+        localStorage.removeItem(key);
+        setValidationJobId(null);
+        return;
+      }
+      // Keep the record (the user may switch back), but only adopt the id for
+      // the org it was validated against.
+      setValidationJobId(parsed.targetOrg === targetOrg ? parsed.validationJobId : null);
+    } catch (e) {
+      console.error('Failed to load validation from localStorage', e);
     }
-  }, [manifest?.relPath]);
+  }, [manifest?.relPath, targetOrg]);
 
   useEffect(() => {
     let cancelled = false;
@@ -119,6 +137,7 @@ export default function DeployStep({ manifest, sourceDir, onMarkDone }) {
   const runDeployment = () => {
     if (!targetOrg) { setOrgError(true); return; }
     setOrgError(false);
+    setValidationComplete(false);
     setIsRunning(true);
     setStreamKey(k => k + 1);
   };
@@ -159,7 +178,10 @@ export default function DeployStep({ manifest, sourceDir, onMarkDone }) {
                     const newOrg = e.target.value;
                     setTargetOrg(newOrg);
                     if (newOrg) setOrgError(false);
-                    updateValidationJobId(null);
+                    // Drop the in-memory id only — the stored record still
+                    // belongs to the previous org, and the rehydrate effect
+                    // re-adopts it if the user switches back.
+                    setValidationJobId(null);
                   }}
                 >
                   <option value="">Select an org...</option>
@@ -447,16 +469,27 @@ export default function DeployStep({ manifest, sourceDir, onMarkDone }) {
               // screen" symptom on production validates.
               if (deploymentMode === 'validate') {
                 if (content?.validationJobId) updateValidationJobId(content.validationJobId);
+                // Only now is the validation actually finished, so only now may
+                // the completion banner make a claim about it.
+                setValidationComplete(true);
                 return;
               }
               // Real deploy completed — clear any stale job id so the next
               // validate-then-deploy cycle starts fresh.
               updateValidationJobId(null);
+              setValidationComplete(false);
               onMarkDone();
+            }}
+            onStatusChange={(streamStatus) => {
+              // Any transition away from a finished run (a re-run from the
+              // runner's own "Run again" button, a failure) retracts the
+              // completion claim. 'done' is set by onComplete above, which
+              // fires first on the success path.
+              if (streamStatus !== 'done') setValidationComplete(false);
             }}
           />
 
-          {deploymentMode === 'validate' && (
+          {deploymentMode === 'validate' && validationComplete && (
             <div
               style={{
                 marginTop: 12,
@@ -491,6 +524,7 @@ export default function DeployStep({ manifest, sourceDir, onMarkDone }) {
                 className="btn btn-primary btn-sm"
                 onClick={() => {
                   setDeploymentMode('deploy');
+                  setValidationComplete(false);
                   setStreamKey((k) => k + 1);
                 }}
               >
