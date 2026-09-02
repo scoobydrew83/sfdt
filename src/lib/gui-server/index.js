@@ -48,7 +48,7 @@ import {
   searchSObjects, describeSObject, discoverRelationships,
   validateQuery, explainQuery, runQuery, runSearch, toCsv,
 } from '../soql-runner.js';
-import { resolveInProject } from '../safe-path.js';
+import { resolveInProject, isPathWithinRoot, PROJECT_PATH_CONFIG_KEYS } from '../safe-path.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -237,14 +237,12 @@ export function createGuiApp(config, version, port = DEFAULT_UI_PORT) {
     // the API to set them would be an arbitrary-code-execution path.
     'plugins',
   ];
-  // Path keys must resolve within projectRoot to prevent logDir/manifestDir redirection attacks.
-  const PATH_KEYS_WITHIN_ROOT = new Set([
-    'logDir',
-    'manifestDir',
-    'releaseNotesDir',
-    'changelogDir',
-    'defaultSourcePath',
-  ]);
+  // Path keys must resolve within projectRoot to prevent logDir/manifestDir
+  // redirection attacks. The key set and the containment rule both come from
+  // `safe-path.js` now: this route used to carry its own copy of both, which is
+  // how it ended up guarding five keys while config load guarded none of them
+  // (sfdt-private#14, M1). One set, two surfaces, no drift.
+  const PATH_KEYS_WITHIN_ROOT = new Set(PROJECT_PATH_CONFIG_KEYS);
 
   app.patch('/api/config', apiLimiter, async (req, res) => {
     if (!requireCsrfToken(req, res, csrfToken)) return;
@@ -259,10 +257,7 @@ export function createGuiApp(config, version, port = DEFAULT_UI_PORT) {
       if (typeof value !== 'string') {
         return res.status(400).json({ error: 'value must be a string for path keys' });
       }
-      const projectRoot = config._projectRoot || process.cwd();
-      const resolved = path.resolve(projectRoot, value);
-      const resolvedRoot = path.resolve(projectRoot);
-      if (!resolved.startsWith(resolvedRoot + path.sep) && resolved !== resolvedRoot) {
+      if (!isPathWithinRoot(config._projectRoot || process.cwd(), value)) {
         return res.status(400).json({ error: `${key} must be within the project root` });
       }
     }

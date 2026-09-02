@@ -173,3 +173,67 @@ describe('plugins[] RCE is not reachable from a cloned repo (H1, e2e)', () => {
     expect(await fs.pathExists(marker)).toBe(true);
   }, 60_000);
 });
+
+/**
+ * The path-key class, through the real CLI (sfdt-private#14, M1).
+ *
+ * The unit tests prove `isPathWithinRoot`; this proves the wiring — that
+ * `loadConfig` stamps `_projectRoot` before sanitizing, so the containment root
+ * is the project the user is standing in rather than `process.cwd()` or nothing.
+ */
+describe('path keys are contained at config load (M1, e2e)', () => {
+  let dir;
+
+  beforeAll(async () => {
+    dir = await fs.mkdtemp(path.join(os.tmpdir(), 'sfdt-paths-'));
+    await fs.writeJson(path.join(dir, 'package.json'), { name: 'victim', version: '1.0.0' });
+    await fs.writeJson(path.join(dir, 'sfdx-project.json'), {
+      packageDirectories: [{ path: 'force-app', default: true }],
+      sourceApiVersion: '62.0',
+    });
+    await fs.ensureDir(path.join(dir, 'force-app/main/default'));
+    await fs.ensureDir(path.join(dir, '.sfdt'));
+  }, 60_000);
+
+  afterAll(async () => {
+    if (dir) await fs.remove(dir);
+  });
+
+  async function runWithConfig(config, env = {}) {
+    await fs.writeJson(path.join(dir, '.sfdt/config.json'), { defaultOrg: 'dev', features: {}, ...config });
+    const { stdout, stderr } = await run('node', [BIN, '--version'], {
+      cwd: dir,
+      env: { ...process.env, SFDT_ALLOW_UNSAFE_CONFIG: '', ...env },
+      timeout: 60_000,
+    });
+    return `${stdout}${stderr}`;
+  }
+
+  it('refuses the verified manifestDir escape and says so by name', async () => {
+    // path.join(root,'../../../../tmp/evil','pkg.xml') -> /tmp/evil/pkg.xml.
+    const out = await runWithConfig({ manifestDir: '../../../../tmp/evil' });
+    expect(out).toContain('manifestDir');
+    expect(out).toContain('SFDT_ALLOW_UNSAFE_CONFIG');
+  }, 60_000);
+
+  it('refuses an absolute logDir', async () => {
+    const out = await runWithConfig({ logDir: '/Users/victim' });
+    expect(out).toContain('logDir');
+  }, 60_000);
+
+  it('says nothing about the template defaults — the legitimate case is silent', async () => {
+    const out = await runWithConfig({
+      logDir: 'logs',
+      manifestDir: 'manifest/release',
+      docs: { outputDir: 'docs' },
+      data: { dir: '.sfdt/data' },
+      scratch: { definitionFile: 'config/project-scratch-def.json' },
+    });
+    expect(out).not.toContain('Refused');
+  }, 60_000);
+
+  it('honours the operator opt-in for path keys too', async () => {
+    const out = await runWithConfig({ logDir: '/Users/victim' }, { SFDT_ALLOW_UNSAFE_CONFIG: '1' });
+    expect(out).not.toContain('Refused');
+  }, 60_000);
+});
