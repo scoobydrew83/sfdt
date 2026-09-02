@@ -1,2 +1,10 @@
-- script: echo "$(SFDX_AUTH_URL)" | sf org login sfdx-url --sfdx-url-stdin --alias {{org}} {{setDefaultFlag}}
+# Secret pipeline variables are not exported to scripts automatically — the
+# env: mapping below is required. It is also the only *safe* way to reach one:
+# a $(SFDX_AUTH_URL) macro written inside the script body is substituted into
+# the script text the agent writes to disk before bash runs, so the auth URL —
+# a full, reusable org credential — would land in a file on the agent. The
+# env: mapping hands it to the process instead, and never to the script file.
+- script: echo "$SFDX_AUTH_URL" | sf org login sfdx-url --sfdx-url-stdin --alias {{org}} {{setDefaultFlag}}
   displayName: Authenticate to {{org}}
+  env:
+    SFDX_AUTH_URL: $(SFDX_AUTH_URL)
