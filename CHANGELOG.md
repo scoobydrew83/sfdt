@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`@sfdt/web` (WEB-1)** — Next.js 15 App Router workspace at `web/`. Design-token
+  shell for `/` and `/tools/flow-linter`, Cloudflare OpenNext config with **no D1**.
+  Org metadata is never stored. See `web/README.md`.
+
 ## [0.23.1] - 2026-08-25
 
 A security patch. Both fixes close gaps where a path or URL chosen by someone
