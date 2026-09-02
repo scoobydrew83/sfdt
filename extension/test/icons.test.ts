@@ -125,6 +125,7 @@ describe('lib/icons', () => {
         'features/org-limits.ts',
         'features/org-release-badge.ts',
         'features/org-switcher.ts',
+        'features/quality-results.ts',
         'features/rest-explore.ts',
         'features/saved-soql.ts',
         'features/scheduled-flow-explorer.ts',

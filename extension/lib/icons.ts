@@ -321,6 +321,7 @@ export const ICON_FOR_FEATURE: Record<string, string> = {
   'metadata-scan': 'layers',
   'dependency-explorer': 'graph',
   'flow-quality': 'check',
+  'quality-results': 'alert',
   'drift-check': 'wave',
   'org-compare': 'compare',
 };

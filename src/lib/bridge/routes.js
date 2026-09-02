@@ -237,6 +237,36 @@ async function dispatch(request, { version, config, projectRoot, logDir, makeSuc
         issueFamilyCount: report.issueFamilies.length,
       });
     }
+    case 'quality.results': {
+      // Read-only: return the latest `sfdt quality` run recorded under logs/.
+      // A Code Analyzer sweep is minutes of work, so this never runs one — the
+      // same call the dashboard's GET /api/quality makes, through the same
+      // `readQuality` parser, so the Chrome panel and the dashboard cannot
+      // disagree about a run (including its SKIPPED verdict).
+      if (!projectRoot) {
+        return makeErrorResponse(
+          request.requestId,
+          'Cannot read quality results: no project root resolved on the bridge',
+          'INTERNAL_ERROR',
+        );
+      }
+      const { readQuality } = await import('../gui-server/parsers.js');
+      const snapshot = await readQuality(logDir || path.join(projectRoot, 'logs'));
+      if (!snapshot) {
+        return makeSuccessResponse(request.requestId, {
+          available: false,
+          hint: 'No quality results yet — run Quality from the `sfdt ui` dashboard to record a run.',
+        });
+      }
+      return makeSuccessResponse(request.requestId, {
+        available: true,
+        timestamp: snapshot.date ?? null,
+        status: snapshot.status ?? null,
+        summary: snapshot.summary ?? { critical: 0, high: 0, medium: 0, low: 0 },
+        violations: snapshot.violations ?? [],
+        unavailableMessage: snapshot.unavailableMessage ?? null,
+      });
+    }
     case 'deploy': {
       // Spawns `sf project deploy start --metadata Flow:<name>`. The
       // extension's flow-deploy feature is expected to send `flowApiName`

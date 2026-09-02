@@ -30,6 +30,7 @@ const IDEMPOTENT_KINDS: ReadonlySet<string> = new Set([
   'ping',
   'version',
   'quality',
+  'quality.results',
   'drift',
   'scan',
   'compare',

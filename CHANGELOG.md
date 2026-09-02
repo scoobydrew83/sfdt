@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+> **The bridge contract changed — `PROTOCOL_VERSION` moves `1.3` → `1.4`.** One additive
+> read-only request kind; nothing was removed or renamed, so the bump is MINOR and an
+> older client/server pair still talks (negotiation warns). `PROTOCOL_VERSION` lives in
+> `packages/flow-core/src/bridge-contract.ts`.
+
+- **`quality.results` bridge kind — the Chrome extension can read `sfdt quality` output.**
+  A read-only kind, implemented by both the HTTP bridge (`src/lib/bridge/routes.js`) and the
+  native messaging host (`host/src/index.js`), returning the latest `logs/quality-latest.json`
+  through the same `readQuality` parser that backs the dashboard's `GET /api/quality` — so
+  every surface reports the same run, including its **SKIPPED** verdict when Code Analyzer
+  never ran. It never *runs* a scan: a Code Analyzer sweep is minutes of work and must not be
+  triggered by a browser click, matching the `drift` kind's snapshot-only precedent. With no
+  recorded run it answers `{ available: false, hint }` rather than an empty result. Consumed by
+  the extension's new Quality Results panel (C-P5-1).
+
 ## [0.23.1] - 2026-08-25
 
 A security patch. Both fixes close gaps where a path or URL chosen by someone

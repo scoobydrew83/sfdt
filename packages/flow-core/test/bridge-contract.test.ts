@@ -135,6 +135,12 @@ describe('flow-core/bridge-contract', () => {
       expect(validateSfdtRequest({ requestId: 'r1', kind: 'org-health' }).ok).toBe(true);
     });
 
+    it('quality.results needs only the envelope (no extra fields)', () => {
+      expect(validateSfdtRequest({ requestId: 'r1', kind: 'quality.results' }).ok).toBe(true);
+      // It is a distinct kind from `quality`, which still requires flowXml.
+      expect(validateSfdtRequest({ requestId: 'r1', kind: 'quality' }).ok).toBe(false);
+    });
+
     it('rejects a requestId longer than 256 characters', () => {
       const result = validateSfdtRequest({
         requestId: 'a'.repeat(257),

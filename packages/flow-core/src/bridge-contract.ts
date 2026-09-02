@@ -27,7 +27,10 @@
 //   1.3 — added manifest.discover and manifest.render request kinds (the
 //         read-only manifest-builder surface: org type/member discovery via
 //         org-inventory, package.xml rendering via renderPackageXml).
-export const PROTOCOL_VERSION = '1.3';
+//   1.4 — added the quality.results request kind (read-only: returns the
+//         latest `sfdt quality` snapshot from logs/quality-latest.json, the
+//         same payload the dashboard's /api/quality route serves).
+export const PROTOCOL_VERSION = '1.4';
 
 export type SfdtRequestKind =
   | 'ping'
@@ -35,6 +38,7 @@ export type SfdtRequestKind =
   | 'deploy'
   | 'rollback'
   | 'quality'
+  | 'quality.results'
   | 'ai'
   | 'drift'
   | 'scan'
@@ -98,6 +102,17 @@ export interface QualityRequest extends RequestEnvelope {
   // extension clients already on the wire; a future major version of the
   // contract should rename it to `flowMetadata` and add a discriminator.
   flowXml: string;
+}
+
+/**
+ * Read the latest `sfdt quality` run recorded in `logs/quality-latest.json`
+ * (written when the command runs through `sfdt ui`). No request fields — the
+ * bridge reads whatever is on disk for the active project, exactly like
+ * `org-health`. Read-only by design: a Code Analyzer sweep is minutes of work
+ * and must not be triggered by a browser click.
+ */
+export interface QualityResultsRequest extends RequestEnvelope {
+  kind: 'quality.results';
 }
 
 export interface AiRequest extends RequestEnvelope {
@@ -196,6 +211,7 @@ export type SfdtRequest =
   | DeployRequest
   | RollbackRequest
   | QualityRequest
+  | QualityResultsRequest
   | AiRequest
   | DriftRequest
   | ScanRequest
@@ -339,6 +355,43 @@ export interface OrgHealthResponseData {
   // null when the corresponding logs/<area>-latest.json does not exist yet.
   audit: OrgHealthSnapshot | null;
   monitor: OrgHealthSnapshot | null;
+}
+
+/**
+ * One Code Analyzer violation, already flattened by the CLI's
+ * `parseQualityLines` (which absorbs the v5 / legacy-v4 output-shape split, so
+ * every consumer sees this one shape). `severity` is the analyzer's 1–5 scale:
+ * 1 = critical, 2 = high, 3 = medium, 4+ = low.
+ */
+export interface QualityViolation {
+  file: string;
+  line: number;
+  rule: string;
+  /** Analyzer engine attribution (pmd, eslint, …). Absent on legacy v4 output. */
+  engine?: string;
+  severity: number;
+  message: string;
+}
+
+/**
+ * quality.results success payload.
+ *
+ * `available: false` means no run has been recorded yet — `hint` says how to
+ * record one. When available, `status` is the CLI's own verdict and carries a
+ * third state beyond PASS/FAIL: **SKIPPED**, meaning Code Analyzer never ran.
+ * A skipped scan MUST NOT be presented as a pass by any consumer; that is the
+ * whole reason the marker exists (see scripts/quality/code-analyzer.sh).
+ */
+export interface QualityResultsResponseData {
+  available: boolean;
+  /** Present only when `available` is false. */
+  hint?: string;
+  timestamp?: string | null;
+  status?: 'PASS' | 'FAIL' | 'SKIPPED' | null;
+  summary?: { critical: number; high: number; medium: number; low: number };
+  violations?: QualityViolation[];
+  /** Why the scan was skipped. Non-null only when `status` is SKIPPED. */
+  unavailableMessage?: string | null;
 }
 
 /**
@@ -487,6 +540,7 @@ export const KNOWN_KINDS: readonly SfdtRequestKind[] = [
   'deploy',
   'rollback',
   'quality',
+  'quality.results',
   'ai',
   'drift',
   'scan',
@@ -580,6 +634,9 @@ export function validateSfdtRequest(input: unknown): {
     }
     case 'quality':
       if (!isNonEmptyString(input.flowXml)) errors.push({ field: 'flowXml', reason: 'must be a non-empty string' });
+      break;
+    case 'quality.results':
+      // No fields beyond the envelope; the bridge reads the snapshot from disk.
       break;
     case 'ai':
       if (!isNonEmptyString(input.prompt)) errors.push({ field: 'prompt', reason: 'must be a non-empty string' });

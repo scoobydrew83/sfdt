@@ -109,6 +109,9 @@ export function _clearFeatureDefaultForTests(featureId: string): void {
  *   twelve on top. Listed because the deeper half is what the entry promises.
  * - drift-check / metadata-scan / org-compare: bridge-tools.ts — they need
  *   `sfdt ui` running to answer the bridge at all.
+ * - quality-results: C-P5-1. It shows the last `sfdt quality` run the CLI
+ *   recorded on disk. There is no in-browser half — Salesforce Code Analyzer
+ *   runs against the local source tree, which the extension cannot see.
  * - soql-nl-generate: C-P4-5. Unlike ai-assistant below, the AI run IS the
  *   whole feature — there is no in-browser half — so with no bridge the panel
  *   can only explain how to start one.
@@ -123,5 +126,6 @@ export const BRIDGE_REQUIRED: ReadonlySet<string> = new Set([
   'drift-check',
   'metadata-scan',
   'org-compare',
+  'quality-results',
   'soql-nl-generate',
 ]);

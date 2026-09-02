@@ -324,6 +324,29 @@ async function dispatch(request) {
       ]);
       return makeSuccessResponse(request.requestId, { audit, monitor });
     }
+    case 'quality.results': {
+      // Latest `sfdt quality` run recorded under logs/ — same read-only shape
+      // as the HTTP bridge, through the same `readQuality` parser, so the two
+      // transports cannot disagree about a run (SKIPPED verdict included).
+      const ctx = await resolveProjectContext();
+      if (!ctx) return makeErrorResponse(request.requestId, NO_PROJECT_MSG, 'NOT_FOUND');
+      const { readQuality } = await loadCliLib('gui-server/parsers.js');
+      const snapshot = await readQuality(ctx.logDir);
+      if (!snapshot) {
+        return makeSuccessResponse(request.requestId, {
+          available: false,
+          hint: 'No quality results yet — run Quality from the `sfdt ui` dashboard to record a run.',
+        });
+      }
+      return makeSuccessResponse(request.requestId, {
+        available: true,
+        timestamp: snapshot.date ?? null,
+        status: snapshot.status ?? null,
+        summary: snapshot.summary ?? { critical: 0, high: 0, medium: 0, low: 0 },
+        violations: snapshot.violations ?? [],
+        unavailableMessage: snapshot.unavailableMessage ?? null,
+      });
+    }
     case 'drift': {
       // Return the latest drift snapshot (optionally refreshed), scoped to a
       // component — same read-only shape as the HTTP bridge.
