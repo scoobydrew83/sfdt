@@ -10,10 +10,16 @@ import { extractErrorLines } from './CommandRunner.jsx';
  *   startLabel   — button label (default "Run")
  *   streamFn     — () => stream object from api.stream.*
  *   onComplete   — called when exitCode === 0
+ *   onStatusChange — called with the run lifecycle state ('idle' | 'running' |
+ *                    'done' | 'error') every time it changes. The status is
+ *                    otherwise private to this component, which left parents
+ *                    unable to tell a finished run from one that just started
+ *                    (issue #346: the Release Hub rendered its "validation
+ *                    completed" banner the instant the stream opened).
  *   children     — optional content rendered above the terminal (form inputs, etc.)
  *   commandHint  — short string used in the Ask-AI prompt to identify what ran
  */
-export default function StreamRunner({ label, startLabel = 'Run', streamFn, onComplete = () => {}, onError, children, commandHint, autoStart = false }) {
+export default function StreamRunner({ label, startLabel = 'Run', streamFn, onComplete = () => {}, onError, onStatusChange, children, commandHint, autoStart = false }) {
   const [status, setStatus]     = useState('idle');
   const [lines, setLines]       = useState([]);
   const [exitCode, setExitCode] = useState(null);
@@ -108,6 +114,13 @@ export default function StreamRunner({ label, startLabel = 'Run', streamFn, onCo
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [autoStart]);
+
+  // Publish lifecycle transitions to the parent. Depends on `status` only —
+  // an inline arrow prop must not re-notify on every unrelated re-render.
+  useEffect(() => {
+    if (onStatusChange) onStatusChange(status);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [status]);
 
   return (
     <div className="cmd-runner">
