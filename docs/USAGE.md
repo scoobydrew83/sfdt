@@ -97,7 +97,8 @@ sfdt init
 
 `sfdt init` also scans your `packageDirectories` for Apex test classes (`*Test.cls`) and production classes to populate `test-config.json` automatically.
 
-**After init:** Add `.sfdt/*.local.json` to your `.gitignore` to avoid committing environment-specific overrides.
+**After init:** Add `.sfdt/*.local.json` to your `.gitignore` to avoid committing environment-specific
+overrides, and `.sfdt/prompts.json` so your AI prompt overrides do not travel to whoever clones the repo.
 
 ---
 
@@ -251,7 +252,13 @@ sfdt deploy --smart --ai-fix                     # analyse failures with the edi
 | `--ai-fix` | On failure, analyse the deploy errors via the editable `deploy-error` prompt |
 | `--agent` | Run a non-interactive AI session for the deploy |
 
-The bounded coding-agent auto-fix loop is **default-off**. It requires `ai.agent.enabled` **and** `ai.agent.allowWrite` (CLI providers only), and re-validates via a dry-run each turn — it never deploys.
+The bounded coding-agent auto-fix loop is **default-off**. It requires `SFDT_ALLOW_AI_WRITE=1` in your
+environment (CLI providers only), and re-validates via a dry-run each turn — it never deploys.
+
+> The grant used to be `ai.agent.enabled` + `ai.agent.allowWrite` in `.sfdt/config.json`. That file is
+> committed, so a cloned repo could set both and hand its own prompt an `Edit` tool in your checkout —
+> two booleans in a file the attacker controls are one gate, not two. Both keys are still accepted by the
+> schema and now do nothing. See [ENV-VARS](./ENV-VARS.md).
 
 ---
 

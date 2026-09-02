@@ -303,6 +303,13 @@ export function registerInitCommand(program) {
         console.log('');
         print.warning('Recommended: add the following to your .gitignore:');
         print.step('  .sfdt/*.local.json');
+        // `prompts.json` holds the instruction text handed to your AI provider,
+        // including the write-capable auto-fix loop. Committed, it ships with
+        // every clone as attacker-controlled input — which is why `getPrompt`
+        // ignores overrides unless SFDT_ALLOW_UNSAFE_CONFIG=1 (sfdt-private#14,
+        // H1). Gitignoring it does not change that gate; it keeps *your*
+        // prompts from becoming the next cloner's untrusted input.
+        print.step('  .sfdt/prompts.json');
         console.log('');
       } catch (err) {
         print.error(`Init failed: ${err.message}`);

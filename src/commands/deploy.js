@@ -127,8 +127,9 @@ async function runSmartDeploy(config, options) {
       if (options.aiFix) {
         const failureOutput = deployErr.all || deployErr.stderr || deployErr.stdout || deployErr.message;
         // Try the bounded write-capable auto-fix loop first (off unless
-        // ai.agent.enabled + allowWrite + an agentic provider). It re-validates
-        // via dry-run each turn and never deploys.
+        // SFDT_ALLOW_AI_WRITE=1 in the operator's environment, plus an agentic
+        // provider — the grant cannot come from the committed config file). It
+        // re-validates via dry-run each turn and never deploys.
         const validate = async () => {
           try {
             const r = await execa('sf', buildCmd('validate'), { all: true });
@@ -242,7 +243,7 @@ export function registerDeployCommand(program) {
     .option('--overwrite-manifest <path>', 'Path to package-no-overwrite.xml (overrides config)')
     .option('--prod', 'Treat the target org as production (never downgrade tests)')
     .option('--ai-deps', 'Run AI dependency cleanup on the computed delta before deploying')
-    .option('--ai-fix', 'On failure, run AI deploy-error analysis, or the bounded auto-fix loop when ai.agent is enabled (CLI providers only)')
+    .option('--ai-fix', 'On failure, run AI deploy-error analysis, or the bounded write-capable auto-fix loop when SFDT_ALLOW_AI_WRITE=1 (CLI providers only)')
     .option('--max-turns <n>', 'Max auto-fix iterations (overrides ai.agent.maxTurns)')
     .option('--pr-comment', 'Post the smart-deploy delta + outcome to the current PR (via gh)')
     .option('--agent', 'Non-interactive agent mode (no AI prompts block on input)')
