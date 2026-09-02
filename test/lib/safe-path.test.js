@@ -8,7 +8,13 @@
 
 import { describe, it, expect } from 'vitest';
 import path from 'path';
-import { SET_RE, resolveInProject, assertSetName } from '../../src/lib/safe-path.js';
+import {
+  SET_RE,
+  resolveInProject,
+  assertSetName,
+  isPathWithinRoot,
+  PROJECT_PATH_CONFIG_KEYS,
+} from '../../src/lib/safe-path.js';
 import { dataSetDir } from '../../src/lib/data-runner.js';
 
 const ROOT = path.resolve('/tmp/sfdt-project');
@@ -91,5 +97,70 @@ describe('dataSetDir containment', () => {
   it('honours a configured data dir', () => {
     expect(dataSetDir({ ...config, data: { dir: 'fixtures' } }, 'seed'))
       .toBe(path.join(ROOT, 'fixtures', 'seed'));
+  });
+});
+
+/**
+ * `isPathWithinRoot` is the predicate form of the same containment rule, used
+ * where a whole config is checked at once rather than one argument at a time:
+ * `config-trust.js` at load time and the GUI's `PATCH /api/config`. The GUI used
+ * to carry its own copy of both the rule and the key set (sfdt-private#14, M1) —
+ * that copy is gone, so these are the tests for both surfaces.
+ */
+describe('isPathWithinRoot', () => {
+  it('accepts a relative path inside the root, and the root itself', () => {
+    expect(isPathWithinRoot(ROOT, 'logs')).toBe(true);
+    expect(isPathWithinRoot(ROOT, 'manifest/release')).toBe(true);
+    expect(isPathWithinRoot(ROOT, '.sfdt/data')).toBe(true);
+    expect(isPathWithinRoot(ROOT, '.')).toBe(true);
+  });
+
+  it('refuses an absolute value even when it happens to land inside the root', () => {
+    // A project-relative setting has no business naming a filesystem root, and
+    // accepting the inside-the-root case would make the rule depend on where
+    // the victim happens to have cloned the repo.
+    expect(isPathWithinRoot(ROOT, '/Users/victim')).toBe(false);
+    expect(isPathWithinRoot(ROOT, path.join(ROOT, 'logs'))).toBe(false);
+  });
+
+  it('refuses a `..` escape, before and after resolution', () => {
+    expect(isPathWithinRoot(ROOT, '../../../../tmp/evil')).toBe(false);
+    expect(isPathWithinRoot(ROOT, 'logs/../../..')).toBe(false);
+  });
+
+  it('refuses a sibling directory that merely shares the root as a string prefix', () => {
+    expect(isPathWithinRoot(ROOT, `${ROOT}-evil/logs`)).toBe(false);
+  });
+
+  it('fails closed on anything that is not a non-empty string', () => {
+    expect(isPathWithinRoot(ROOT, '')).toBe(false);
+    expect(isPathWithinRoot(ROOT, null)).toBe(false);
+    expect(isPathWithinRoot(ROOT, 42)).toBe(false);
+    expect(isPathWithinRoot(ROOT, { toString: () => 'logs' })).toBe(false);
+  });
+});
+
+describe('PROJECT_PATH_CONFIG_KEYS', () => {
+  it('covers every path key the issue enumerated, plus the GUI PATCH set', () => {
+    // The point of the set is that it is one list two surfaces read. A key
+    // dropped from here silently un-guards both.
+    for (const key of [
+      'logDir',
+      'manifestDir',
+      'releaseNotesDir',
+      'changelogDir',
+      'defaultSourcePath',
+      'docs.outputDir',
+      'monitoring.backupDir',
+      'data.dir',
+      'scratch.definitionFile',
+      'deployment.smart.noOverwriteManifest',
+    ]) {
+      expect(PROJECT_PATH_CONFIG_KEYS).toContain(key);
+    }
+  });
+
+  it('is frozen, so a caller cannot widen it at runtime', () => {
+    expect(Object.isFrozen(PROJECT_PATH_CONFIG_KEYS)).toBe(true);
   });
 });

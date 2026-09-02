@@ -58,11 +58,18 @@ These are read by the CLI itself rather than passed to shell scripts, so they ar
 
 | Variable | Effect |
 |----------|--------|
-| `SFDT_ALLOW_UNSAFE_CONFIG` | Set to exactly `1` to load the `.sfdt/config.json` keys that are otherwise refused: `plugins[]`, `pluginOptions.autoDiscover`, `mcp.salesforce.command`/`args`, a non-loopback `ai.baseURL`, and a notification channel's `headersEnv` beside a literal remote URL. See [ARCHITECTURE §18](./ARCHITECTURE.md#18-threat-boundaries) |
+| `SFDT_ALLOW_UNSAFE_CONFIG` | Set to exactly `1` to load the `.sfdt/config.json` settings that are otherwise refused, and to honour `.sfdt/prompts.json` overrides. The refused set is a **capability classification**, not a key list: code-execution keys (`plugins[]`, `pluginOptions.autoDiscover`), the process-spawn keys (`mcp.salesforce.command`/`args`), the privilege keys (`ai.agent.enabled`/`allowWrite`), destination keys (a non-loopback `ai.baseURL`, a notification channel's literal `webhookUrl`/`url`), and every path key in `PROJECT_PATH_CONFIG_KEYS` whose value escapes the project root. See [ARCHITECTURE §18](./ARCHITECTURE.md#18-threat-boundaries) |
+| `SFDT_ALLOW_AI_WRITE` | Set to exactly `1` to allow `sfdt deploy --smart --ai-fix` to run the **write-capable** auto-fix loop (`src/lib/agent-loop.js`), which grants the AI provider `Edit` in your checkout. Deliberately separate from `SFDT_ALLOW_UNSAFE_CONFIG`: trusting a repo's plugin list is a much smaller decision than handing a model write access, and neither implies the other. Nothing in `.sfdt/config.json` can substitute for it — `ai.agent.enabled` and `ai.agent.allowWrite` are accepted for backward compatibility and ignored |
 | `SFDT_HARNESS_TELEMETRY` | Path to a JSONL file that `agent-loop.js` mirrors `agent-fix` rows into, on top of the machine-local run-history db. Unset in normal use — this exists for the sfdt source checkout, where the tracked `.harness/telemetry.jsonl` is what the weekly `harness-improver` workflow mines in CI. `org` is never mirrored, since that file is committed to a public repo. `tools/record-verdict.mjs` writes the same file via `--telemetry`, but redacts verdict criterion text into a `criteriaCount` on the way — the verbatim text goes to `--private-telemetry` (default `.work/telemetry.jsonl`, written only when that directory already exists) |
 
 `config.json` is committed by convention (`sfdt init` gitignores only `*.local.json`), so it
-arrives with whatever repository was cloned. The keys above execute code or choose where
-env-var-named secrets are sent, so they are stripped at load time with a message naming what was
-refused. **The opt-in has to be an environment variable**: a flag inside `config.json` would be set
-by the same attacker who set the dangerous key. Anything else in the config loads normally.
+arrives with whatever repository was cloned. The settings above execute code, escalate privilege,
+choose where env-var-named secrets are sent, or redirect filesystem reads and writes, so they are
+stripped at load time with a message naming what was refused. **The opt-in has to be an environment
+variable**: a flag inside `config.json` would be set by the same attacker who set the dangerous key.
+Anything else in the config loads normally.
+
+`.sfdt/prompts.json` ships with the clone for the same reason, and a prompt is not inert data — it
+is the instruction text handed to your AI provider, including the write-capable auto-fix loop. So
+repo-supplied prompt overrides are ignored under the same opt-in, and `sfdt init` now recommends
+gitignoring that file too. The dashboard's prompt editor still reads and writes it either way.

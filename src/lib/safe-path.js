@@ -63,3 +63,55 @@ export function assertSetName(setName) {
   }
   return setName;
 }
+
+/**
+ * The config keys whose value is turned into a filesystem path under the
+ * project root, in dotted form.
+ *
+ * This is the *capability class*, not a list of keys someone noticed: a key
+ * belongs here because its value reaches `path.join`/`path.resolve` and then a
+ * read or a write. `config-trust.js` classifies against this set at load time so
+ * a new path-shaped key is a one-line addition here rather than a silently
+ * unguarded escape (sfdt-private#14, M1).
+ *
+ * `defaultSourcePath` is included even though `loadConfig` normally derives it
+ * from `sfdx-project.json`: an explicit value in `.sfdt/config.json` wins, and
+ * that file is the untrusted one.
+ */
+export const PROJECT_PATH_CONFIG_KEYS = Object.freeze([
+  'logDir',
+  'manifestDir',
+  'releaseNotesDir',
+  'changelogDir',
+  'defaultSourcePath',
+  'docs.outputDir',
+  'monitoring.backupDir',
+  'data.dir',
+  'scratch.definitionFile',
+  'deployment.smart.noOverwriteManifest',
+]);
+
+/**
+ * True when `value` is a relative path that stays inside `root`.
+ *
+ * The predicate form of `resolveInProject`: same containment rule, but it
+ * returns a boolean because its callers report on a whole config at once rather
+ * than failing at the first bad key. Absolute values are refused outright — a
+ * project-relative setting has no business naming `/Users/victim` even when the
+ * resolve happens to land inside the root.
+ *
+ * Fails closed on anything that is not a non-empty string: the honest answer
+ * for a value that cannot be shown to be inside the root is "no". Callers that
+ * want to ignore an absent key check for it before asking.
+ *
+ * ponytail: string-prefix containment, inherited from `resolveInProject` — a
+ * symlink inside the project can still point outside it (sfdt-private#15, L1).
+ */
+export function isPathWithinRoot(root, value) {
+  if (typeof value !== 'string' || value.length === 0) return false;
+  if (path.isAbsolute(value)) return false;
+  if (value.split(/[/\\]/).includes('..')) return false;
+  const rootAbs = path.resolve(root ?? '.');
+  const resolved = path.resolve(rootAbs, value);
+  return resolved === rootAbs || resolved.startsWith(rootAbs + path.sep);
+}
