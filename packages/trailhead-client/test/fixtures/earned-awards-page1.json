@@ -1,0 +1,48 @@
+{
+  "data": {
+    "profile": {
+      "__typename": "PublicProfile",
+      "earnedAwards": {
+        "pageInfo": {
+          "hasNextPage": true,
+          "endCursor": "eyJzIjoiMDMwMjA4MjgtNzNmYi1lOWJlLTc5ODEtMzg3NDkyZjI2MzBhIiwicHAiOjMsInBuIjoxfQ"
+        },
+        "edges": [
+          {
+            "cursor": "eyJzIjoiMDMxMjI1MTEtN2Q4NS0wZWFlLTkyYjAtZjIxNjg0MTBlMDI0IiwicHAiOjMsInBuIjoxfQ",
+            "node": {
+              "id": "03122511-7d85-0eae-92b0-f2168410e024",
+              "award": {
+                "id": "02fde3c0-db78-c821-5a60-fea28870563b",
+                "title": "Becoming an Agentblazer",
+                "type": "MODULE"
+              }
+            }
+          },
+          {
+            "cursor": "eyJzIjoiMDMwMjA5MDctOTA1Ni00ZGVhLWUxODMtZWM4MzI1ZjcyNzRhIiwicHAiOjMsInBuIjoxfQ",
+            "node": {
+              "id": "03020907-9056-4dea-e183-ec8325f7274a",
+              "award": {
+                "id": "02fa82ff-543c-d51c-9e07-6f40bb8b69bb",
+                "title": "Omnistudio Developer Certification Maintenance (Summer ’25)",
+                "type": "MODULE"
+              }
+            }
+          },
+          {
+            "cursor": "eyJzIjoiMDMwMjA4MjgtNzNmYi1lOWJlLTc5ODEtMzg3NDkyZjI2MzBhIiwicHAiOjMsInBuIjoxfQ",
+            "node": {
+              "id": "03020828-73fb-e9be-7981-387492f2630a",
+              "award": {
+                "id": "02f00f90-e5ac-bdf6-8bae-0523ab3b105c",
+                "title": "Platform Administrator Certification Maintenance (Spring '25)",
+                "type": "MODULE"
+              }
+            }
+          }
+        ]
+      }
+    }
+  }
+}

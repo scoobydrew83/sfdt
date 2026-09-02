@@ -1,0 +1,47 @@
+{
+  "name": "@sfdt/trailhead-client",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Typed, cache-friendly client for the public Trailhead profile GraphQL API. Unauthenticated public data only: no cookies, no credentials, no private profiles. No DOM, no chrome.*, no Node-specific APIs.",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/scoobydrew83/sfdt.git",
+    "directory": "packages/trailhead-client"
+  },
+  "bugs": {
+    "url": "https://github.com/scoobydrew83/sfdt/issues"
+  },
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist/",
+    "src/"
+  ],
+  "keywords": [
+    "salesforce",
+    "trailhead",
+    "trailblazer",
+    "graphql"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "prepack": "npm run build",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:live": "SFDT_TRAILHEAD_LIVE=1 vitest run",
+    "lint": "eslint src/"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.3",
+    "vitest": "^4.1.4"
+  }
+}

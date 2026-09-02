@@ -1,0 +1,51 @@
+{
+  "data": {
+    "profile": {
+      "__typename": "PublicProfile",
+      "id": "005SYNTHETIC0000000AAA",
+      "companyName": "Example Consulting",
+      "title": null,
+      "trailheadStats": {
+        "earnedBadgesCount": 63,
+        "completedTrailCount": 4,
+        "earnedPointsSum": 35550,
+        "superbadgeCount": 0,
+        "rank": {
+          "title": "Expeditioner",
+          "imageUrl": "https://res.cloudinary.com/trailhead/image/upload/public-trailhead/assets/images/ranks/expeditioner.png"
+        }
+      },
+      "credential": {
+        "certifications": [
+          {
+            "title": "Salesforce Certified Platform Administrator",
+            "dateCompleted": "2023-9-12",
+            "dateExpired": null,
+            "status": {
+              "title": "Maintenance Due",
+              "expired": false
+            }
+          },
+          {
+            "title": "Salesforce Certified Platform App Builder",
+            "dateCompleted": "2020-6-13",
+            "dateExpired": null,
+            "status": {
+              "title": "Maintenance Due",
+              "expired": false
+            }
+          },
+          {
+            "title": "Salesforce Certified Platform Developer",
+            "dateCompleted": "2019-8-5",
+            "dateExpired": null,
+            "status": {
+              "title": "Maintenance Due",
+              "expired": false
+            }
+          }
+        ]
+      }
+    }
+  }
+}
