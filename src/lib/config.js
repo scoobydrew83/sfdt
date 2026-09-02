@@ -80,6 +80,18 @@ function formatAjvErrors(errors) {
     );
   }
   if (e.keyword === 'additionalProperties') {
+    // `ai.apiKey` was accepted by the schema but read by nothing — the HTTP
+    // provider has always taken its key from `process.env[ai.apiKeyEnv]`. It was
+    // dropped rather than left as a place a secret could accumulate (golden
+    // principle #4, sfdt-private#15 L4), so say what to do instead of leaving
+    // an upgrader with a bare "unknown key".
+    if (fieldPath === 'ai' && e.params.additionalProperty === 'apiKey') {
+      return (
+        `Invalid configuration: "ai.apiKey" is no longer a config key — config stores the NAME of ` +
+        `an environment variable, never a secret value${more}.\n` +
+        `Move the key into your environment and set "ai.apiKeyEnv" to that variable's name.`
+      );
+    }
     return `Invalid configuration: "${fieldPath}" contains unknown key "${e.params.additionalProperty}"${more}.`;
   }
 

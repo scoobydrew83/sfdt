@@ -78,6 +78,15 @@ export function describeChannels(config) {
   }));
 }
 
+/**
+ * Resolve the destination for a channel: literal first, then env-named.
+ *
+ * The two literal keys here — `webhookUrl` and `url` — are the ones
+ * `config-trust.js` refuses when they name a non-loopback host and the config
+ * came from a cloned repo (`LITERAL_CHANNEL_URL_KEYS`). Add a literal key to
+ * this precedence chain without adding it there and the guard stops covering
+ * the destination this function actually picks.
+ */
 function channelUrl(ch) {
   if (ch.webhookUrl) return ch.webhookUrl;
   if (ch.webhookUrlEnv && process.env[ch.webhookUrlEnv]) return process.env[ch.webhookUrlEnv];
@@ -167,12 +176,17 @@ async function sendToChannel(ch, message, { kind, snapshot, org } = {}) {
     if (!url) {
       return { channel: label, type: ch.type, ok: false, error: 'no webhook URL resolved (check webhookUrl/webhookUrlEnv/url)' };
     }
+    // Every rendered body leaves this machine over the network, so every one of
+    // them is redacted. The `webhook` branch below carried this reasoning from
+    // the start — "both webhook shapes go to an external sink, so redact either
+    // way" — but its three siblings were left raw, and a Slack card carries the
+    // same org aliases, deploy output and audit summaries that the webhook JSON
+    // does (sfdt-private#14, M2).
     let body;
-    if (ch.type === 'slack') body = renderSlack(message);
-    else if (ch.type === 'teams') body = renderTeams(message);
-    else if (ch.type === 'googlechat') body = renderGoogleChat(message);
+    if (ch.type === 'slack') body = redactSensitiveData(renderSlack(message));
+    else if (ch.type === 'teams') body = redactSensitiveData(renderTeams(message));
+    else if (ch.type === 'googlechat') body = redactSensitiveData(renderGoogleChat(message));
     else if (ch.type === 'webhook') {
-      // Both webhook shapes go to an external sink, so redact either way.
       body = ch.format === 'loki'
         ? redactSensitiveData(renderLoki(message, { kind, org }))
         : redactSensitiveData(renderWebhook(message, { kind, snapshot }));

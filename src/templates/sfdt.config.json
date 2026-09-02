@@ -48,9 +48,7 @@
     "headersEnv": {},
     "timeoutMs": 300000,
     "agent": {
-      "enabled": false,
-      "maxTurns": 3,
-      "allowWrite": false
+      "maxTurns": 3
     }
   },
   "notifications": {
