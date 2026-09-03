@@ -1,9 +1,14 @@
 # Secret pipeline variables are not exported to scripts automatically — the
-# env: mapping below is required.
+# env: mapping below is required. A $(VAR) macro in the script body would be
+# substituted into the script text on disk instead, so never reach for one.
 - script: |
-    trap 'rm -f server.key' EXIT
-    printf '%s\n' "$SFDX_JWT_SECRET_KEY" > server.key
-    sf org login jwt --client-id "$SFDX_CONSUMER_KEY" --jwt-key-file server.key --username "$SFDX_USERNAME" --instance-url "${SFDX_INSTANCE_URL:-https://login.salesforce.com}" --alias {{org}} {{setDefaultFlag}}
+    # The key file goes to the agent temp dir, never the job workspace: the
+    # workspace is what publish-artifact steps and caches collect. mktemp also
+    # creates it 0600, which a plain `>` redirect (umask, usually 0644) does not.
+    KEY_FILE="$(mktemp "${AGENT_TEMPDIRECTORY:-${TMPDIR:-/tmp}}/server.key.XXXXXX")"
+    trap 'rm -f "$KEY_FILE"' EXIT
+    printf '%s\n' "$SFDX_JWT_SECRET_KEY" > "$KEY_FILE"
+    sf org login jwt --client-id "$SFDX_CONSUMER_KEY" --jwt-key-file "$KEY_FILE" --username "$SFDX_USERNAME" --instance-url "${SFDX_INSTANCE_URL:-https://login.salesforce.com}" --alias {{org}} {{setDefaultFlag}}
   displayName: Authenticate to {{org}}
   env:
     SFDX_CONSUMER_KEY: $(SFDX_CONSUMER_KEY)

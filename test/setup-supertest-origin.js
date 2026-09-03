@@ -1,8 +1,11 @@
 // Vitest setup file: keep the gui-server's security middleware happy from
-// inside the in-process test client.
+// inside the in-process test client, and keep the transport underneath
+// supertest boring enough that it cannot invent failures of its own.
 //
-// The gui-server now rejects mutating requests that arrive without an
-// `Origin` header, and rejects them again if the route requires CSRF and the
+// ── Part 1: security headers ────────────────────────────────────────────────
+//
+// The gui-server rejects mutating requests that arrive without an `Origin`
+// header, and rejects them again if the route requires CSRF and the
 // `X-SFDT-CSRF` header is missing. Real browsers always set Origin on
 // cross-origin POSTs to http://localhost:7654 and the React app fetches the
 // CSRF token from `/api/csrf-token` before mutating requests. Tests are
@@ -18,14 +21,21 @@
 //
 // Tests that explicitly set their own X-SFDT-CSRF (e.g. to assert behavior
 // when the token is wrong) are left untouched.
+//
+// ── Part 2: one listening socket per app, not per request ───────────────────
+//
+// See the comment on `patchedServerAddress` below. This is the fix for
+// sfdt-private#8 — the `gui-server-*` / `bridge-routes-extra` flake class.
 
+import http from 'http';
+import { afterAll } from 'vitest';
 import request, { Test } from 'supertest';
 
 const DEFAULT_TEST_ORIGIN = 'http://localhost:7654';
-const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
 const tokenCache = new WeakMap();
 
 const originalEnd = Test.prototype.end;
+const originalServerAddress = Test.prototype.serverAddress;
 
 function getHeader(testInstance, name) {
   const headers = testInstance._header || {};
@@ -34,91 +44,159 @@ function getHeader(testInstance, name) {
 
 // supertest wraps the Express app in an ephemeral http.Server per Test
 // instance. The underlying Express app function is reachable as
-// `server._events.request` and IS stable across requests, so we key the
-// CSRF cache off of that rather than off of `this.app` (the per-request
-// Server wrapper).
-function cacheKey(testInstance) {
-  const app = testInstance.app;
-  if (!app) return null;
+// `server._events.request` and IS stable across requests, so both the CSRF
+// cache and the shared-server map key off of that rather than off of
+// `this.app` (the per-request Server wrapper).
+function appHandler(app) {
   if (typeof app === 'function') return app;
-  const handler = app._events?.request;
-  return handler || app;
+  const handler = app?._events?.request;
+  return typeof handler === 'function' ? handler : null;
+}
+
+// ── Shared listening servers ────────────────────────────────────────────────
+//
+// supertest 7 builds a *new* `http.Server` around the Express app and calls
+// `listen(0)` for every single `request(app)`, then `close()`s it once the
+// response has been asserted. Measured on this repo, one worker's share of
+// the gui-server suites does ~57 of those bind/close cycles; the 26 suites
+// together do well over a thousand, all against the one loopback ephemeral
+// port range that every concurrently-running vitest worker shares.
+//
+// That is the only cross-process resource these suites touch — they are the
+// only cli suites that speak real TCP at all — and it is what the flake class
+// in sfdt-private#8 is made of. Every symptom on that list is a transport
+// symptom, never a handler symptom: `socket hang up`, a request that never
+// answers inside the 5s test timeout, a 403 that means the response came from
+// a *different* `createGuiApp` instance (each one mints its own CSRF token),
+// a 404 for a route the app under test demonstrably has. The product is never
+// wrong in any of them — it "fails safe" because it was never asked.
+//
+// So: listen once per Express app, reuse that socket for every request in the
+// file, and close it when the file is done. The apps themselves stay
+// per-`describe`, so nothing about test isolation is weakened — what goes away
+// is a thousand kernel-level bind/close races per run.
+const serverByApp = new WeakMap();
+const openedServers = new Set();
+
+Test.prototype.serverAddress = function patchedServerAddress(app, path) {
+  // A server the test started itself (e.g. via `startGuiServer`) is already
+  // listening on a port it chose — leave supertest's own handling alone.
+  if (typeof app?.address === 'function' && app.address()) {
+    return originalServerAddress.call(this, app, path);
+  }
+
+  const handler = appHandler(app);
+  if (!handler) return originalServerAddress.call(this, app, path);
+
+  let server = serverByApp.get(handler);
+  if (!server) {
+    server = http.createServer(handler);
+    // `listen(0)` with no host binds synchronously, so `address()` is readable
+    // on the next line — the same assumption supertest itself makes.
+    server.listen(0);
+    server.unref();
+    serverByApp.set(handler, server);
+    openedServers.add(server);
+  }
+
+  // Deliberately NOT `this._server = server`: supertest's `end()` closes
+  // `this._server`, and this one outlives the request.
+  return `http://127.0.0.1:${server.address().port}${path}`;
+};
+
+afterAll(() => {
+  for (const server of openedServers) server.close();
+  openedServers.clear();
+});
+
+// Fetch the app's CSRF token, retrying once. Resolves with the token or
+// rejects with a message that names the transport failure — never resolves
+// with "no token", because sending the real request without one just moves
+// the failure to an unrelated assertion three lines later.
+function fetchCsrfToken(app, launchToken) {
+  return new Promise((resolve, reject) => {
+    const attempt = (retriesLeft, previous) => {
+      const req = request(app).get('/api/csrf-token');
+      if (launchToken) req.set('Authorization', `Bearer ${launchToken}`);
+      req.end((err, res) => {
+        const token = res?.body?.token;
+        if (!err && token) return resolve(token);
+
+        const detail = `status=${res?.status} err=${err?.message}`;
+        if (retriesLeft > 0) return attempt(retriesLeft - 1, detail);
+        reject(
+          new Error(
+            '[setup-supertest-origin] could not obtain a CSRF token from ' +
+              `/api/csrf-token. first attempt: ${previous}; retry: ${detail}`,
+          ),
+        );
+      });
+    };
+    attempt(1, null);
+  });
 }
 
 Test.prototype.end = function patchedEnd(fn) {
-  if (!getHeader(this, 'origin') && !getHeader(this, 'Origin')) {
+  if (!getHeader(this, 'origin')) {
     this.set('Origin', DEFAULT_TEST_ORIGIN);
   }
 
-  const appFn = typeof this.app === 'function' ? this.app : this.app?._events?.request;
-  const launchToken = appFn?.launchToken;
+  // One TCP connection per request. The listening socket is now shared across
+  // a whole file, so without this Node's keep-alive agent would pool sockets
+  // and could write a request onto one the server is retiring at its 5s
+  // `keepAliveTimeout` — a reset that reads exactly like the flake we just
+  // removed. Matches the pre-existing behaviour, where a per-request server
+  // was torn down immediately anyway.
+  if (!getHeader(this, 'connection')) {
+    this.set('Connection', 'close');
+  }
 
-  if ((this.url || '').includes('/api/csrf-token') && launchToken && !getHeader(this, 'authorization') && !getHeader(this, 'Authorization')) {
+  const handler = appHandler(this.app);
+  const launchToken = handler?.launchToken;
+
+  const isCsrfTokenRequest = (this.url || '').includes('/api/csrf-token');
+
+  if (isCsrfTokenRequest && launchToken && !getHeader(this, 'authorization')) {
     this.set('Authorization', `Bearer ${launchToken}`);
   }
 
   const skipCsrf =
     getHeader(this, 'x-sfdt-csrf') ||
-    (this.url || '').includes('/api/csrf-token') ||
+    isCsrfTokenRequest ||
     (this.url || '').includes('/api/health');
 
   if (skipCsrf) {
     return originalEnd.call(this, fn);
   }
 
-  const key = cacheKey(this);
-  const cached = key ? tokenCache.get(key) : null;
-  if (cached) {
-    this.set('X-SFDT-CSRF', cached);
-    return originalEnd.call(this, fn);
-  }
-
-  // First mutating request against this app — fetch the token.
   const self = this;
 
-  const req = request(self.app).get('/api/csrf-token');
-  if (launchToken) {
-    req.set('Authorization', `Bearer ${launchToken}`);
+  // Cache the *promise*, not the token: two mutating requests issued against
+  // the same cold app would otherwise both miss and both fetch.
+  let pending = handler ? tokenCache.get(handler) : null;
+  if (!pending) {
+    pending = fetchCsrfToken(self.app, launchToken);
+    if (handler) {
+      // Don't strand a rejection, and don't let one transport hiccup poison
+      // every later test in the file.
+      pending.catch(() => {
+        if (tokenCache.get(handler) === pending) tokenCache.delete(handler);
+      });
+      tokenCache.set(handler, pending);
+    }
   }
 
-  // A failed token fetch used to fall through silently, sending the real
-  // request with no `X-SFDT-CSRF` header. The server then correctly answered
-  // 403 — and the test failed asserting some unrelated status, with nothing
-  // pointing at the token fetch. That turned any transient hiccup here into a
-  // mystery flake (seen intermittently in bridge-routes-extra, gui-server-routes3
-  // and gui-server-manifest-builder). `/api/csrf-token` is itself rate-limited
-  // (10/min), so a burst of cache misses against one app is a plausible trigger.
-  //
-  // So: retry once, and if it still fails, say so loudly instead of letting the
-  // request go out unauthenticated and fail somewhere confusing.
-  const attach = (token) => {
-    if (key) tokenCache.set(key, token);
-    self.set('X-SFDT-CSRF', token);
-  };
-
-  req.end((err, tokenRes) => {
-    const token = tokenRes?.body?.token;
-    if (!err && token) {
-      attach(token);
-      return originalEnd.call(self, fn);
-    }
-
-    const retry = request(self.app).get('/api/csrf-token');
-    if (launchToken) retry.set('Authorization', `Bearer ${launchToken}`);
-    retry.end((retryErr, retryRes) => {
-      const retryToken = retryRes?.body?.token;
-      if (!retryErr && retryToken) {
-        attach(retryToken);
-      } else {
-        console.error(
-          `[setup-supertest-origin] could not obtain a CSRF token for ${self.method} ${self.url} — ` +
-            `the request will be sent without one and the server will answer 403. ` +
-            `first attempt: status=${tokenRes?.status} err=${err?.message}; ` +
-            `retry: status=${retryRes?.status} err=${retryErr?.message}`,
-        );
-      }
+  pending.then(
+    (token) => {
+      self.set('X-SFDT-CSRF', token);
       originalEnd.call(self, fn);
-    });
-  });
+    },
+    (err) => {
+      // Surface the token failure itself rather than the 403 it would cause.
+      if (fn) return fn.call(self, err);
+      throw err;
+    },
+  );
+
   return self;
 };

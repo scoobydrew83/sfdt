@@ -122,7 +122,7 @@ describe('generateCi — auth methods', () => {
     expect(r.content).toContain('sf org login jwt');
     expect(r.content).toContain('--client-id');
     expect(r.content).toContain('SFDX_JWT_SECRET_KEY');
-    expect(r.content).toContain('rm -f server.key');
+    expect(r.content).toContain('rm -f "$KEY_FILE"');
     expect(r.content).not.toContain('sfdx-url-stdin');
   });
 
