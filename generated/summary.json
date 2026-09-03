@@ -5,10 +5,10 @@
     "mutatingCommands": 23
   },
   "chrome": {
-    "registeredFeatures": 48,
-    "displayTools": 42,
-    "workspaceTools": 24,
-    "bridgeRequired": 6,
+    "registeredFeatures": 49,
+    "displayTools": 43,
+    "workspaceTools": 25,
+    "bridgeRequired": 7,
     "standalone": 42,
     "syntheticMenuItems": 1
   },
@@ -24,9 +24,9 @@
     "confirmGated": 21
   },
   "bridge": {
-    "protocolVersion": "1.3",
-    "kinds": 13,
-    "nativeHostKinds": 10
+    "protocolVersion": "1.4",
+    "kinds": 14,
+    "nativeHostKinds": 11
   },
   "ci": {
     "providers": 4,

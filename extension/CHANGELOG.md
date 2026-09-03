@@ -4,6 +4,38 @@ All notable changes to `@sfdt/extension` are documented here. Format follows [Ke
 
 ## [Unreleased]
 
+### Added
+
+- **Quality Results — the last `sfdt quality` run, in the Workspace (C-P5-1).** Salesforce Code
+  Analyzer findings from the CLI, rendered as a per-file issue list: severity, line, rule id,
+  message, and engine attribution (pmd, eslint, …), grouped by file worst-first, filterable by
+  severity and by engine. Each file that maps to a Setup component gets "Open in Setup", which
+  resolves the record Id through the Tooling API and deep-links to the component itself,
+  falling back to the type's Setup list rather than a dead link when the org has no such row.
+
+  **A skipped scan is never shown as a pass.** `scripts/quality/code-analyzer.sh` emits an
+  explicit skipped marker when Code Analyzer is missing or its run failed, and a skipped run
+  reports zero violations exactly like a clean one — so the viewmodel decides the verdict from
+  the marker *first* and the violation count only afterwards. SKIPPED renders as a warning
+  callout naming the reason, with the clean-run wording suppressed (J-1 policy parity with the
+  CLI and the dashboard).
+
+  Bridge-backed and read-only: a Code Analyzer sweep is minutes of work, so nothing here starts
+  one — it reads what the CLI already recorded. Off-bridge, absent-run, and unauthorized states
+  each explain the setup step rather than showing an empty (and therefore falsely clean) panel.
+  Default on, no new permission.
+
+### Changed
+
+- **Bridge protocol `1.3` → `1.4`** — one additive read-only request kind, `quality.results`,
+  implemented by both transports (HTTP bridge and native messaging host). It returns the latest
+  `logs/quality-latest.json` through the same `readQuality` parser the dashboard's
+  `GET /api/quality` uses, so the Chrome panel and the dashboard cannot disagree about a run.
+  Minor bump, so an older bridge and a newer extension still talk (negotiation warns); an older
+  bridge answers the new kind with `REQUEST_INVALID`, which the panel surfaces with its hint.
+- Chrome Web Store listing synced to the 49-feature catalog (bullet + counts for Quality
+  Results). Permission set **unchanged** — verified against `wxt.config.ts`.
+
 ## [0.15.0] - 2026-08-25
 
 ### Added

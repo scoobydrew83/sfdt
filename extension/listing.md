@@ -1,11 +1,13 @@
 # Chrome Web Store Listing
 
-> **Store-sync status:** Updated for **v0.15.0** (48 features — the count is read from
+> **Store-sync status:** Updated for **v0.15.0** (49 features — the count is read from
 > `generated/chrome-features.json`, never counted by hand; re-derive it each release
-> instead of incrementing it). Three of those 48 ship **off by default**: Delete records
+> instead of incrementing it). Three of those 49 ship **off by default**: Delete records
 > (`record-delete`), Bulk delete from SOQL results (`soql-bulk-delete`), and Generate
 > SOQL from a description (`soql-nl-generate`). Since the last listing rewrite this
-> adds **Deployment Status** (recent deploys, their component errors, read-only),
+> adds **Quality Results** (the last `sfdt quality` Code Analyzer run, per file, over the
+> local CLI bridge) and **Deployment Status** (recent deploys, their component errors,
+> read-only),
 > and before it Inspect Record typed edit and clone plus the off-by-default record delete,
 > on top of the surfaces already in the copy: Apex tooling (Test Runner, Code Coverage,
 > Trace Flags), a **Schema Browser**, **Field Impact Analysis**, **Dependency Explorer**,
@@ -79,7 +81,7 @@ Developer Tools (alt: Workflow & Planning)
 English (United States)
 
 ## Detailed description
-SFDT for Salesforce adds 48 productivity features for Salesforce admins and developers across Flow Builder, Setup, Object Manager, and record pages — now including a standalone Workspace tab that runs SOQL, Apex, and other tools in their own browser tab so they never disturb the Salesforce page you're on. Features span flow analysis, schema and dependency exploration, data tooling, SOQL/REST/SOAP exploration, anonymous Apex, Apex test running and coverage, debug-log/trace-flag and event monitoring, org health diagnostics, and optional AI assistance. Every feature can be switched off via the options page; three ship off by default (Delete records, Bulk delete from SOQL results, Generate SOQL from a description); and any feature can be remotely disabled without a Web Store re-review.
+SFDT for Salesforce adds 49 productivity features for Salesforce admins and developers across Flow Builder, Setup, Object Manager, and record pages — now including a standalone Workspace tab that runs SOQL, Apex, and other tools in their own browser tab so they never disturb the Salesforce page you're on. Features span flow analysis, schema and dependency exploration, data tooling, SOQL/REST/SOAP exploration, anonymous Apex, Apex test running and coverage, debug-log/trace-flag and event monitoring, org health diagnostics, and optional AI assistance. Every feature can be switched off via the options page; three ship off by default (Delete records, Bulk delete from SOQL results, Generate SOQL from a description); and any feature can be remotely disabled without a Web Store re-review.
 
 Features include:
 - Setup Tabs — adds an Automation Home tab plus reorderable, groupable tabs to the Setup tab bar
@@ -129,6 +131,7 @@ Features include:
 - Org Compare — diff two orgs' metadata and export the report (via the local CLI bridge)
 - Drift Check — surface untracked metadata drift against a baseline (via the local CLI bridge)
 - Metadata Scan — scan org metadata for issues (via the local CLI bridge)
+- Quality Results — browse the last `sfdt quality` Code Analyzer run: per-file violations with rule id, message and engine, filterable by severity, with a deep link into Setup (via the local CLI bridge)
 - Right-click "Inspect this record" — optional context-menu shortcut that opens the record inspector from any Salesforce page or record link
 
 Privacy

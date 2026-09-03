@@ -1,5 +1,13 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { createBridgeClient, getBridgeData, type BridgeFailureEvent } from '../lib/sfdt-bridge.js';
+import { PROTOCOL_VERSION } from '@sfdt/flow-core/bridge-contract';
+
+// A server on the same major but a different minor — what the negotiation
+// warn-level case needs. Derived from the client's own version so a protocol
+// bump does not silently turn this suite's "mismatch" into a match (which is
+// exactly what happened when 1.3 → 1.4 landed with these values hard-coded).
+const [MAJOR, MINOR] = PROTOCOL_VERSION.split('.');
+const OTHER_MINOR_VERSION = `${MAJOR}.${Number(MINOR) + 1}`;
 
 /**
  * Build a sendMessage stub that returns the given bridgePing response shape.
@@ -20,7 +28,7 @@ describe('createBridgeClient.getServerInfo', () => {
         data: {
           pong: true,
           serverVersion: '0.9.0',
-          protocolVersion: '1.3',
+          protocolVersion: PROTOCOL_VERSION,
           transport: 'localhost',
           disabledFeatures: ['canvas-search'],
         },
@@ -29,7 +37,7 @@ describe('createBridgeClient.getServerInfo', () => {
     const info = await client.getServerInfo();
     expect(info).toEqual({
       serverVersion: '0.9.0',
-      protocolVersion: '1.3',
+      protocolVersion: PROTOCOL_VERSION,
       negotiation: { ok: true, severity: 'ok' },
       transport: 'localhost',
       disabledFeatures: ['canvas-search'],
@@ -51,7 +59,7 @@ describe('createBridgeClient.getServerInfo', () => {
       preferredTransport: 'localhost',
       sendMessageImpl: fakeSendMessage({
         ok: true,
-        data: { pong: true, serverVersion: '0.8.1', protocolVersion: '1.3', transport: 'localhost' },
+        data: { pong: true, serverVersion: '0.8.1', protocolVersion: PROTOCOL_VERSION, transport: 'localhost' },
       }),
     });
     const info = await client.getServerInfo();
@@ -77,7 +85,7 @@ describe('createBridgeClient.getServerInfo', () => {
         data: {
           pong: true,
           serverVersion: '0.9.0',
-          protocolVersion: '1.3',
+          protocolVersion: PROTOCOL_VERSION,
           transport: 'localhost',
           disabledFeatures: ['canvas-search'],
         },
@@ -91,7 +99,7 @@ describe('createBridgeClient.getServerInfo', () => {
     const info = await client.getServerInfo();
     expect(info).toEqual({
       serverVersion: '0.9.0',
-      protocolVersion: '1.3',
+      protocolVersion: PROTOCOL_VERSION,
       negotiation: { ok: true, severity: 'ok' },
       transport: 'localhost',
       disabledFeatures: ['canvas-search'],
@@ -112,7 +120,7 @@ describe('createBridgeClient — protocol negotiation', () => {
         data: {
           pong: true,
           serverVersion: '0.9.0',
-          protocolVersion: '1.4',
+          protocolVersion: OTHER_MINOR_VERSION,
           transport: 'localhost',
           disabledFeatures: [],
         },
@@ -491,7 +499,7 @@ function nativePong(req: { requestId: string }) {
     data: {
       pong: true,
       serverVersion: '0.9.0',
-      protocolVersion: '1.3',
+      protocolVersion: PROTOCOL_VERSION,
       transport: 'native',
       disabledFeatures: [],
     },
@@ -773,7 +781,7 @@ describe('createBridgeClient — default chrome.runtime transport (no sendMessag
           data: {
             pong: true,
             serverVersion: '0.9.0',
-            protocolVersion: '1.3',
+            protocolVersion: PROTOCOL_VERSION,
             transport: 'localhost',
             disabledFeatures: [],
           },
@@ -837,7 +845,7 @@ describe('createBridgeClient — call() and getServerInfo native fallback', () =
     const info = await client.getServerInfo();
     expect(info).toEqual({
       serverVersion: '0.9.0',
-      protocolVersion: '1.3',
+      protocolVersion: PROTOCOL_VERSION,
       negotiation: { ok: true, severity: 'ok' },
       transport: 'native',
       disabledFeatures: [],

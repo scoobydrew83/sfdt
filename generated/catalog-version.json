@@ -4,5 +4,5 @@
   "extensionVersion": "0.15.0",
   "vscodeVersion": "0.7.0",
   "flowCoreVersion": "0.13.0",
-  "bridgeProtocol": "1.3"
+  "bridgeProtocol": "1.4"
 }

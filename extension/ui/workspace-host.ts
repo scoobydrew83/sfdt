@@ -50,6 +50,7 @@ import {
   createCompareFeature,
 } from '../features/bridge-tools.js';
 import { createFlowQualityFeature } from '../features/flow-quality.js';
+import { createQualityResultsFeature } from '../features/quality-results.js';
 import {
   createOrgSwitcherFeature,
   listOrgs,
@@ -777,6 +778,7 @@ export function bootHost(root: HTMLElement, orgHost: string, opts: HostOptions):
         ...common,
         onExploreDependency: (dep) => void depExplorer.openFor(dep.type, dep.name),
       }),
+    'quality-results': () => createQualityResultsFeature(common),
     'drift-check': () => createDriftFeature(common),
     'metadata-scan': () => createScanFeature(common),
     'org-compare': () => createCompareFeature(common),
