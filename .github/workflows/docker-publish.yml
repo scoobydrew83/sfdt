@@ -73,6 +73,42 @@ jobs:
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
           echo "Publishing image version ${VERSION}"
 
+      # The image installs from the public registry, and `publish` runs seconds
+      # earlier in the same workflow — npm's own output says the package "may
+      # take a few minutes to become available". v0.24.0 failed here: the build
+      # 404'd on @sfdt/flow-core's tarball ~100s after it was published, because
+      # a *transitive* dep had not propagated yet.
+      #
+      # `npm install --dry-run` resolves the whole tree and fetches nothing, so
+      # it fails on exactly the same 404 the image build would — a precise
+      # precondition rather than a proxy for one. `npm view` is not enough:
+      # metadata appears before the tarball is fetchable, which is what bit us.
+      - name: Wait for the npm tarball (and its deps) to be fetchable
+        env:
+          VERSION: ${{ steps.ver.outputs.version }}
+        run: |
+          # ~5 min at 10s intervals. Longer than any propagation delay we have
+          # seen, short enough that a genuinely bad version fails the run rather
+          # than hanging until the job timeout.
+          # Resolve in a scratch dir, not with -g: the global form additionally
+          # depends on the runner's npm prefix existing, which turns an
+          # unrelated environment problem into an indistinguishable failure.
+          PROBE="$(mktemp -d)"
+          trap 'rm -rf "$PROBE"' EXIT
+          cd "$PROBE"
+          for attempt in $(seq 1 30); do
+            if npm install --dry-run --no-audit --no-fund "@sfdt/cli@${VERSION}" >/dev/null 2>&1; then
+              echo "@sfdt/cli@${VERSION} and its dependencies resolve (attempt ${attempt})."
+              exit 0
+            fi
+            echo "attempt ${attempt}/30: @sfdt/cli@${VERSION} not fully resolvable yet, waiting 10s…"
+            sleep 10
+          done
+          echo "::error::@sfdt/cli@${VERSION} still does not resolve after 5 minutes."
+          # Surface the actual resolution error rather than only the timeout.
+          npm install --dry-run --no-audit --no-fund "@sfdt/cli@${VERSION}" || true
+          exit 1
+
       - name: Set up QEMU (multi-arch emulation)
         uses: docker/setup-qemu-action@v4
       - name: Set up Docker Buildx
