@@ -61,6 +61,22 @@ describe('runOfflineFieldUsage', () => {
     expect(vm.object).toBe('Account');
   });
 
+  // The online sibling asserts the API name (field-impact-runner.js); this
+  // branch did not, and `sfdt_field_usage` is a read-only MCP tool with no
+  // confirmExecution — so a traversing `object` walked out of the project and
+  // returned another repo's schema, with a non-match returning [] as a
+  // directory-existence oracle. (issue #21)
+  it.each([
+    ['parent traversal',   '../../../../etc'],
+    ['absolute path',      '/etc/passwd'],
+    ['windows separator',  '..\\..\\secrets'],
+    ['leading dot',        '.git'],
+    ['empty',              ''],
+  ])('refuses a traversing object name — %s', async (_label, obj) => {
+    await expect(runOfflineFieldUsage(config(), obj))
+      .rejects.toThrow(/not a valid object API name/);
+  });
+
   it('counts another field\'s FORMULA as a real reference', async () => {
     const vm = await runOfflineFieldUsage(config(), 'Account');
     const region = vm.rows.find((r) => r.name === 'Region__c');
