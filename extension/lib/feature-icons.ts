@@ -50,6 +50,7 @@ export const FEATURE_ICONS: Record<string, FeatureIcon> = {
   'apex-test-runner': { icon: '🧪', label: 'Apex Test Runner' },
   // Bridge-backed tools (need `sfdt ui` running, like flow-deploy).
   'flow-quality': { icon: '✅', label: 'Flow Quality Scan' },
+  'quality-results': { icon: '🧹', label: 'Quality Results' },
   'drift-check': { icon: '🌊', label: 'Drift Check' },
   'metadata-scan': { icon: '🔬', label: 'Metadata Scan' },
   'org-compare': { icon: '🔀', label: 'Org Compare' },
@@ -79,6 +80,7 @@ export const WORKSPACE_TOOLS: readonly string[] = [
   'org-health',
   'dependency-explorer',
   'flow-quality',
+  'quality-results',
   'drift-check',
   'metadata-scan',
   'org-compare',

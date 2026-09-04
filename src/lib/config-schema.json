@@ -31,7 +31,6 @@
       "properties": {
         "provider": { "type": "string", "enum": ["claude", "gemini", "openai", "http"] },
         "model": { "type": "string" },
-        "apiKey": { "type": "string" },
         "baseURL": { "type": "string" },
         "apiKeyEnv": { "type": "string" },
         "headers": { "type": "object", "additionalProperties": { "type": "string" } },
@@ -41,9 +40,15 @@
           "type": "object",
           "additionalProperties": false,
           "properties": {
-            "enabled": { "type": "boolean" },
+            "enabled": {
+              "type": "boolean",
+              "description": "Accepted for backward compatibility and IGNORED. The write-capable auto-fix loop is granted by SFDT_ALLOW_AI_WRITE=1 in the operator's environment; this file is committed, so a cloned repo could otherwise enable it. Refused at load time by config-trust.js when true."
+            },
             "maxTurns": { "type": "integer", "minimum": 1, "maximum": 20 },
-            "allowWrite": { "type": "boolean" }
+            "allowWrite": {
+              "type": "boolean",
+              "description": "Accepted for backward compatibility and IGNORED — see ai.agent.enabled. Use SFDT_ALLOW_AI_WRITE=1."
+            }
           }
         }
       }

@@ -187,6 +187,7 @@ const PACKAGE_MANIFESTS = [
   'vscode/package.json',
   'packages/flow-core/package.json',
   'packages/plugin/package.json',
+  'packages/trailhead-client/package.json',
 ];
 const packagesCatalog = {
   packages: await Promise.all(

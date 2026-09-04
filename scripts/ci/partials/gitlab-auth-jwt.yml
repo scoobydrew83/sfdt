@@ -1,4 +1,8 @@
 - |
-  trap 'rm -f server.key' EXIT
-  printf '%s\n' "$SFDX_JWT_SECRET_KEY" > server.key
-  sf org login jwt --client-id "$SFDX_CONSUMER_KEY" --jwt-key-file server.key --username "$SFDX_USERNAME" --instance-url "${SFDX_INSTANCE_URL:-https://login.salesforce.com}" --alias {{org}} {{setDefaultFlag}}
+  # No runner-provided temp dir here, so mktemp picks one: it lands outside the
+  # build workspace (which artifact collection and caching sweep) and creates
+  # the file 0600, which a plain `>` redirect (umask, usually 0644) does not.
+  KEY_FILE="$(mktemp)"
+  trap 'rm -f "$KEY_FILE"' EXIT
+  printf '%s\n' "$SFDX_JWT_SECRET_KEY" > "$KEY_FILE"
+  sf org login jwt --client-id "$SFDX_CONSUMER_KEY" --jwt-key-file "$KEY_FILE" --username "$SFDX_USERNAME" --instance-url "${SFDX_INSTANCE_URL:-https://login.salesforce.com}" --alias {{org}} {{setDefaultFlag}}

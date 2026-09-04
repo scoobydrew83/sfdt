@@ -117,14 +117,16 @@ The symptoms vary, which is why this was previously mistaken for separate defect
 | Wrong snapshot state (`expected 404 to be 204`) | `gui-server-routes6` — `GET /api/flow/graph` |
 | Whole-file cascade (8+ tests) | `gui-server-run-endpoints` |
 
-Two things narrow the cause (sfdt-private#8):
+Three things narrow the cause (sfdt-private#8):
 
 - **It is not rate-limit bleed.** `apiLimiter` and `csrfLimiter` are created per-`createServer()`
-  call (`src/lib/gui-server/index.js:147-148`), so limiter state cannot cross files.
+  call (`src/lib/gui-server/index.js:148-149`), so limiter state cannot cross files.
+- **It is not module or filesystem state.** Vitest isolates each test file in its own worker
+  process, and a run of the gui-server suites leaves the working tree byte-identical.
 - **It scales with concurrency.** `npx vitest run --project cli` fails *more often* (~50%) than
   the full `npm test` across all seven projects, because the cli project alone gets more
   workers. That points at shared state between gui-server suites running concurrently in the
-  same pool — mocked-`fs` module state or port reuse — not at any one test's logic.
+  same pool — and the only resource they actually share is the loopback TCP stack.
 
 Reproduce with:
 
@@ -134,6 +136,23 @@ for i in 1 2 3 4 5 6; do npx vitest run --project cli 2>&1 | grep -E '^ *(Test F
 
 The product fails *safe* in every observed case — these are test-isolation defects, not product
 defects — but any of them could have failed a publish.
+
+**Mitigated 2026-09-02** (`test/setup-supertest-origin.js`). Every symptom above is a transport
+symptom, never a handler symptom, and the gui-server/bridge route suites are the only cli suites
+that speak real TCP: supertest 7 builds a fresh `http.Server` and `listen(0)`s it for *every*
+`request(app)` call, then closes it. That was 477 listening-socket bind/close cycles per
+`--project cli` run, on the one loopback ephemeral port range every concurrent worker shares.
+The setup file now listens once per Express app, reuses that socket for the whole file, closes
+it in `afterAll`, and sends `Connection: close` so no pooled socket can be written to as the
+server retires it — 477 cycles down to 129, one per app instead of one per request. A failed
+CSRF-token pre-fetch now rejects into the test that needed it instead of sending the request
+unauthenticated and surfacing as a 403 somewhere else.
+
+Not yet proven fixed. The class did not reproduce once on the 4-core container the fix was
+developed on — twelve clean runs beforehand: three plain `--project cli`, six of the gui-server
+suites alone at `--maxWorkers=12`, three `--project cli` under 6× CPU contention. Green runs
+since are therefore necessary but not sufficient evidence. Treat the list above as live until a
+release cycle passes without a member appearing.
 
 What replaced it is deterministic and catches things the test job does not: `check:all-contracts`
 fails on catalog drift (which would otherwise ship a `generated/` snapshot that disagrees with

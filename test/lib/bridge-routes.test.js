@@ -10,6 +10,7 @@ import { describe, it, expect, vi, beforeAll, beforeEach, afterAll, afterEach } 
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { PROTOCOL_VERSION } from '@sfdt/flow-core/bridge-contract';
 
 const FIXED_TOKEN = 'test-bridge-token-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
 
@@ -86,7 +87,7 @@ describe('GET /api/bridge/ping', () => {
     expect(res.status).toBe(200);
     expect(res.body).toEqual({
       ok: true,
-      data: { pong: true, serverVersion: VERSION, protocolVersion: '1.3', transport: 'localhost', disabledFeatures: [] },
+      data: { pong: true, serverVersion: VERSION, protocolVersion: PROTOCOL_VERSION, transport: 'localhost', disabledFeatures: [] },
     });
   });
 
@@ -146,7 +147,7 @@ describe('POST /api/bridge/exchange — authentication', () => {
     expect(res.body).toEqual({
       ok: true,
       requestId: 'r1',
-      data: { pong: true, serverVersion: VERSION, protocolVersion: '1.3', transport: 'localhost', disabledFeatures: [] },
+      data: { pong: true, serverVersion: VERSION, protocolVersion: PROTOCOL_VERSION, transport: 'localhost', disabledFeatures: [] },
     });
   });
 });
@@ -230,6 +231,92 @@ describe('POST /api/bridge/exchange — dispatch', () => {
       // Restore the default suffix-based mocks for subsequent tests.
       fs.pathExists.mockImplementation(async (p) => typeof p === 'string' && p.endsWith('/.sfdt/bridge-token'));
       fs.readJson.mockResolvedValue({});
+    }
+  });
+
+  it('reports quality.results as unavailable when no run has been recorded', async () => {
+    const res = await request(app)
+      .post('/api/bridge/exchange')
+      .set('Authorization', `Bearer ${FIXED_TOKEN}`)
+      .send({ requestId: 'q1', kind: 'quality.results' });
+    expect(res.status).toBe(200);
+    expect(res.body.ok).toBe(true);
+    expect(res.body.data.available).toBe(false);
+    expect(res.body.data.hint).toMatch(/sfdt ui/);
+  });
+
+  it('returns the latest quality snapshot, preserving a SKIPPED verdict', async () => {
+    // A skipped scan reports zero violations exactly like a clean one. The
+    // route must pass the verdict through untouched so the extension can show
+    // "skipped" rather than a green result (J-1 policy parity).
+    const { readLatestLog } = await import('../../src/lib/log-writer.js');
+    readLatestLog.mockResolvedValue({
+      schemaVersion: '1',
+      type: 'quality',
+      timestamp: 't-q',
+      data: {
+        status: 'SKIPPED',
+        summary: { critical: 0, high: 0, medium: 0, low: 0 },
+        violations: [],
+        unavailableMessage: 'sf code-analyzer not installed',
+      },
+    });
+    try {
+      const res = await request(app)
+        .post('/api/bridge/exchange')
+        .set('Authorization', `Bearer ${FIXED_TOKEN}`)
+        .send({ requestId: 'q2', kind: 'quality.results' });
+      expect(res.status).toBe(200);
+      expect(res.body.ok).toBe(true);
+      expect(res.body.data).toEqual({
+        available: true,
+        timestamp: 't-q',
+        status: 'SKIPPED',
+        summary: { critical: 0, high: 0, medium: 0, low: 0 },
+        violations: [],
+        unavailableMessage: 'sf code-analyzer not installed',
+      });
+    } finally {
+      readLatestLog.mockResolvedValue(null);
+    }
+  });
+
+  it('returns violations with rule, engine and location for quality.results', async () => {
+    const { readLatestLog } = await import('../../src/lib/log-writer.js');
+    readLatestLog.mockResolvedValue({
+      schemaVersion: '1',
+      type: 'quality',
+      timestamp: 't-q2',
+      data: {
+        status: 'FAIL',
+        summary: { critical: 1, high: 0, medium: 0, low: 0 },
+        violations: [
+          {
+            file: 'force-app/main/default/classes/Foo.cls',
+            line: 12,
+            rule: 'ApexCRUDViolation',
+            engine: 'pmd',
+            severity: 1,
+            message: 'Validate CRUD permission.',
+          },
+        ],
+      },
+    });
+    try {
+      const res = await request(app)
+        .post('/api/bridge/exchange')
+        .set('Authorization', `Bearer ${FIXED_TOKEN}`)
+        .send({ requestId: 'q3', kind: 'quality.results' });
+      expect(res.body.data.status).toBe('FAIL');
+      expect(res.body.data.unavailableMessage).toBeNull();
+      expect(res.body.data.violations[0]).toMatchObject({
+        rule: 'ApexCRUDViolation',
+        engine: 'pmd',
+        file: 'force-app/main/default/classes/Foo.cls',
+        line: 12,
+      });
+    } finally {
+      readLatestLog.mockResolvedValue(null);
     }
   });
 

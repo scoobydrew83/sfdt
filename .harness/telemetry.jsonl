@@ -1,1 +1,8 @@
 {"type":"verdict","timestamp":"2026-08-12T14:44:01.289Z","status":"pass","summary":{"phase":"1.0 stabilization","verdict":"PASS","criteriaCount":9}}
+{"type":"verdict","timestamp":"2026-09-02T19:26:17.830Z","status":"pass","summary":{"phase":"C-P5-1 — Quality results panel (surface `sfdt quality`)","verdict":"PASS","criteriaCount":10}}
+{"type":"verdict","timestamp":"2026-09-02T19:16:50.050Z","status":"pass","summary":{"phase":"sfdt-private#8 — gui-server suite isolation","verdict":"PASS","criteriaCount":10}}
+{"type":"verdict","timestamp":"2026-09-02T19:04:49.454Z","status":"pass","summary":{"phase":"security/15-l3-azure-auth-partial","verdict":"PASS","criteriaCount":7}}
+{"type":"verdict","timestamp":"2026-09-02T19:17:35.363Z","status":"pass","summary":{"phase":"security/14-config-capability-classes","verdict":"PASS","criteriaCount":9}}
+{"type":"verdict","timestamp":"2026-09-02T19:21:51.339Z","status":"blocked","summary":{"phase":"WEB-2 @sfdt/trailhead-client","verdict":"BLOCKED","criteriaCount":12}}
+{"type":"verdict","timestamp":"2026-09-02T19:04:59.143Z","status":"pass","summary":{"phase":"fix/346-release-hub-validate-banner","verdict":"PASS","criteriaCount":9}}
+{"type":"verdict","timestamp":"2026-09-02T19:24:13.447Z","status":"pass","summary":{"phase":"1.0 stabilization","verdict":"PASS","criteriaCount":11}}

@@ -4,11 +4,20 @@ import { loadConfig } from './config.js';
 
 const MAX_AUDIT_LOG_ENTRIES = 1000;
 
-// Access token pattern: standard Salesforce Session ID / access token (starts with 00D, etc.)
-// 15 or 18 alphanumeric characters, plus the generic refresh-token prefix.
-const ACCESS_TOKEN_RE = /\b(00D[a-zA-Z0-9]{12,15})\b/g;
-const ACCESS_TOKEN_USER_RE = /\b(005[a-zA-Z0-9]{12,15})\b/g;
-const REFRESH_TOKEN_RE = /\b(5AepD[a-zA-Z0-9]{20,})\b/g;
+// Salesforce session id / access token. The wire format is `<entityId>!<secret>`
+// — the id half is public, the secret half is the credential. An earlier version
+// of these patterns ended at `\b`, which stops at the `!`: it redacted the public
+// id and left the secret in place. Worse, it substituted `[`/`]` into the string,
+// and those fall outside BEARER_RE's character class below — so the partial rule
+// *prevented* the working rule from firing on the same token. The `!secret` tail
+// is therefore part of the match, and optional so a bare id still redacts.
+const SESSION_SECRET_TAIL = '(?:![^\\s"\'`<>]+)?';
+const ACCESS_TOKEN_RE = new RegExp(`\\b(00D[a-zA-Z0-9]{12,})${SESSION_SECRET_TAIL}`, 'g');
+const ACCESS_TOKEN_USER_RE = new RegExp(`\\b(005[a-zA-Z0-9]{12,})${SESSION_SECRET_TAIL}`, 'g');
+// Refresh tokens carry the `5Aep` prefix; the character after it varies by org and
+// is not part of the format. Hardcoding a literal `D` there matched one org's
+// tokens and passed every other org's through untouched.
+const REFRESH_TOKEN_RE = /\b(5Aep[a-zA-Z0-9]{20,})\b/g;
 
 // CLI arguments pattern: redact password, client-secret, and token flags
 const SENSITIVE_CLI_ARGS_RE = /(-p|--password|--client-secret|--access-token|-u|--username)\s+([^\s]+)/gi;

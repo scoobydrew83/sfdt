@@ -78,6 +78,15 @@ export function describeChannels(config) {
   }));
 }
 
+/**
+ * Resolve the destination for a channel: literal first, then env-named.
+ *
+ * The two literal keys here — `webhookUrl` and `url` — are the ones
+ * `config-trust.js` refuses when they name a non-loopback host and the config
+ * came from a cloned repo (`LITERAL_CHANNEL_URL_KEYS`). Add a literal key to
+ * this precedence chain without adding it there and the guard stops covering
+ * the destination this function actually picks.
+ */
 function channelUrl(ch) {
   if (ch.webhookUrl) return ch.webhookUrl;
   if (ch.webhookUrlEnv && process.env[ch.webhookUrlEnv]) return process.env[ch.webhookUrlEnv];
@@ -159,6 +168,11 @@ async function sendEmail(ch, message) {
 async function sendToChannel(ch, message, { kind, snapshot, org } = {}) {
   const label = channelLabel(ch);
   try {
+    // Redact the message up front so the email branch below — which returns
+    // early and hands `message` straight to renderEmail — is covered. It used
+    // to sit *below* that branch, so email shipped raw org output while the
+    // comment claimed otherwise.
+    message = redactSensitiveData(message);
     if (ch.type === 'email') {
       await sendEmail(ch, message);
       return { channel: label, type: ch.type, ok: true };
@@ -167,19 +181,25 @@ async function sendToChannel(ch, message, { kind, snapshot, org } = {}) {
     if (!url) {
       return { channel: label, type: ch.type, ok: false, error: 'no webhook URL resolved (check webhookUrl/webhookUrlEnv/url)' };
     }
+    // Redacting `message` alone is NOT enough here: renderWebhook embeds the raw
+    // `snapshot` argument and renderLoki the raw `org`, neither of which is part
+    // of `message`. Narrowing this to the message is precisely the regression
+    // that shipped a full unredacted `checks[]` array — secrets included — to any
+    // webhook channel. The rendered body is redacted as a whole, below, so any
+    // future renderer parameter is covered by construction rather than by
+    // remembering to add it here.
     let body;
     if (ch.type === 'slack') body = renderSlack(message);
     else if (ch.type === 'teams') body = renderTeams(message);
     else if (ch.type === 'googlechat') body = renderGoogleChat(message);
     else if (ch.type === 'webhook') {
-      // Both webhook shapes go to an external sink, so redact either way.
       body = ch.format === 'loki'
-        ? redactSensitiveData(renderLoki(message, { kind, org }))
-        : redactSensitiveData(renderWebhook(message, { kind, snapshot }));
+        ? renderLoki(message, { kind, org })
+        : renderWebhook(message, { kind, snapshot });
     } else {
       return { channel: label, type: ch.type, ok: false, error: `unsupported channel type: ${ch.type}` };
     }
-    await postJson(url, body, channelHeaders(ch));
+    await postJson(url, redactSensitiveData(body), channelHeaders(ch));
     return { channel: label, type: ch.type, ok: true };
   } catch (err) {
     return { channel: label, type: ch.type, ok: false, error: err.message };

@@ -7,6 +7,107 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.24.0] - 2026-09-04
+
+A feature release that also closes four High-severity findings from the pre-release security
+review. Two new workspaces land (`@sfdt/web`, `@sfdt/trailhead-client`) — both `private: true`,
+neither published to npm.
+
+> **The bridge contract changed — `PROTOCOL_VERSION` moves `1.3` → `1.4`.** One additive
+> read-only request kind; nothing was removed or renamed, so the bump is MINOR and an
+> older client/server pair still talks (negotiation warns). `PROTOCOL_VERSION` lives in
+> `packages/flow-core/src/bridge-contract.ts`.
+
+> **`@sfdt/flow-core` moves `0.13.0` → `0.14.0`.** Under 0.x semver a minor bump leaves a
+> `^0.13.0` range, so the dependency was widened to `^0.14.0` in both the root `package.json`
+> and `extension/package.json` in the same commit. Nothing downstream needs to change.
+
+### Added
+
+- **`quality.results` bridge kind — the Chrome extension can read `sfdt quality` output.**
+  A read-only kind, implemented by both the HTTP bridge (`src/lib/bridge/routes.js`) and the
+  native messaging host (`host/src/index.js`), returning the latest `logs/quality-latest.json`
+  through the same `readQuality` parser that backs the dashboard's `GET /api/quality` — so
+  every surface reports the same run, including its **SKIPPED** verdict when Code Analyzer
+  never ran. It never *runs* a scan: a Code Analyzer sweep is minutes of work and must not be
+  triggered by a browser click, matching the `drift` kind's snapshot-only precedent. With no
+  recorded run it answers `{ available: false, hint }` rather than an empty result. Consumed by
+  the extension's new Quality Results panel (C-P5-1).
+- **`@sfdt/web` (WEB-1)** — Next.js 15 App Router workspace at `web/`. Design-token
+  shell for `/` and `/tools/flow-linter`, Cloudflare OpenNext config with **no D1**.
+  Org metadata is never stored. `private: true` — not published. See `web/README.md`.
+- **`@sfdt/trailhead-client` (WEB-2)** — a typed client for the *public* Trailhead GraphQL
+  profile API. Sends `credentials: 'omit'` with no cookie or authorization header, refuses a
+  `PrivateProfile` outright rather than partially reading it, and ships fixture-based tests with
+  a global `fetch` thrower so no test can quietly reach the network. Live calls are opt-in via
+  `SFDT_TRAILHEAD_LIVE=1` and are never wired into CI. Zero runtime dependencies.
+  `private: true` — not published.
+- **Installed Packages** page in the dashboard, with `GET`/`POST /api/installed-packages`.
+
+### Security
+
+- **Azure CI templates no longer substitute a git ref into a script body.**
+  `scripts/ci/azure-deploy.yml` interpolated `$(System.PullRequest.TargetBranch)` — Azure *macro*
+  syntax — directly into a `- script:` line. The agent expands macros into the script text it
+  writes to disk *before* bash parses it, and a git ref may legally contain `` ` ``, `$`, `(`, `)`,
+  `;` and `|`. Combined with `pr: branches: include: ['*']`, a PR targeting a
+  contributor-created branch named `` x`…` `` executed on the build agent — *after* the auth step
+  had already written a live org credential to `~/.sfdx`. The value now goes through an `env:`
+  mapping, matching `scripts/ci/github-deploy.yml`. A new **positional** contract test rejects any
+  Azure macro outside an `env:` mapping; the previous check only scanned a six-name secret
+  denylist, which a non-secret macro passed straight through.
+- **Session ids are redacted in full.** `redactSensitiveData` matched `00D…`/`005…` up to a word
+  boundary, which stops at the `!` in `<entityId>!<secret>` — so it masked the *public* id and
+  left the credential. It also inserted `[`/`]`, which fall outside the later `Bearer` rule's
+  character class, meaning the partial match actively *prevented* the working rule from firing.
+  The secret tail is now part of the match. Refresh-token detection no longer hardcodes a literal
+  `D` as the fifth character, which had matched one org's tokens and passed every other org's through.
+- **Email notifications are redacted like every other channel.** `sendToChannel` redacted per
+  webhook shape *below* the email branch, and that branch returns early — so email, the one
+  channel that relays through the operator's own SMTP server, sent raw org output while the
+  comment above claimed full coverage. Redaction now happens once, before any branch.
+- **An email channel's recipient list is treated as an exfiltration destination.** The config-trust
+  capability class covered `webhookUrl`/`url`, but an email channel's destination is `to[]`, which
+  never reaches `channelUrl()`. A committed `.sfdt/config.json` could name an attacker recipient
+  and mail run output out with no refusal printed. `to[]` is now refused and stripped like any
+  other repository-fixed destination.
+- **`sfdt pr comment` is gated and scoped.** `gh pr comment <ref>` accepts a URL, and a URL names a
+  *repository* — so a model-chosen value could post an org snapshot into a repo the operator does
+  not own, under their own GitHub identity. The reference is now constrained to a bare PR number
+  and the body is redacted, both at the shared sink so the CLI flag and the MCP tool are covered by
+  one guard. `pr` is reclassified `mutating: true`, so `sfdt_pr_comment` now declares and enforces
+  `confirmExecution` instead of presenting as read-only.
+
+### Fixed
+
+- **Release Hub no longer shows a validation verdict before validation runs** (#346). The Validate
+  step now renders only its `Run` action until a check completes.
+- **GUI server test isolation** — one listening socket per app rather than per request, removing a
+  source of suite flake.
+- Dependency bumps clearing the CI audit gate: `fast-uri` → 3.1.7 (high), `qs` → 6.16.0 (moderate),
+  plus grouped production and development dependency updates.
+
+### Changed
+
+- **`@sfdt/flow-core` → 0.14.0** — carries the `quality.results` kind and `PROTOCOL_VERSION` 1.4.
+- **Config settings are classified by capability, not by key name.** `config-trust.js` now groups
+  settings into capability classes (process spawn, exfiltration destination, filesystem path,
+  privilege, code execution) rather than matching key names, so a newly added key in an existing
+  class is covered by construction.
+- **`sfdt ci` Azure auth partials** use `mktemp` with mode 0600 and an `EXIT` trap for JWT key
+  material rather than a plain redirect.
+- **BREAKING (config): an absolute path in a project-path config key is now refused, even when it
+  resolves inside the project root.** The old check in the GUI's `PATCH /api/config` did
+  `path.resolve(projectRoot, value)` and then verified containment — and because `path.resolve`
+  treats an absolute second argument as authoritative, a value like `/home/me/myproject/logs` that
+  happened to sit inside the root was accepted. `isPathWithinRoot` now refuses any absolute value
+  outright, and the rule is applied at **config load** (via `config-trust.js`'s
+  `PROJECT_PATH_CONFIG_KEYS`), not only at the GUI endpoint — so it covers the CLI too.
+  **On upgrade**, a project carrying e.g. `"logDir": "/abs/path/inside/project"` in a committed
+  `.sfdt/config.json` will have that setting refused and replaced with the default, with a warning
+  on stderr, which changes where logs or manifests are written. Use a project-relative path
+  (`"logs"`), or set `SFDT_ALLOW_UNSAFE_CONFIG=1` if you trust the project.
+
 ## [0.23.1] - 2026-08-25
 
 A security patch. Both fixes close gaps where a path or URL chosen by someone

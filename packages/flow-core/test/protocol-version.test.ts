@@ -6,8 +6,8 @@ describe('flow-core/bridge-contract — PROTOCOL_VERSION', () => {
     expect(PROTOCOL_VERSION).toMatch(/^\d+\.\d+$/);
   });
 
-  it('is 1.3 (manifest.discover/manifest.render — additive minor bump)', () => {
-    expect(PROTOCOL_VERSION).toBe('1.3');
+  it('is 1.4 (quality.results — additive minor bump)', () => {
+    expect(PROTOCOL_VERSION).toBe('1.4');
   });
 });
 

@@ -67,6 +67,7 @@ import { createSoqlNlGenerateFeature } from '../features/soql-nl-generate.js';
 // --- Workspace-only factories (entrypoints/app/main.ts) ---
 import { createApexTestRunnerFeature } from '../features/apex-test-runner.js';
 import { createDeployStatusFeature } from '../features/deploy-status.js';
+import { createQualityResultsFeature } from '../features/quality-results.js';
 import { BRIDGE_REQUIRED } from '../lib/feature-defaults.js';
 import {
   createDriftFeature,
@@ -158,6 +159,7 @@ function instantiateAllFeatures(): Feature[] {
     // tools (all options default; main.ts only injects doc/win/api):
     createApexTestRunnerFeature(),
     createDeployStatusFeature(),
+    createQualityResultsFeature(),
     createDriftFeature(),
     createScanFeature(),
     createCompareFeature(),

@@ -532,14 +532,18 @@ export const COMMAND_POLICY = {
     mcpTools: {},
   },
   pr: {
-    mutating: false,
+    // Posts to a third-party service under the operator's GitHub identity, and
+    // the body is an org snapshot. `sideEffects` prose alone left it ungated:
+    // command-policy drives the confirmExecution contract, so a tool the MCP
+    // client renders as read-only could publish org findings without a prompt.
+    mutating: true,
     sideEffects: 'posts a comment on the current pull request',
     requiresProject: true,
     requiresOrg: false,
     supportsJson: true,
     docsCategory: 'core',
     surfaces: { gui: false, vscode: true, chrome: false },
-    mcpTools: { sfdt_pr_comment: { mutating: false } },
+    mcpTools: { sfdt_pr_comment: { mutating: true } },
   },
   retrofit: {
     mutating: true, // deploys to the target org when --execute

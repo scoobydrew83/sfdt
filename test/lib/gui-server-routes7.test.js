@@ -304,6 +304,46 @@ describe('POST /api/release/deploy — streaming success', () => {
     expect(logAuditEvent.mock.calls[1][0]).toBe('validation-end');
   });
 
+  it('omits the job id from the result when the dry-run prints no Validation Job ID line', async () => {
+    execa.mockReturnValueOnce(
+      fakeChild({ stdout: ['Validating deployment...', 'Validation succeeded'], exitCode: 0 })
+    );
+
+    const res = await request(app)
+      .post('/api/release/deploy')
+      .set('X-SFDT-CSRF', csrf)
+      .send({ org: 'dev', dryRun: true, skipPreflight: true });
+
+    expect(res.status).toBe(200);
+    const result = collectSse(res.text).at(-1);
+    // A successful validate with no capturable id must still report success,
+    // and must not invent a `content` payload — the dashboard keys its
+    // "Quick Deploy will reuse job …" claim off this field (issue #346).
+    expect(result).toEqual({ type: 'result', exitCode: 0 });
+    expect(result.content).toBeUndefined();
+    // The run is still audited as a completed validation.
+    expect(logAuditEvent.mock.calls[1][0]).toBe('validation-end');
+    expect(logAuditEvent.mock.calls[1][1].capturedValidationJobId).toBeNull();
+  });
+
+  it('does not capture a bare 0Af token that is not on a Validation Job ID line', async () => {
+    // JOB_ID_PATTERN anchors on the printed label, whereas the shell helper
+    // `extract_job_id()` in scripts/core/deployment-assistant.sh matches any
+    // bare `0Af…` token. This pins the server side of that divergence so the
+    // two parsers cannot drift silently.
+    execa.mockReturnValueOnce(
+      fakeChild({ stdout: ['Deploy request 0Af000000000001AAA queued'], exitCode: 0 })
+    );
+
+    const res = await request(app)
+      .post('/api/release/deploy')
+      .set('X-SFDT-CSRF', csrf)
+      .send({ org: 'dev', dryRun: true, skipPreflight: true });
+
+    expect(res.status).toBe(200);
+    expect(collectSse(res.text).at(-1)).toEqual({ type: 'result', exitCode: 0 });
+  });
+
   it('accepts a manifest, sourceDir, validationJobId and destructiveTiming and deploys', async () => {
     execa.mockReturnValueOnce(fakeChild({ stdout: ['quick deploy ok'], exitCode: 0 }));
 

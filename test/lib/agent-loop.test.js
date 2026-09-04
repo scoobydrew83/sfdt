@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 vi.mock('../../src/lib/ai.js', () => ({
   runAiPrompt: vi.fn().mockResolvedValue({ stdout: 'edited' }),
@@ -11,26 +11,50 @@ import path from 'path';
 import fs from 'fs-extra';
 import { runAiPrompt, providerSupportsAgenticTools } from '../../src/lib/ai.js';
 import { runFixLoop } from '../../src/lib/agent-loop.js';
+import { AI_WRITE_ENV_VAR } from '../../src/lib/config-trust.js';
 import { queryRuns } from '../../src/lib/run-history.js';
 
-const baseConfig = { ai: { provider: 'claude', agent: { enabled: true, allowWrite: true, maxTurns: 3 } } };
+const baseConfig = { ai: { provider: 'claude', agent: { maxTurns: 3 } } };
 
 beforeEach(() => {
   vi.resetAllMocks();
   runAiPrompt.mockResolvedValue({ stdout: 'edited' });
   providerSupportsAgenticTools.mockReturnValue(true);
+  // The grant now comes from the operator's shell, so the happy-path tests below
+  // have to supply it the way an operator would.
+  process.env[AI_WRITE_ENV_VAR] = '1';
+});
+
+afterEach(() => {
+  delete process.env[AI_WRITE_ENV_VAR];
 });
 
 describe('runFixLoop gating', () => {
-  it('does not run when agent.enabled is false', async () => {
-    const r = await runFixLoop({ failureOutput: 'err', config: { ai: { agent: { enabled: false, allowWrite: true } } }, validate: vi.fn() });
+  it('does not run without the environment grant, however the config file is written', async () => {
+    // The exploit from sfdt-private#14 H1: a cloned repo's .sfdt/config.json set
+    // both booleans and the loop ran with `Edit` in the victim's checkout. Two
+    // booleans in an attacker-controlled file are one gate, not two.
+    delete process.env[AI_WRITE_ENV_VAR];
+    const hostile = { ai: { provider: 'claude', agent: { enabled: true, allowWrite: true, maxTurns: 20 } } };
+    const r = await runFixLoop({ failureOutput: 'err', config: hostile, validate: vi.fn() });
+    expect(r.ran).toBe(false);
+    expect(r.reason).toContain(AI_WRITE_ENV_VAR);
+    expect(runAiPrompt).not.toHaveBeenCalled();
+  });
+
+  it('does not accept a truthy-but-wrong environment value', async () => {
+    process.env[AI_WRITE_ENV_VAR] = 'true';
+    const r = await runFixLoop({ failureOutput: 'err', config: baseConfig, validate: vi.fn() });
     expect(r.ran).toBe(false);
     expect(runAiPrompt).not.toHaveBeenCalled();
   });
 
-  it('does not run when allowWrite is false', async () => {
-    const r = await runFixLoop({ failureOutput: 'err', config: { ai: { agent: { enabled: true, allowWrite: false } } }, validate: vi.fn() });
-    expect(r.ran).toBe(false);
+  it('DOES run with the environment grant and no agent booleans in config at all', async () => {
+    // The escape hatch has to work, or the feature is removed rather than secured.
+    const validate = vi.fn().mockResolvedValueOnce({ ok: true, output: '' });
+    const r = await runFixLoop({ failureOutput: 'boom', config: baseConfig, projectRoot: '/p', org: 'dev', validate });
+    expect(r.ran).toBe(true);
+    expect(runAiPrompt).toHaveBeenCalledTimes(1);
   });
 
   it('does not run for non-agentic (http) providers', async () => {

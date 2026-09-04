@@ -48,7 +48,8 @@ import {
   searchSObjects, describeSObject, discoverRelationships,
   validateQuery, explainQuery, runQuery, runSearch, toCsv,
 } from '../soql-runner.js';
-import { resolveInProject } from '../safe-path.js';
+import { resolveInProject, isPathWithinRoot, PROJECT_PATH_CONFIG_KEYS } from '../safe-path.js';
+import { PRIVILEGE_CONFIG_KEYS } from '../config-trust.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -236,15 +237,20 @@ export function createGuiApp(config, version, port = DEFAULT_UI_PORT) {
     // `plugins` entries are dynamically import()ed at CLI startup, so allowing
     // the API to set them would be an arbitrary-code-execution path.
     'plugins',
+    // Privilege keys, *derived* from config-trust rather than restated here.
+    // They are inert today only because agent-loop.js reads SFDT_ALLOW_AI_WRITE
+    // and never the config — incidental, not enforced by this list. Deriving
+    // them means a future privilege key is blocked at this layer the moment it
+    // is added there, rather than depending on someone editing two files. Same
+    // reasoning as the path keys below.
+    ...PRIVILEGE_CONFIG_KEYS,
   ];
-  // Path keys must resolve within projectRoot to prevent logDir/manifestDir redirection attacks.
-  const PATH_KEYS_WITHIN_ROOT = new Set([
-    'logDir',
-    'manifestDir',
-    'releaseNotesDir',
-    'changelogDir',
-    'defaultSourcePath',
-  ]);
+  // Path keys must resolve within projectRoot to prevent logDir/manifestDir
+  // redirection attacks. The key set and the containment rule both come from
+  // `safe-path.js` now: this route used to carry its own copy of both, which is
+  // how it ended up guarding five keys while config load guarded none of them
+  // (sfdt-private#14, M1). One set, two surfaces, no drift.
+  const PATH_KEYS_WITHIN_ROOT = new Set(PROJECT_PATH_CONFIG_KEYS);
 
   app.patch('/api/config', apiLimiter, async (req, res) => {
     if (!requireCsrfToken(req, res, csrfToken)) return;
@@ -259,10 +265,7 @@ export function createGuiApp(config, version, port = DEFAULT_UI_PORT) {
       if (typeof value !== 'string') {
         return res.status(400).json({ error: 'value must be a string for path keys' });
       }
-      const projectRoot = config._projectRoot || process.cwd();
-      const resolved = path.resolve(projectRoot, value);
-      const resolvedRoot = path.resolve(projectRoot);
-      if (!resolved.startsWith(resolvedRoot + path.sep) && resolved !== resolvedRoot) {
+      if (!isPathWithinRoot(config._projectRoot || process.cwd(), value)) {
         return res.status(400).json({ error: `${key} must be within the project root` });
       }
     }
@@ -2034,6 +2037,12 @@ export function createGuiApp(config, version, port = DEFAULT_UI_PORT) {
       // Captured job id from a dry-run / validate flow, surfaced to the client
       // in the final `result` message so the next click can do a true quick deploy.
       let capturedValidationJobId = null;
+      // NOTE: this is the second of TWO independent parsers over the same
+      // validation output — `extract_job_id()` in
+      // scripts/core/deployment-assistant.sh matches the bare `0Af…` token
+      // anywhere, while this one anchors on the printed `Validation Job ID:`
+      // label. They can drift apart and disagree about whether a job id
+      // exists; change one, check the other.
       const JOB_ID_PATTERN = /Validation Job ID:\s*([A-Za-z0-9]{15,18})/;
       const streamLines = (readable) => {
         const rl = createInterface({ input: readable, crlfDelay: Infinity });

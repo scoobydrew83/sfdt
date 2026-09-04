@@ -248,12 +248,14 @@ export const TOOLS = [
       type: 'object',
       properties: {
         type: { type: 'string', enum: ['audit', 'monitor'], description: 'Which snapshot to post (default: monitor).' },
-        pr: { type: 'string', description: 'PR number or URL (defaults to the current branch PR).' }
-      }
+        pr: { type: 'string', description: 'PR number in the current repository (defaults to the current branch PR). A URL is refused — it could name another repository.' },
+        confirmExecution: { type: 'boolean', description: 'Required. Posting publishes an org snapshot to GitHub under your identity.' }
+      },
+      required: ['confirmExecution']
     },
     examples: [
-      { description: 'Post the latest monitor snapshot to the current PR', input: { type: 'monitor' } },
-      { description: 'Post the audit snapshot to a specific PR number', input: { type: 'audit', pr: '142' } }
+      { description: 'Post the latest monitor snapshot to the current PR', input: { type: 'monitor', confirmExecution: true } },
+      { description: 'Post the audit snapshot to a specific PR number', input: { type: 'audit', pr: '142', confirmExecution: true } }
     ]
   },
   {
@@ -1797,6 +1799,9 @@ export class SfdtMcpServer {
       }
 
       case 'sfdt_pr_comment': {
+        if (!args.confirmExecution) {
+          throw new Error('Posting a PR comment publishes an org snapshot to GitHub under your identity. Pass confirmExecution: true.');
+        }
         const type = args.type === 'audit' ? 'audit' : 'monitor';
         const cliArgs = ['pr', 'comment', '--type', type, '--json'];
         if (args.pr) cliArgs.push('--pr', String(args.pr));

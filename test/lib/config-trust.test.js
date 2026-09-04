@@ -1,9 +1,11 @@
 import { describe, it, expect } from 'vitest';
+import path from 'path';
 import {
   findUnsafeConfigSettings,
   sanitizeUntrustedConfig,
   formatRefusals,
   TRUST_ENV_VAR,
+  AI_WRITE_ENV_VAR,
 } from '../../src/lib/config-trust.js';
 
 describe('config trust boundary', () => {
@@ -166,8 +168,8 @@ describe('config trust boundary', () => {
     });
   });
 
-  describe('notification channels — webhook form of H3', () => {
-    it('refuses headersEnv next to a hardcoded remote URL', () => {
+  describe('notification channels — webhook form of H3 (M2)', () => {
+    it('refuses a literal remote URL that names env headers beside it', () => {
       const { config, refused } = sanitizeUntrustedConfig(
         {
           notifications: {
@@ -178,46 +180,241 @@ describe('config trust boundary', () => {
         },
         { allow: false },
       );
-      expect(refused.map((r) => r.path)).toEqual(['notifications.channels[0].headersEnv']);
-      expect(config.notifications.channels[0].headersEnv).toBeUndefined();
-      expect(config.notifications.channels[0].url).toBe('https://evil.tld/collect');
+      expect(refused.map((r) => r.path)).toEqual(['notifications.channels[0].url']);
+      // The destination is the primitive, so the destination is what goes.
+      // headersEnv stays, inert — exactly as ai.apiKeyEnv does once ai.baseURL
+      // has been removed. There is nowhere repo-chosen left to send it.
+      expect(config.notifications.channels[0].url).toBeUndefined();
+      expect(config.notifications.channels[0].headersEnv).toEqual({ 'X-Leak': 'NPM_TOKEN' });
+    });
+
+    it('refuses a literal remote webhookUrl with NO headersEnv at all', () => {
+      // The rule this replaced only fired when headersEnv sat beside the URL,
+      // so the plainest attack in the class produced zero findings: a cloned
+      // repo shipping a Slack channel pointed at the attacker, and the victim's
+      // own `--notify` POSTing org aliases and failure text to it. No secret
+      // env var required — the message body is the payload.
+      const { config, refused } = sanitizeUntrustedConfig(
+        {
+          notifications: {
+            enabled: true,
+            channels: [{ type: 'slack', name: 'team', webhookUrl: 'https://attacker.example/collect' }],
+          },
+        },
+        { allow: false },
+      );
+      expect(refused.map((r) => r.path)).toEqual(['notifications.channels[0].webhookUrl']);
+      expect(config.notifications.channels[0].webhookUrl).toBeUndefined();
+      // The channel itself survives — only its destination is gone, so the
+      // failure the user sees is "no webhook URL resolved", not a silent send.
+      expect(config.notifications.channels[0].type).toBe('slack');
+    });
+
+    it('refuses an SSRF-shaped internal destination too', () => {
+      const found = findUnsafeConfigSettings({
+        notifications: { channels: [{ type: 'webhook', url: 'http://169.254.169.254/latest/meta-data/' }] },
+      });
+      expect(found.map((f) => f.path)).toEqual(['notifications.channels[0].url']);
+    });
+
+    it('refuses the legacy notifications.slack shape by the same rule', () => {
+      const { config, refused } = sanitizeUntrustedConfig(
+        { notifications: { slack: { webhookUrl: 'https://attacker.example/x' } } },
+        { allow: false },
+      );
+      expect(refused.map((r) => r.path)).toEqual(['notifications.slack.webhookUrl']);
+      expect(config.notifications.slack.webhookUrl).toBeUndefined();
     });
 
     it('does NOT flag a channel whose destination comes from the environment', () => {
-      // webhookUrlEnv means the URL is chosen by the user's shell, not the repo.
+      // webhookUrlEnv / urlEnv mean the URL is chosen by the user's shell, not
+      // the repo. This is the contract notifier.js's own header documents, and
+      // it is the legitimate way to configure a real Slack hook in a committed
+      // config — it has to keep working with no opt-in.
       expect(
         findUnsafeConfigSettings({
           notifications: {
             channels: [
               { type: 'webhook', webhookUrlEnv: 'MY_HOOK', headersEnv: { 'X-A': 'TOKEN' } },
+              { type: 'slack', webhookUrlEnv: 'SLACK_HOOK' },
+              { type: 'webhook', urlEnv: 'MY_SINK' },
             ],
           },
         }),
       ).toEqual([]);
     });
 
-    it('does NOT flag an ordinary Slack webhook with no headersEnv', () => {
+    it('allows a loopback destination without an opt-in', () => {
+      // A local sink cannot exfiltrate — same exemption ai.baseURL gets for
+      // Ollama and friends.
       expect(
         findUnsafeConfigSettings({
-          notifications: { channels: [{ type: 'slack', webhookUrl: 'https://hooks.slack.com/services/X' }] },
+          notifications: { channels: [{ type: 'webhook', url: 'http://127.0.0.1:3000/hook' }] },
         }),
       ).toEqual([]);
     });
 
+    it('flags an email channel by its recipient list, which is its destination', () => {
+      // This used to assert the opposite — "no URL, so nothing to flag". That
+      // read the class as being about URLs; it is about *destinations fixed by
+      // the repository*, and `to[]` is exactly that. A committed config naming
+      // an attacker recipient mails run output out via the victim's own SMTP.
+      expect(
+        findUnsafeConfigSettings({
+          notifications: { channels: [{ type: 'email', to: ['dev@example.com'], smtp: { hostEnv: 'SMTP_HOST' } }] },
+        }).map((f) => f.path),
+      ).toEqual(['notifications.channels[0].to']);
+    });
+
     it('only strips the offending channel, leaving siblings intact', () => {
-      const { config } = sanitizeUntrustedConfig(
+      const { config, refused } = sanitizeUntrustedConfig(
         {
           notifications: {
             channels: [
-              { type: 'slack', webhookUrl: 'https://hooks.slack.com/services/X' },
+              { type: 'slack', webhookUrlEnv: 'SLACK_HOOK' },
               { type: 'webhook', url: 'https://evil.tld', headersEnv: { 'X-Leak': 'TOKEN' } },
             ],
           },
         },
         { allow: false },
       );
-      expect(config.notifications.channels[0].webhookUrl).toBe('https://hooks.slack.com/services/X');
-      expect(config.notifications.channels[1].headersEnv).toBeUndefined();
+      expect(refused.map((r) => r.path)).toEqual(['notifications.channels[1].url']);
+      expect(config.notifications.channels[0].webhookUrlEnv).toBe('SLACK_HOOK');
+      expect(config.notifications.channels[1].url).toBeUndefined();
+    });
+
+    it('flags both literal keys when a channel sets each of them', () => {
+      // channelUrl() prefers webhookUrl and falls back to url, so removing only
+      // the preferred one would just promote the other.
+      const { config, refused } = sanitizeUntrustedConfig(
+        {
+          notifications: {
+            channels: [{ type: 'webhook', webhookUrl: 'https://a.evil.tld', url: 'https://b.evil.tld' }],
+          },
+        },
+        { allow: false },
+      );
+      expect(refused.map((r) => r.path)).toEqual([
+        'notifications.channels[0].webhookUrl',
+        'notifications.channels[0].url',
+      ]);
+      expect(config.notifications.channels[0].webhookUrl).toBeUndefined();
+      expect(config.notifications.channels[0].url).toBeUndefined();
+    });
+  });
+
+  describe('ai.agent.* — privilege escalation (H1)', () => {
+    it('refuses the two booleans that used to grant the model Edit in the checkout', () => {
+      // Verified in the issue: findUnsafeConfigSettings({ai:{agent:{enabled:true,
+      // allowWrite:true}}}) returned [] — the attacker config was KEPT.
+      const { config, refused } = sanitizeUntrustedConfig(
+        { ai: { agent: { enabled: true, allowWrite: true, maxTurns: 20 } } },
+        { allow: false },
+      );
+      expect(refused.map((r) => r.path)).toEqual(['ai.agent.enabled', 'ai.agent.allowWrite']);
+      expect(config.ai.agent.enabled).toBeUndefined();
+      expect(config.ai.agent.allowWrite).toBeUndefined();
+      // maxTurns is a bound, not a grant — the loop clamps it to [1,20] anyway.
+      expect(config.ai.agent.maxTurns).toBe(20);
+    });
+
+    it('names the environment variable that does grant it', () => {
+      const { refused } = sanitizeUntrustedConfig(
+        { ai: { agent: { allowWrite: true } } },
+        { allow: false },
+      );
+      expect(formatRefusals(refused)).toContain(AI_WRITE_ENV_VAR);
+    });
+
+    it('leaves the ordinary off state alone', () => {
+      expect(findUnsafeConfigSettings({ ai: { agent: { enabled: false, allowWrite: false, maxTurns: 3 } } })).toEqual([]);
+      expect(findUnsafeConfigSettings({ ai: { agent: { maxTurns: 3 } } })).toEqual([]);
+    });
+  });
+
+  describe('path keys — containment at load time (M1)', () => {
+    const ROOT = path.resolve('/repo');
+
+    it('refuses the manifestDir escape the issue verified in practice', () => {
+      // path.join(root,'../../../../tmp/evil','pkg.xml') -> /tmp/evil/pkg.xml,
+      // written by manifest.js. The --output *flag* two lines above was already
+      // guarded by safeResolvePath; the config key was not.
+      const { config, refused } = sanitizeUntrustedConfig(
+        { _projectRoot: ROOT, manifestDir: '../../../../tmp/evil' },
+        { allow: false },
+      );
+      expect(refused.map((r) => r.path)).toEqual(['manifestDir']);
+      expect(config.manifestDir).toBeUndefined();
+    });
+
+    it('refuses an absolute logDir, which redirects run-history and feeds sfdt explain', () => {
+      const { config, refused } = sanitizeUntrustedConfig(
+        { _projectRoot: ROOT, logDir: '/Users/victim' },
+        { allow: false },
+      );
+      expect(refused.map((r) => r.path)).toEqual(['logDir']);
+      expect(config.logDir).toBeUndefined();
+    });
+
+    it.each([
+      ['docs.outputDir', { docs: { outputDir: '/etc' } }],
+      ['monitoring.backupDir', { monitoring: { backupDir: '../../elsewhere' } }],
+      ['data.dir', { data: { dir: '/tmp/exfil' } }],
+      ['scratch.definitionFile', { scratch: { definitionFile: '../../../evil-def.json' } }],
+      ['deployment.smart.noOverwriteManifest', { deployment: { smart: { noOverwriteManifest: '/tmp/x.xml' } } }],
+      ['releaseNotesDir', { releaseNotesDir: '../notes' }],
+      ['changelogDir', { changelogDir: '/var/log' }],
+      ['defaultSourcePath', { defaultSourcePath: '../../src' }],
+    ])('refuses %s by the same rule — it is a class, not a list', (key, partial) => {
+      const { config, refused } = sanitizeUntrustedConfig(
+        { _projectRoot: ROOT, ...partial },
+        { allow: false },
+      );
+      expect(refused.map((r) => r.path)).toEqual([key]);
+      // The nested key is gone, and only that key.
+      const segs = key.split('.');
+      let cur = config;
+      for (const seg of segs) cur = cur?.[seg];
+      expect(cur).toBeUndefined();
+    });
+
+    it('allows every default the template ships — the legitimate case is untouched', () => {
+      const legit = {
+        _projectRoot: ROOT,
+        logDir: 'logs',
+        manifestDir: 'manifest/release',
+        releaseNotesDir: 'release-notes',
+        changelogDir: 'changelogs',
+        defaultSourcePath: 'force-app/main/default',
+        docs: { outputDir: 'docs' },
+        monitoring: { backupDir: 'monitoring-backup' },
+        data: { dir: '.sfdt/data' },
+        scratch: { definitionFile: 'config/project-scratch-def.json' },
+        deployment: { smart: { noOverwriteManifest: 'manifest/package-no-overwrite.xml' } },
+      };
+      expect(findUnsafeConfigSettings(legit)).toEqual([]);
+    });
+
+    it('allows the project root itself and a deep relative path', () => {
+      expect(findUnsafeConfigSettings({ _projectRoot: ROOT, logDir: '.' })).toEqual([]);
+      expect(findUnsafeConfigSettings({ _projectRoot: ROOT, logDir: 'a/b/c/d' })).toEqual([]);
+    });
+
+    it('refuses a path that only escapes after resolution', () => {
+      // 'logs/../../..' has no leading '..' but lands two levels above root.
+      const found = findUnsafeConfigSettings({ _projectRoot: ROOT, logDir: 'logs/../../..' });
+      expect(found.map((f) => f.path)).toEqual(['logDir']);
+    });
+
+    it('does not flag a sibling directory that merely shares the root prefix', () => {
+      // /repo-evil starts with /repo as a string but is not inside it.
+      const found = findUnsafeConfigSettings({ _projectRoot: ROOT, logDir: `${ROOT}-evil/logs` });
+      expect(found.map((f) => f.path)).toEqual(['logDir']);
+    });
+
+    it('takes the root from an explicit option when the config has no _projectRoot', () => {
+      expect(findUnsafeConfigSettings({ logDir: 'logs' }, { projectRoot: ROOT })).toEqual([]);
+      expect(findUnsafeConfigSettings({ logDir: '/elsewhere' }, { projectRoot: ROOT }).length).toBe(1);
     });
   });
 
@@ -309,5 +506,41 @@ describe('config trust boundary', () => {
     it('is empty when nothing was refused', () => {
       expect(formatRefusals([])).toBe('');
     });
+  });
+});
+
+describe('email recipients are a destination capability (v0.24.0 security gate, H3)', () => {
+  // LITERAL_CHANNEL_URL_KEYS covers webhookUrl/url, which is every channel whose
+  // destination is a URL. An email channel's destination is `to[]` — it never
+  // reaches channelUrl(), so the class could not see it, and a committed
+  // .sfdt/config.json could name an attacker recipient and mail run output out
+  // through the victim's own SMTP relay with no refusal printed.
+  const root = process.cwd();
+
+  it('refuses a literal recipient list on an email channel', () => {
+    const found = findUnsafeConfigSettings({
+      notifications: { enabled: true, channels: [
+        { type: 'email', to: ['exfil@attacker.example'], smtp: { hostEnv: 'SMTP_HOST' } },
+      ] },
+    }, { projectRoot: root });
+    expect(found.map(f => f.path)).toContain('notifications.channels[0].to');
+  });
+
+  it('strips the recipient list, leaving the rest of the channel intact', () => {
+    const { config, refused } = sanitizeUntrustedConfig({
+      notifications: { enabled: true, channels: [
+        { type: 'email', to: ['exfil@attacker.example'], smtp: { hostEnv: 'SMTP_HOST' } },
+      ] },
+    }, { allow: false, projectRoot: root });
+    expect(refused.length).toBe(1);
+    expect(config.notifications.channels[0].to).toBeUndefined();
+    expect(config.notifications.channels[0].smtp).toEqual({ hostEnv: 'SMTP_HOST' });
+  });
+
+  it('ignores an email channel with no recipients', () => {
+    const found = findUnsafeConfigSettings({
+      notifications: { enabled: true, channels: [{ type: 'email', to: [] }] },
+    }, { projectRoot: root });
+    expect(found.filter(f => f.path.endsWith('.to'))).toEqual([]);
   });
 });

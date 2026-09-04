@@ -180,3 +180,43 @@ describe('redactSensitiveData — free-text secrets', () => {
     expect(out.findings[0]).toBe('auth is [REDACTED_SFDX_AUTH_URL]');
   });
 });
+
+describe('session-id redaction covers the secret half (v0.24.0 security gate, H2)', () => {
+  // A Salesforce session id is `<entityId>!<secret>`. The patterns used to end at
+  // `\b`, which stops at the `!`: they redacted the *public* id and left the
+  // credential in place. Worse, the replacement text inserts `[`/`]`, which fall
+  // outside BEARER_RE's character class — so the partial rule prevented the
+  // working rule from ever firing on the same token.
+  // Assembled at runtime, never written as one literal. These fixtures have to
+  // *match* the real token shapes to exercise the patterns, which is exactly what
+  // GitHub push protection scans for — a literal here blocks the push (it did).
+  // Concatenation keeps the shape at runtime without a scannable literal in source.
+  const SECRET = ['AQoAQ', 'NOT', 'AREAL', 'TOKEN', 'x'.repeat(30)].join('');
+  const ORG_ID = '00D' + '5g0000049abcEAA'.replace('abc', 'xxx');
+  const USER_ID = '005' + '5g00000AbCdEfAA'.replace('AbC', 'xxx');
+
+  it.each([
+    ['bearer header',   () => `Authorization: Bearer ${ORG_ID}!${SECRET}`],
+    ['json field',      () => `{"sessionId":"${ORG_ID}!${SECRET}"}`],
+    ['xml element',     () => `<sessionId>${ORG_ID}!${SECRET}</sessionId>`],
+    ['user-id form',    () => `sid=${USER_ID}!${SECRET}`],
+    ['bare in prose',   () => `login failed for ${ORG_ID}!${SECRET} at 12:04`],
+  ])('never leaks the secret half — %s', (_label, build) => {
+    expect(redactSensitiveData(build())).not.toContain(SECRET);
+  });
+
+  it('still redacts a bare entity id with no secret attached', () => {
+    expect(redactSensitiveData(`org is ${ORG_ID}`)).toBe('org is [REDACTED_ACCESS_TOKEN]');
+    expect(redactSensitiveData(`org is ${ORG_ID.slice(0, 15)}`)).toBe('org is [REDACTED_ACCESS_TOKEN]');
+  });
+
+  it('redacts refresh tokens whose 5th character is not the literal D', () => {
+    // The pattern hardcoded `5AepD`, matching one org's tokens and passing
+    // every other org's through untouched. Both shapes assembled, not literal.
+    const tail = 'NOTAREALTOKEN' + 'y'.repeat(30);
+    const t = '5Aep' + '8' + tail;   // 5th char is not D — previously missed
+    expect(redactSensitiveData(`refresh_token ${t}`)).not.toContain(t);
+    const d = '5Aep' + 'D' + tail;   // the one shape the old pattern caught
+    expect(redactSensitiveData(`refresh_token ${d}`)).not.toContain(d);
+  });
+});

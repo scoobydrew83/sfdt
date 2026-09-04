@@ -386,3 +386,118 @@ describe('dispatchSnapshot (severity routing)', () => {
     delete process.env.SFDT_SMTP_PORT;
   });
 });
+
+/**
+ * Every rendered body leaves the machine over the network, so every renderer is
+ * redacted — not just the `webhook` type. Slack, Teams and Google Chat were
+ * left raw while the branch beside them carried a comment explaining exactly why
+ * they should not be (sfdt-private#14, M2).
+ */
+describe('redaction covers every renderer, not just webhook', () => {
+  const SECRET = 'force://PlatformCLI::5Aep861_REPLAYABLE_ORG_CREDENTIAL@example.my.salesforce.com';
+
+  function cfgFor(type) {
+    return {
+      notifications: {
+        enabled: true,
+        channels: [{ type, name: type, webhookUrl: 'https://hooks.example.com/x' }],
+      },
+    };
+  }
+
+  it.each(['slack', 'teams', 'googlechat', 'webhook'])(
+    'redacts an sfdx auth URL carried in the message for a %s channel',
+    async (type) => {
+      const fetchMock = vi.fn().mockResolvedValue({ ok: true });
+      vi.stubGlobal('fetch', fetchMock);
+
+      const results = await dispatch(
+        'deploy-failure',
+        { org: 'dev', message: `Deploy failed. ${SECRET}` },
+        cfgFor(type),
+      );
+
+      expect(results[0].ok).toBe(true);
+      const sent = JSON.stringify(fetchMock.mock.calls[0][1].body);
+      expect(sent).not.toContain('force://PlatformCLI');
+      expect(sent).toContain('REDACTED');
+    },
+  );
+
+  it('still sends a usable body — redaction replaces the secret, not the message', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true });
+    vi.stubGlobal('fetch', fetchMock);
+
+    await dispatch('deploy-failure', { org: 'dev', message: 'Apex test AccountTest failed' }, cfgFor('slack'));
+
+    const sent = JSON.stringify(fetchMock.mock.calls[0][1].body);
+    expect(sent).toContain('AccountTest');
+  });
+});
+
+describe('every channel redacts, email included (v0.24.0 security gate, H3)', () => {
+  // `sendToChannel` used to redact per webhook shape, *below* the email branch —
+  // and the email branch returns early. So email, the one channel that mails a
+  // body out through the operator's own SMTP relay, sent raw org output, while
+  // the comment above the webhook block claimed every body was redacted.
+  const SECRET = '00Dxx00000abcdEAA!secretvalue';
+
+  // The first cut of the H3 fix redacted `message` up front and dropped the
+  // `redactSensitiveData(renderWebhook(...))` wrapper. But renderWebhook embeds
+  // the raw `snapshot` argument and renderLoki the raw `org` — neither is part
+  // of `message` — so webhook channels started shipping the full unredacted
+  // checks[] array. Caught in review on PR #351. These assert every channel
+  // type against the same snapshot so the gap cannot reopen for one of them.
+  const CHANNELS = [
+    ['webhook', { type: 'webhook', url: 'http://x/hook' }],
+    ['loki',    { type: 'webhook', format: 'loki', url: 'http://x/loki' }],
+    ['slack',   { type: 'slack', webhookUrl: 'http://x/slack' }],
+    ['teams',   { type: 'teams', webhookUrl: 'http://x/teams' }],
+    ['googlechat', { type: 'googlechat', webhookUrl: 'http://x/gchat' }],
+  ];
+
+  it.each(CHANNELS)('does not post a raw session id to a %s channel', async (_label, base) => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true });
+    vi.stubGlobal('fetch', fetchMock);
+    const leaky = {
+      org: 'dev',
+      checks: [{ id: 'a', title: 'A', status: 'warn', summary: `token=${SECRET}` }],
+      summary: { ok: 0, warn: 1, fail: 0, error: 0 },
+    };
+    await dispatchSnapshot(leaky, {
+      notifications: {
+        enabled: true,
+        channels: [{ ...base, severityThreshold: 'warn', events: ['snapshot'] }],
+      },
+    }, { type: 'monitor' });
+    expect(fetchMock).toHaveBeenCalled();
+    expect(String(fetchMock.mock.calls[0][1].body)).not.toContain(SECRET);
+  });
+
+  it('does not mail a raw session id', async () => {
+    sendMail.mockClear();
+    const leaky = {
+      org: 'dev',
+      checks: [{ id: 'a', title: 'A', status: 'warn', summary: `token=${SECRET}` }],
+      summary: { ok: 0, warn: 1, fail: 0, error: 0 },
+    };
+    const config = {
+      notifications: {
+        enabled: true,
+        channels: [{
+          type: 'email',
+          from: 'ci@example.com',
+          to: ['admin@example.com'],
+          smtp: { hostEnv: 'SFDT_SMTP_HOST', portEnv: 'SFDT_SMTP_PORT' },
+          severityThreshold: 'warn',
+          events: ['snapshot'],
+        }],
+      },
+    };
+    process.env.SFDT_SMTP_HOST = 'smtp.example.com';
+    process.env.SFDT_SMTP_PORT = '587';
+    await dispatchSnapshot(leaky, config, { type: 'monitor' });
+    expect(sendMail).toHaveBeenCalled();
+    expect(JSON.stringify(sendMail.mock.calls[0][0])).not.toContain(SECRET);
+  });
+});
