@@ -1141,11 +1141,47 @@ export class SfdtMcpServer {
     });
   }
 
+  /**
+   * Optional allowlist for `projectRoot`.
+   *
+   * `projectRoot` is accepted by every tool and validated only as a non-empty
+   * string. It is chosen by a model, and this CLI feeds that model untrusted org
+   * content — so a call the operator reads as "query the current project" can
+   * name a *different* checkout and run against that project's authenticated
+   * org. With `SFDT_ALLOW_UNSAFE_CONFIG=1` exported it also reaches the other
+   * project's plugin `import()`.
+   *
+   * Cross-project routing is nonetheless a real feature here, not an oversight:
+   * it is what lets one server serve several checkouts, and the suite asserts
+   * it ("isolates concurrent calls routed to different project roots"). So this
+   * is opt-in rather than default-deny — refusing by default would break the
+   * documented behaviour of every existing multi-project setup.
+   *
+   * Set SFDT_MCP_PROJECT_ROOTS (colon-separated) to pin a server to a known set.
+   * Unset, behaviour is unchanged. This is a mitigation, not a fix: without it
+   * the model still chooses the root. Tracked in sfdt-private#21.
+   */
+  #assertRootAllowed(requested) {
+    const allowed = (process.env.SFDT_MCP_PROJECT_ROOTS ?? '')
+      .split(path.delimiter)
+      .map((p) => p.trim())
+      .filter(Boolean)
+      .map((p) => path.resolve(p));
+    if (allowed.length === 0) return;                    // not configured — unchanged
+    const resolved = path.resolve(requested);
+    if (allowed.includes(resolved)) return;
+    throw new Error(
+      `projectRoot "${requested}" is not in SFDT_MCP_PROJECT_ROOTS. ` +
+        `This server is pinned to: ${allowed.join(', ')}.`,
+    );
+  }
+
   async #resolveCallConfig(projectRoot) {
     if (projectRoot !== undefined) {
       if (typeof projectRoot !== 'string' || projectRoot.trim() === '') {
         throw new Error('projectRoot must be a non-empty path to an initialized Salesforce DX project.');
       }
+      this.#assertRootAllowed(projectRoot);
       return loadConfig(projectRoot);
     }
     if (this.#config) return this.#config;
@@ -1788,8 +1824,19 @@ export class SfdtMcpServer {
       }
 
       case 'sfdt_retrofit': {
-        if (args.execute && !args.confirmExecution) {
-          throw new Error('A real retrofit deploy is potentially destructive. Pass confirmExecution: true (or omit execute for validate-only).');
+        // Gating only `execute` left the repo-mutating half open: without it,
+        // retrofit.js still runs parallelRetrieve and then `git add` + `git
+        // commit`, overwriting the working checkout with org metadata and
+        // landing a commit. command-policy.js marks that same capability
+        // mutating for the sibling `pull`. The schema-level declaration
+        // satisfied the contract lint while the handler let it through
+        // (golden principle #7).
+        if (!args.confirmExecution) {
+          throw new Error(
+            args.execute
+              ? 'A real retrofit deploy is potentially destructive. Pass confirmExecution: true (or omit execute for validate-only).'
+              : 'Retrofit retrieves metadata over your checkout and commits the result, even without execute. Pass confirmExecution: true.',
+          );
         }
         const cliArgs = ['retrofit', '--source', args.source, '--target', args.target, '--json'];
         if (args.metadata) cliArgs.push('--metadata', args.metadata);

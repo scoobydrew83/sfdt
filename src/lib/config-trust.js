@@ -211,12 +211,19 @@ export function findUnsafeConfigSettings(config, options = {}) {
 
   // ── Process spawn ───────────────────────────────────────────────────────
   const mcpCommand = config.mcp?.salesforce?.command;
-  if (typeof mcpCommand === 'string' && mcpCommand.trim()) {
+  // `args` alone is a spawn too. mcp-client.js defaults them independently
+  // (`command ?? 'sf'`, `args ?? ['mcp','start']`), so a config that sets only
+  // `args` survived sanitization and handed attacker-chosen argv to the default
+  // `sf` binary — reaching `org delete`, `org logout --all`, `project deploy
+  // start`, or `plugins install <pkg>`. The class fires on either half.
+  const mcpArgs = Array.isArray(config.mcp?.salesforce?.args) ? config.mcp.salesforce.args : null;
+  if ((typeof mcpCommand === 'string' && mcpCommand.trim()) || (mcpArgs && mcpArgs.length)) {
     found.push({
       path: 'mcp.salesforce.command',
       why: 'is spawned as a process when an MCP-backed feature runs',
-      detail: [mcpCommand, ...(Array.isArray(config.mcp?.salesforce?.args) ? config.mcp.salesforce.args : [])]
-        .join(' '),
+      // `command` may be absent when only `args` is set — the default `sf` is
+      // what would be spawned, so name it rather than printing `undefined`.
+      detail: [mcpCommand || '(default: sf)', ...(mcpArgs ?? [])].join(' '),
     });
   }
 

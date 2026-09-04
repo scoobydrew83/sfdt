@@ -168,7 +168,7 @@
         "enabled": { "type": "boolean" },
         "salesforce": {
           "type": "object",
-          "additionalProperties": true,
+          "additionalProperties": false,
           "properties": {
             "transport": { "type": "string" },
             "command": { "type": "string" },
