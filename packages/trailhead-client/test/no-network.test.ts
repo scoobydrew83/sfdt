@@ -29,8 +29,12 @@ describe('the suite cannot reach the network', () => {
 
   it('names the endpoint it refused, so the failure is diagnosable', async () => {
     const client = createTrailheadClient({ maxRetries: 0 });
+    // Substring assertion on the error *message*, not a URL check. An unanchored
+    // host-shaped regex here reads to CodeQL (js/regex/missing-regexp-anchor) as a
+    // permissive host validator; toThrow(string) already means "message contains",
+    // so the regex bought nothing and cost a false-positive alert.
     await expect(client.getProfile('example-handle')).rejects.toThrow(
-      /profile\.api\.trailhead\.com/
+      'profile.api.trailhead.com'
     );
   });
 });
