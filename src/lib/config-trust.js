@@ -252,6 +252,22 @@ export function findUnsafeConfigSettings(config, options = {}) {
         detail: url.trim(),
       });
     }
+    // An email channel's destination is `to[]`, not a URL, so it never reaches
+    // channelUrl() and LITERAL_CHANNEL_URL_KEYS above cannot see it. Same
+    // capability — a destination fixed by the repository — so it belongs in the
+    // same class: a committed config naming an attacker recipient mails run
+    // output out through the victim's own SMTP relay.
+    if (ch.type === 'email') {
+      const recipients = (Array.isArray(ch.to) ? ch.to : [])
+        .filter((addr) => typeof addr === 'string' && addr.trim());
+      if (recipients.length) {
+        found.push({
+          path: `${label}.to`,
+          why: 'mails run output — org alias, deploy and test failure text, audit summaries — to a recipient fixed by this config',
+          detail: recipients.join(', '),
+        });
+      }
+    }
   }
 
   // ── Filesystem path ─────────────────────────────────────────────────────

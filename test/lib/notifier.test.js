@@ -434,3 +434,38 @@ describe('redaction covers every renderer, not just webhook', () => {
     expect(sent).toContain('AccountTest');
   });
 });
+
+describe('every channel redacts, email included (v0.24.0 security gate, H3)', () => {
+  // `sendToChannel` used to redact per webhook shape, *below* the email branch —
+  // and the email branch returns early. So email, the one channel that mails a
+  // body out through the operator's own SMTP relay, sent raw org output, while
+  // the comment above the webhook block claimed every body was redacted.
+  const SECRET = '00Dxx00000abcdEAA!secretvalue';
+
+  it('does not mail a raw session id', async () => {
+    sendMail.mockClear();
+    const leaky = {
+      org: 'dev',
+      checks: [{ id: 'a', title: 'A', status: 'warn', summary: `token=${SECRET}` }],
+      summary: { ok: 0, warn: 1, fail: 0, error: 0 },
+    };
+    const config = {
+      notifications: {
+        enabled: true,
+        channels: [{
+          type: 'email',
+          from: 'ci@example.com',
+          to: ['admin@example.com'],
+          smtp: { hostEnv: 'SFDT_SMTP_HOST', portEnv: 'SFDT_SMTP_PORT' },
+          severityThreshold: 'warn',
+          events: ['snapshot'],
+        }],
+      },
+    };
+    process.env.SFDT_SMTP_HOST = 'smtp.example.com';
+    process.env.SFDT_SMTP_PORT = '587';
+    await dispatchSnapshot(leaky, config, { type: 'monitor' });
+    expect(sendMail).toHaveBeenCalled();
+    expect(JSON.stringify(sendMail.mock.calls[0][0])).not.toContain(SECRET);
+  });
+});

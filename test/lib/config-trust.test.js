@@ -254,12 +254,16 @@ describe('config trust boundary', () => {
       ).toEqual([]);
     });
 
-    it('does not flag an email channel, which has no URL', () => {
+    it('flags an email channel by its recipient list, which is its destination', () => {
+      // This used to assert the opposite — "no URL, so nothing to flag". That
+      // read the class as being about URLs; it is about *destinations fixed by
+      // the repository*, and `to[]` is exactly that. A committed config naming
+      // an attacker recipient mails run output out via the victim's own SMTP.
       expect(
         findUnsafeConfigSettings({
           notifications: { channels: [{ type: 'email', to: ['dev@example.com'], smtp: { hostEnv: 'SMTP_HOST' } }] },
-        }),
-      ).toEqual([]);
+        }).map((f) => f.path),
+      ).toEqual(['notifications.channels[0].to']);
     });
 
     it('only strips the offending channel, leaving siblings intact', () => {
@@ -502,5 +506,41 @@ describe('config trust boundary', () => {
     it('is empty when nothing was refused', () => {
       expect(formatRefusals([])).toBe('');
     });
+  });
+});
+
+describe('email recipients are a destination capability (v0.24.0 security gate, H3)', () => {
+  // LITERAL_CHANNEL_URL_KEYS covers webhookUrl/url, which is every channel whose
+  // destination is a URL. An email channel's destination is `to[]` — it never
+  // reaches channelUrl(), so the class could not see it, and a committed
+  // .sfdt/config.json could name an attacker recipient and mail run output out
+  // through the victim's own SMTP relay with no refusal printed.
+  const root = process.cwd();
+
+  it('refuses a literal recipient list on an email channel', () => {
+    const found = findUnsafeConfigSettings({
+      notifications: { enabled: true, channels: [
+        { type: 'email', to: ['exfil@attacker.example'], smtp: { hostEnv: 'SMTP_HOST' } },
+      ] },
+    }, { projectRoot: root });
+    expect(found.map(f => f.path)).toContain('notifications.channels[0].to');
+  });
+
+  it('strips the recipient list, leaving the rest of the channel intact', () => {
+    const { config, refused } = sanitizeUntrustedConfig({
+      notifications: { enabled: true, channels: [
+        { type: 'email', to: ['exfil@attacker.example'], smtp: { hostEnv: 'SMTP_HOST' } },
+      ] },
+    }, { allow: false, projectRoot: root });
+    expect(refused.length).toBe(1);
+    expect(config.notifications.channels[0].to).toBeUndefined();
+    expect(config.notifications.channels[0].smtp).toEqual({ hostEnv: 'SMTP_HOST' });
+  });
+
+  it('ignores an email channel with no recipients', () => {
+    const found = findUnsafeConfigSettings({
+      notifications: { enabled: true, channels: [{ type: 'email', to: [] }] },
+    }, { projectRoot: root });
+    expect(found.filter(f => f.path.endsWith('.to'))).toEqual([]);
   });
 });

@@ -49,3 +49,41 @@ describe('postPrComment', () => {
     expect(r.error).toMatch(/no PR found/);
   });
 });
+
+describe('postPrComment is scoped to this repo and redacts (v0.24.0 security gate, H4)', () => {
+  // `gh pr comment <ref>` accepts a full URL, and a URL names a *repository*.
+  // The MCP tool sfdt_pr_comment passes a model-chosen value straight through,
+  // so an injected model could post an org snapshot into a repo the operator
+  // does not own, under the operator's own GitHub identity.
+  const okGh = () => execa.mockResolvedValueOnce({ stdout: 'gh version 2.0.0' });
+
+  it.each([
+    'https://github.com/attacker/evil/pull/1',
+    'attacker/evil#1',
+    '1 --repo attacker/evil',
+    '../../attacker/evil/pull/1',
+  ])('refuses the cross-repo reference %j without invoking gh', async (pr) => {
+    okGh();
+    const res = await postPrComment('body', { pr });
+    expect(res.ok).toBe(false);
+    expect(res.error).toMatch(/invalid PR reference/);
+    // gh was called once for the availability probe, never for the comment.
+    expect(execa).toHaveBeenCalledTimes(1);
+  });
+
+  it('accepts a bare PR number', async () => {
+    okGh();
+    execa.mockResolvedValueOnce({ stdout: 'posted' });
+    const res = await postPrComment('body', { pr: '142' });
+    expect(res.ok).toBe(true);
+    expect(execa.mock.calls[1][1]).toEqual(['pr', 'comment', '142', '--body', 'body']);
+  });
+
+  it('redacts the snapshot body before it reaches GitHub', async () => {
+    const SECRET = '00Dxx00000abcdEAA!secretvalue';
+    okGh();
+    execa.mockResolvedValueOnce({ stdout: 'posted' });
+    await postPrComment(`monitor found token=${SECRET}`, {});
+    expect(execa.mock.calls[1][1].join(' ')).not.toContain(SECRET);
+  });
+});

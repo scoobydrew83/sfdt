@@ -168,6 +168,12 @@ async function sendEmail(ch, message) {
 async function sendToChannel(ch, message, { kind, snapshot, org } = {}) {
   const label = channelLabel(ch);
   try {
+    // Redact once, here, for every channel type. This used to sit below the
+    // email branch and be repeated per webhook shape, which meant email — the
+    // one branch that returns early — sent raw org output while the comment
+    // below claimed full coverage. redactSensitiveData recurses over objects,
+    // so redacting the message up front covers every renderer downstream.
+    message = redactSensitiveData(message);
     if (ch.type === 'email') {
       await sendEmail(ch, message);
       return { channel: label, type: ch.type, ok: true };
@@ -176,20 +182,16 @@ async function sendToChannel(ch, message, { kind, snapshot, org } = {}) {
     if (!url) {
       return { channel: label, type: ch.type, ok: false, error: 'no webhook URL resolved (check webhookUrl/webhookUrlEnv/url)' };
     }
-    // Every rendered body leaves this machine over the network, so every one of
-    // them is redacted. The `webhook` branch below carried this reasoning from
-    // the start — "both webhook shapes go to an external sink, so redact either
-    // way" — but its three siblings were left raw, and a Slack card carries the
-    // same org aliases, deploy output and audit summaries that the webhook JSON
-    // does (sfdt-private#14, M2).
+    // `message` is already redacted above, so the renderers below only shape
+    // material that has been through redactSensitiveData.
     let body;
-    if (ch.type === 'slack') body = redactSensitiveData(renderSlack(message));
-    else if (ch.type === 'teams') body = redactSensitiveData(renderTeams(message));
-    else if (ch.type === 'googlechat') body = redactSensitiveData(renderGoogleChat(message));
+    if (ch.type === 'slack') body = renderSlack(message);
+    else if (ch.type === 'teams') body = renderTeams(message);
+    else if (ch.type === 'googlechat') body = renderGoogleChat(message);
     else if (ch.type === 'webhook') {
       body = ch.format === 'loki'
-        ? redactSensitiveData(renderLoki(message, { kind, org }))
-        : redactSensitiveData(renderWebhook(message, { kind, snapshot }));
+        ? renderLoki(message, { kind, org })
+        : renderWebhook(message, { kind, snapshot });
     } else {
       return { channel: label, type: ch.type, ok: false, error: `unsupported channel type: ${ch.type}` };
     }

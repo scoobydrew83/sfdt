@@ -161,12 +161,13 @@
     {
       "name": "sfdt_pr_comment",
       "description": "Post the latest audit or monitor snapshot to the current pull request as a markdown comment (via the gh CLI).",
-      "confirmExecution": false,
+      "confirmExecution": true,
       "internal": false,
       "inputProperties": [
         "projectRoot",
         "type",
-        "pr"
+        "pr",
+        "confirmExecution"
       ]
     },
     {

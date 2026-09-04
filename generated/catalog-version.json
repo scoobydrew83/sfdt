@@ -1,8 +1,8 @@
 {
   "schemaVersion": 1,
-  "cliVersion": "0.23.1",
+  "cliVersion": "0.24.0",
   "extensionVersion": "0.15.0",
   "vscodeVersion": "0.7.0",
-  "flowCoreVersion": "0.13.0",
+  "flowCoreVersion": "0.14.0",
   "bridgeProtocol": "1.4"
 }

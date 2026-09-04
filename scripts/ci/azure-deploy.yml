@@ -24,5 +24,15 @@ steps:
     displayName: Install Salesforce CLI
   {{authSteps}}
   {{qualitySteps}}
-  - script: npx --yes @sfdt/cli@latest deploy --smart --org {{org}} --delta-base "origin/$(System.PullRequest.TargetBranch)" --dry-run
+  - script: npx --yes @sfdt/cli@latest deploy --smart --org {{org}} --delta-base "origin/$BASE_REF" --dry-run
     displayName: Smart delta validation
+    # The target branch goes through `env:` rather than straight into the script
+    # body. A `$(VAR)` macro is substituted into the script text the agent writes
+    # to disk *before* bash parses it, and a git ref may contain $, backticks,
+    # (, ), ; and | — so a PR targeting a branch named `x$(...)` would execute on
+    # the agent, after the auth step above has already written a live org
+    # credential to ~/.sfdx. `pr: branches: include: ['*']` means any branch a
+    # contributor can create is a valid target. As an env var it is only data.
+    # Mirrors scripts/ci/github-deploy.yml, which carries the same reasoning.
+    env:
+      BASE_REF: $(System.PullRequest.TargetBranch)

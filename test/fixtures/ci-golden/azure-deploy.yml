@@ -17,5 +17,7 @@ steps:
     displayName: Authenticate to golden-org
     env:
       SFDX_AUTH_URL: $(SFDX_AUTH_URL)
-  - script: npx --yes @sfdt/cli@latest deploy --smart --org golden-org --delta-base "origin/$(System.PullRequest.TargetBranch)" --dry-run
+  - script: npx --yes @sfdt/cli@latest deploy --smart --org golden-org --delta-base "origin/$BASE_REF" --dry-run
     displayName: Smart delta validation
+    env:
+      BASE_REF: $(System.PullRequest.TargetBranch)

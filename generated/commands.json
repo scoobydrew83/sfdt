@@ -4374,7 +4374,7 @@
           "subcommands": []
         }
       ],
-      "mutating": false,
+      "mutating": true,
       "sideEffects": "posts a comment on the current pull request",
       "requiresProject": true,
       "requiresOrg": false,
@@ -4390,7 +4390,7 @@
       "mcpTools": [
         {
           "name": "sfdt_pr_comment",
-          "mutating": false
+          "mutating": true
         }
       ],
       "source": "src/commands/pr.js"
