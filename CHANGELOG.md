@@ -96,6 +96,17 @@ neither published to npm.
   class is covered by construction.
 - **`sfdt ci` Azure auth partials** use `mktemp` with mode 0600 and an `EXIT` trap for JWT key
   material rather than a plain redirect.
+- **BREAKING (config): an absolute path in a project-path config key is now refused, even when it
+  resolves inside the project root.** The old check in the GUI's `PATCH /api/config` did
+  `path.resolve(projectRoot, value)` and then verified containment — and because `path.resolve`
+  treats an absolute second argument as authoritative, a value like `/home/me/myproject/logs` that
+  happened to sit inside the root was accepted. `isPathWithinRoot` now refuses any absolute value
+  outright, and the rule is applied at **config load** (via `config-trust.js`'s
+  `PROJECT_PATH_CONFIG_KEYS`), not only at the GUI endpoint — so it covers the CLI too.
+  **On upgrade**, a project carrying e.g. `"logDir": "/abs/path/inside/project"` in a committed
+  `.sfdt/config.json` will have that setting refused and replaced with the default, with a warning
+  on stderr, which changes where logs or manifests are written. Use a project-relative path
+  (`"logs"`), or set `SFDT_ALLOW_UNSAFE_CONFIG=1` if you trust the project.
 
 ## [0.23.1] - 2026-08-25
 

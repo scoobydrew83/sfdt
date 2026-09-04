@@ -163,6 +163,10 @@ describe('getAllPrompts — no configDir', () => {
 
 describe('getAllPrompts — with configDir', () => {
   it('marks overridden entries correctly', async () => {
+    // Trusted, so the override is in force and `effective` matches `current`.
+    // `current` is the saved value either way (the editor edits it); the trust
+    // gate shows up in `effective`/`ignored` — see the block at the bottom.
+    trustPrompts();
     const dir = uniqueDir();
     fs.readJson.mockResolvedValueOnce({ review: 'my review' });
 
@@ -172,6 +176,7 @@ describe('getAllPrompts — with configDir', () => {
 
     expect(reviewEntry.overridden).toBe(true);
     expect(reviewEntry.current).toBe('my review');
+    expect(reviewEntry.ignored).toBe(false);
     expect(explainEntry.overridden).toBe(false);
     expect(explainEntry.current).toBe(explainEntry.default);
   });
@@ -401,5 +406,51 @@ describe('getPrompt — repo-supplied overrides are untrusted (sfdt-private#14, 
     const entry = (await getAllPrompts(dir)).find((p) => p.key === 'review');
     expect(entry.overridden).toBe(true);
     expect(entry.current).toBe('saved text');
+  });
+});
+
+describe('getAllPrompts exposes the trust mismatch without breaking the editor (PR #351 review)', () => {
+  // getPrompt() ignores an untrusted override; getAllPrompts() showed it as
+  // `current` with no signal, so the dashboard claimed the repo's text was in
+  // force while AI calls got the default. The fix is NOT to filter `current` —
+  // the editor seeds its textarea from it (gui/src/pages/Settings.jsx:278,292),
+  // so returning the default there would make a save overwrite the user's own
+  // text. `effective` and `ignored` carry the truth instead.
+
+  it('keeps the saved override as `current` so the editor cannot clobber it', async () => {
+    const dir = uniqueDir();
+    fs.readJson.mockResolvedValue({ review: 'REPO SUPPLIED TEXT' });
+    const row = (await getAllPrompts(dir)).find((r) => r.key === 'review');
+    expect(row.current).toBe('REPO SUPPLIED TEXT');
+    expect(row.overridden).toBe(true);
+  });
+
+  it('reports `effective` as the default, and flags `ignored`, when untrusted', async () => {
+    const dir = uniqueDir();
+    fs.readJson.mockResolvedValue({ review: 'REPO SUPPLIED TEXT' });
+    const row = (await getAllPrompts(dir)).find((r) => r.key === 'review');
+    expect(row.ignored).toBe(true);
+    expect(row.effective).toBe(row.default);
+    // `effective` is the contract: it must equal what the provider is handed.
+    expect(await getPrompt('review', dir)).toBe(row.effective);
+  });
+
+  it('effective tracks the override once the env opt-in is set', async () => {
+    trustPrompts();
+    const dir = uniqueDir();
+    fs.readJson.mockResolvedValue({ review: 'REPO SUPPLIED TEXT' });
+    const row = (await getAllPrompts(dir)).find((r) => r.key === 'review');
+    expect(row.ignored).toBe(false);
+    expect(row.effective).toBe('REPO SUPPLIED TEXT');
+    expect(await getPrompt('review', dir)).toBe(row.effective);
+  });
+
+  it('a key with no override is never flagged', async () => {
+    const dir = uniqueDir();
+    fs.readJson.mockResolvedValue({ review: 'REPO SUPPLIED TEXT' });
+    const row = (await getAllPrompts(dir)).find((r) => r.key === 'explain');
+    expect(row.overridden).toBe(false);
+    expect(row.ignored).toBe(false);
+    expect(row.effective).toBe(row.default);
   });
 });

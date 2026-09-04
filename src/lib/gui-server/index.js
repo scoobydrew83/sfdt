@@ -49,6 +49,7 @@ import {
   validateQuery, explainQuery, runQuery, runSearch, toCsv,
 } from '../soql-runner.js';
 import { resolveInProject, isPathWithinRoot, PROJECT_PATH_CONFIG_KEYS } from '../safe-path.js';
+import { PRIVILEGE_CONFIG_KEYS } from '../config-trust.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -236,6 +237,13 @@ export function createGuiApp(config, version, port = DEFAULT_UI_PORT) {
     // `plugins` entries are dynamically import()ed at CLI startup, so allowing
     // the API to set them would be an arbitrary-code-execution path.
     'plugins',
+    // Privilege keys, *derived* from config-trust rather than restated here.
+    // They are inert today only because agent-loop.js reads SFDT_ALLOW_AI_WRITE
+    // and never the config — incidental, not enforced by this list. Deriving
+    // them means a future privilege key is blocked at this layer the moment it
+    // is added there, rather than depending on someone editing two files. Same
+    // reasoning as the path keys below.
+    ...PRIVILEGE_CONFIG_KEYS,
   ];
   // Path keys must resolve within projectRoot to prevent logDir/manifestDir
   // redirection attacks. The key set and the containment rule both come from

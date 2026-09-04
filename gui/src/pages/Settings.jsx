@@ -373,6 +373,25 @@ function PromptEditor() {
             </div>
             <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--fg-muted)', marginBottom: 2 }}>{selectedPrompt.description}</div>
             <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--fg-subtle)' }}>Used by: {selectedPrompt.feature}</div>
+            {/* An override saved in .sfdt/prompts.json is ignored at runtime unless the
+                operator opts in, because that file is committed and arrives with the
+                clone. Without this the editor showed the override as though it were in
+                use while getPrompt() quietly sent the built-in default. */}
+            {selectedPrompt.ignored && (
+              <div style={{
+                marginTop: 8, padding: '8px 10px', fontSize: 'var(--fs-xs)',
+                background: 'var(--status-conflict-bg, var(--bg-subtle))',
+                color: 'var(--status-conflict-fg, var(--fg-default))',
+                border: '1px solid var(--status-conflict-border, var(--border-subtle))',
+                borderRadius: 'var(--r-sm)',
+              }}>
+                <strong>This override is not in use.</strong> It is saved below and you can edit it,
+                but AI calls are receiving the built-in default. <code>.sfdt/prompts.json</code> is
+                normally committed, so it arrives with the repository rather than from you. To use it,
+                set <code>{selectedPrompt.trustEnvVar || 'SFDT_ALLOW_UNSAFE_CONFIG'}=1</code> in the
+                shell that runs sfdt, then restart.
+              </div>
+            )}
           </div>
 
           <textarea

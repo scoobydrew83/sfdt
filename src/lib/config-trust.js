@@ -68,7 +68,7 @@ export const AI_WRITE_ENV_VAR = 'SFDT_ALLOW_AI_WRITE';
  * downstream (the dashboard's settings view, a future consumer) can read a
  * cloned repo's `true` as the operator's intent.
  */
-const PRIVILEGE_KEYS = Object.freeze([
+export const PRIVILEGE_KEYS = Object.freeze([
   {
     path: 'ai.agent.enabled',
     why: 'turns on the write-capable auto-fix loop, which grants the AI model Edit access to this checkout',
@@ -78,6 +78,14 @@ const PRIVILEGE_KEYS = Object.freeze([
     why: 'grants the AI model write access to this checkout; only ' + AI_WRITE_ENV_VAR + '=1 can do that now',
   },
 ]);
+
+/**
+ * The privilege paths alone, for consumers that need the key set rather than the
+ * refusal metadata — currently the GUI's PATCH /api/config blocklist. Exported so
+ * that list is *derived* from this one instead of being a hand-maintained copy:
+ * the same drift already happened once with the path keys (sfdt-private#14, M1).
+ */
+export const PRIVILEGE_CONFIG_KEYS = Object.freeze(PRIVILEGE_KEYS.map((k) => k.path));
 
 /**
  * A loopback destination cannot exfiltrate to an attacker, so it stays allowed.

@@ -631,18 +631,43 @@ export async function getPrompt(key, configDir) {
 
 /**
  * Return all prompts with metadata for the UI.
+ *
+ * `current` is deliberately the **saved** value, gate or no gate: this backs the
+ * dashboard's prompt editor, which seeds its textarea from it. Returning the
+ * built-in default here when an override is present but untrusted would show the
+ * default in the edit box, and a save would then overwrite the user's own text —
+ * silent data loss. That is why the editor view is not filtered.
+ *
+ * But `current` alone was misleading in the other direction: `getPrompt()`
+ * ignores an untrusted override at runtime, so the UI showed the repository's
+ * text as though it were in force while AI calls received the default, with only
+ * a server-console warning a GUI user never sees (PR #351 review). `effective`
+ * and `ignored` close that gap without touching the editable value:
+ *
+ *   current   — what the editor should show and edit (the saved override, if any)
+ *   effective — what `getPrompt()` will actually hand the AI provider
+ *   ignored   — an override exists but is not in force, so the two differ
+ *
  * @param {string} [configDir]
  * @returns {Promise<Array>}
  */
 export async function getAllPrompts(configDir) {
   const overrides = configDir ? await loadOverrides(configDir) : {};
-  return Object.keys(DEFAULTS).map((key) => ({
-    key,
-    ...PROMPT_META[key],
-    default: DEFAULTS[key],
-    current: overrides[key] ?? DEFAULTS[key],
-    overridden: key in overrides,
-  }));
+  const trusted = process.env[TRUST_ENV_VAR] === '1';
+  return Object.keys(DEFAULTS).map((key) => {
+    const hasOverride = key in overrides;
+    const honoured = hasOverride && trusted;
+    return {
+      key,
+      ...PROMPT_META[key],
+      default: DEFAULTS[key],
+      current: hasOverride ? overrides[key] : DEFAULTS[key],
+      effective: honoured ? overrides[key] : DEFAULTS[key],
+      overridden: hasOverride,
+      ignored: hasOverride && !trusted,
+      trustEnvVar: TRUST_ENV_VAR,
+    };
+  });
 }
 
 /**
