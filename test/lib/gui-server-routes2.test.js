@@ -358,6 +358,43 @@ describe('GET /api/manifests/content', () => {
     expect(res.status).toBe(200);
     expect(res.body.xml).toContain('<Package');
   });
+
+  // Containment was correct — traversal already failed — but nothing scoped the
+  // read to manifestDir or to .xml, so this was a general file-read primitive
+  // over the whole project. Verified live returning `.env` and
+  // `.sfdt/config.json`, which `sfdt init` designates for local secrets. The
+  // only relPaths /api/manifests hands the GUI are .xml under manifestDir
+  // (flat or one subdir deep) or under logDir. (issue #21)
+  it.each([
+    ['dotenv at the root',   '.env'],
+    ['the config file',      '.sfdt/config.json'],
+    ['the local secrets file', '.sfdt/creds.local.json'],
+    ['git config',           '.git/config'],
+    ['source outside both dirs', 'force-app/main/default/classes/Foo.cls'],
+    ['an xml outside both dirs', 'package.xml'],
+  ])('refuses %s even though it is inside the project', async (_label, rel) => {
+    // Deliberately no readFile mock queued: the route must refuse *before*
+    // reading, and a queued value would leak into the next test if it did not.
+    const res = await request(app).get(`/api/manifests/content?path=${encodeURIComponent(rel)}`);
+    expect(res.status).toBe(403);
+    expect(res.body.xml).toBeUndefined();
+  });
+
+  it('still serves a compare manifest out of logDir', async () => {
+    const { default: fsMock } = await import('fs-extra');
+    fsMock.readFile.mockResolvedValueOnce('<Package/>');
+
+    const res = await request(app).get('/api/manifests/content?path=logs/compare-1.xml');
+    expect(res.status).toBe(200);
+  });
+
+  it('still serves a subpath-layout manifest one directory deep', async () => {
+    const { default: fsMock } = await import('fs-extra');
+    fsMock.readFile.mockResolvedValueOnce('<Package/>');
+
+    const res = await request(app).get('/api/manifests/content?path=manifest/release/core/pkg.xml');
+    expect(res.status).toBe(200);
+  });
 });
 
 // ─── GET /api/release/suggest-version ────────────────────────────────────────
