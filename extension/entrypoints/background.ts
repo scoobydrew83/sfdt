@@ -347,28 +347,17 @@ export default defineBackground(() => {
             await chrome.runtime.openOptionsPage();
             return { ok: true };
 
-          case 'getSidForUrls': {
-            const rawUrls: unknown = Array.isArray(message.urls) ? message.urls : [];
-            const urls = (rawUrls as unknown[]).filter(
-              (u): u is string => typeof u === 'string' && isAllowedCookieUrl(u),
-            );
-            if (!urls.length) {
-              return { ok: false, sids: {}, error: 'No allowed Salesforce URLs provided' };
-            }
-
-            const getSid = (url: string): Promise<string | null> =>
-              new Promise((resolve) => {
-                chrome.cookies.get({ url, name: 'sid' }, (cookie) => {
-                  resolve(cookie?.value ?? null);
-                });
-              });
-
-            const entries = await Promise.all(
-              urls.map(async (url) => [url, await getSid(url)] as const),
-            );
-            return { ok: true, sids: Object.fromEntries(entries) };
-          }
-
+          // `getSidForUrls` is deleted. It returned raw session ids to any
+          // caller that could reach the worker, and extension/CHANGELOG.md
+          // already declared the client path gone and the "sid never leaves the
+          // worker" guarantee complete — but the privileged handler stayed live
+          // with zero senders. No exploit today: no page->content-script relay
+          // exists, externally_connectable is undeclared, isSelfSender gates it,
+          // and content scripts are restricted to four first-party hosts. The
+          // point is that a *second* bug would have escalated straight to sid
+          // theft against a stated invariant, and removing dead privileged code
+          // is free. Route Salesforce calls through the sfApiFetch proxy, which
+          // returns bodies and never a sid. (sfdt-private#21)
           case 'sfApiFetch': {
             // Salesforce REST/Tooling/SOAP call executed entirely in the worker:
             // the sid is read from the cookie here, injected as Authorization,

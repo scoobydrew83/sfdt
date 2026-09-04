@@ -35,10 +35,24 @@ jobs:
         uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: sfdt-quality.sarif
+      # args-json is a JSON *string literal* in this file, and Actions substitutes
+      # ${{ }} into it before the action ever runs. A git ref may legally contain
+      # a double quote (`git check-ref-format --branch 'a"b'` succeeds), which
+      # closes the string and injects extra array elements. action.yml parses the
+      # result with jq and spawns with no shell, so this is argument injection
+      # rather than RCE — but injected argv still reaches sfdt. Building the array
+      # with `jq --arg` escapes the value instead of splicing it. (sfdt-private#21)
+      - name: Build sfdt args
+        id: sfdt-args
+        env:
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
+        run: |
+          printf 'args=%s\n' "$(jq -cn --arg org '{{org}}' --arg base "origin/$BASE_REF" \
+            '["deploy","--smart","--org",$org,"--delta-base",$base,"--dry-run"]')" >> "$GITHUB_OUTPUT"
       - name: Smart delta validation
         uses: {{actionRef}}
         with:
-          args-json: '["deploy","--smart","--org","{{org}}","--delta-base","origin/${{ github.event.pull_request.base.ref }}","--dry-run"]'
+          args-json: ${{ steps.sfdt-args.outputs.args }}
           auth-method: {{authMethod}}
           org-alias: {{org}}
           node-version: '{{nodeVersion}}'

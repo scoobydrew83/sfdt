@@ -7,7 +7,8 @@
  * sparse profile, because the spec forbids reading non-public data.
  */
 
-import { TrailheadProfilePrivateError, TrailheadProfileNotFoundError } from './errors.js';
+import { TrailheadProfilePrivateError,
+  TrailheadProfileUnavailableError, TrailheadProfileNotFoundError } from './errors.js';
 import type {
   RawCertification,
   RawEarnedAwardsQueryData,
@@ -89,7 +90,12 @@ export function normalizeProfile(
   if (!profile) throw new TrailheadProfileNotFoundError(handle);
 
   const typename = normalizeString(profile.__typename) ?? 'Unknown';
-  if (typename !== 'PublicProfile') throw new TrailheadProfilePrivateError(handle);
+  // Private stays private; anything else is *unrecognised*, not private. The
+  // union is Trailhead's, not ours, so a new member is expected eventually and
+  // asserting "this user hid their profile" for a deleted account is a wrong
+  // answer dressed as a safe one. Both still refuse to read. (sfdt-private#21)
+  if (typename === 'PrivateProfile') throw new TrailheadProfilePrivateError(handle);
+  if (typename !== 'PublicProfile') throw new TrailheadProfileUnavailableError(handle, typename);
 
   const stats = profile.trailheadStats;
   const certifications = (profile.credential?.certifications ?? [])
@@ -127,7 +133,12 @@ export function normalizeEarnedAwards(
   if (!profile) throw new TrailheadProfileNotFoundError(handle);
 
   const typename = normalizeString(profile.__typename) ?? 'Unknown';
-  if (typename !== 'PublicProfile') throw new TrailheadProfilePrivateError(handle);
+  // Private stays private; anything else is *unrecognised*, not private. The
+  // union is Trailhead's, not ours, so a new member is expected eventually and
+  // asserting "this user hid their profile" for a deleted account is a wrong
+  // answer dressed as a safe one. Both still refuse to read. (sfdt-private#21)
+  if (typename === 'PrivateProfile') throw new TrailheadProfilePrivateError(handle);
+  if (typename !== 'PublicProfile') throw new TrailheadProfileUnavailableError(handle, typename);
 
   const connection = profile.earnedAwards;
   const awards: TrailheadEarnedAward[] = (connection?.edges ?? [])
