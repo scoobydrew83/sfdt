@@ -1,0 +1,22 @@
+{
+  "errors": [
+    {
+      "message": "profile could not be found",
+      "locations": [
+        {
+          "line": 1,
+          "column": 46
+        }
+      ],
+      "path": [
+        "profile"
+      ],
+      "extensions": {
+        "code": "NOT_FOUND",
+        "statusCode": 404,
+        "clientMessage": "Not found"
+      }
+    }
+  ],
+  "data": null
+}

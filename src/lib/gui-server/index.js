@@ -2029,6 +2029,12 @@ export function createGuiApp(config, version, port = DEFAULT_UI_PORT) {
       // Captured job id from a dry-run / validate flow, surfaced to the client
       // in the final `result` message so the next click can do a true quick deploy.
       let capturedValidationJobId = null;
+      // NOTE: this is the second of TWO independent parsers over the same
+      // validation output — `extract_job_id()` in
+      // scripts/core/deployment-assistant.sh matches the bare `0Af…` token
+      // anywhere, while this one anchors on the printed `Validation Job ID:`
+      // label. They can drift apart and disagree about whether a job id
+      // exists; change one, check the other.
       const JOB_ID_PATTERN = /Validation Job ID:\s*([A-Za-z0-9]{15,18})/;
       const streamLines = (readable) => {
         const rl = createInterface({ input: readable, crlfDelay: Infinity });

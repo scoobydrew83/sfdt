@@ -157,6 +157,14 @@ parse_coverage() {
 }
 
 # Extract job ID from validation output
+#
+# NOTE: this is one of TWO independent parsers over the same validation output.
+# The GUI server re-scans the streamed lines with its own JOB_ID_PATTERN
+# (`src/lib/gui-server/index.js`, search JOB_ID_PATTERN) to surface the id to
+# the dashboard. The two regexes are shaped differently — this one matches the
+# bare `0Af…` token anywhere, that one anchors on the `Validation Job ID:`
+# label — so they can drift apart and disagree about whether a job id exists.
+# Change one, check the other.
 extract_job_id() {
     local output=$1
 
@@ -1011,6 +1019,15 @@ check_code_coverage() {
 
     if [ -z "$job_id" ]; then
         print_warning "No job ID available - cannot check coverage"
+        # Without a TTY (the GUI, CI) `read` returns immediately on EOF with an
+        # empty REPLY, which used to fall straight through to `exit 1` and kill
+        # a validation that had already SUCCEEDED (issue #346). Carry on and
+        # say so; the coverage check is advisory here, and the deploy itself
+        # still has its own gates.
+        if [[ "${SFDT_NON_INTERACTIVE:-}" == "true" ]]; then
+            print_warning "Non-interactive run - continuing without a coverage check"
+            return 0
+        fi
         read -p "Continue anyway? (y/n) " -n 1 -r
         echo
         if [[ ! $REPLY =~ ^[Yy]$ ]]; then
@@ -1056,6 +1073,12 @@ check_code_coverage() {
         echo -e "${YELLOW}For production, coverage must be >=${COVERAGE_THRESHOLD}%. Please verify manually:${NC}"
         echo -e "${CYAN}sf project deploy report --job-id $job_id --target-org $TARGET_ORG${NC}"
         echo ""
+        # Same non-interactive trap as the missing-job-id branch above: an EOF
+        # `read` would abort a validation that already succeeded (issue #346).
+        if [[ "${SFDT_NON_INTERACTIVE:-}" == "true" ]]; then
+            print_warning "Non-interactive run - continuing with coverage unverified"
+            return 0
+        fi
         read -p "Continue anyway? (y/n) " -n 1 -r
         echo
         if [[ ! $REPLY =~ ^[Yy]$ ]]; then

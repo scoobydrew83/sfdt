@@ -23,6 +23,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   triggered by a browser click, matching the `drift` kind's snapshot-only precedent. With no
   recorded run it answers `{ available: false, hint }` rather than an empty result. Consumed by
   the extension's new Quality Results panel (C-P5-1).
+- **`@sfdt/web` (WEB-1)** — Next.js 15 App Router workspace at `web/`. Design-token
+  shell for `/` and `/tools/flow-linter`, Cloudflare OpenNext config with **no D1**.
+  Org metadata is never stored. See `web/README.md`.
 
 ## [0.23.1] - 2026-08-25
 
