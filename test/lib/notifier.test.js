@@ -442,6 +442,38 @@ describe('every channel redacts, email included (v0.24.0 security gate, H3)', ()
   // the comment above the webhook block claimed every body was redacted.
   const SECRET = '00Dxx00000abcdEAA!secretvalue';
 
+  // The first cut of the H3 fix redacted `message` up front and dropped the
+  // `redactSensitiveData(renderWebhook(...))` wrapper. But renderWebhook embeds
+  // the raw `snapshot` argument and renderLoki the raw `org` — neither is part
+  // of `message` — so webhook channels started shipping the full unredacted
+  // checks[] array. Caught in review on PR #351. These assert every channel
+  // type against the same snapshot so the gap cannot reopen for one of them.
+  const CHANNELS = [
+    ['webhook', { type: 'webhook', url: 'http://x/hook' }],
+    ['loki',    { type: 'webhook', format: 'loki', url: 'http://x/loki' }],
+    ['slack',   { type: 'slack', webhookUrl: 'http://x/slack' }],
+    ['teams',   { type: 'teams', webhookUrl: 'http://x/teams' }],
+    ['googlechat', { type: 'googlechat', webhookUrl: 'http://x/gchat' }],
+  ];
+
+  it.each(CHANNELS)('does not post a raw session id to a %s channel', async (_label, base) => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true });
+    vi.stubGlobal('fetch', fetchMock);
+    const leaky = {
+      org: 'dev',
+      checks: [{ id: 'a', title: 'A', status: 'warn', summary: `token=${SECRET}` }],
+      summary: { ok: 0, warn: 1, fail: 0, error: 0 },
+    };
+    await dispatchSnapshot(leaky, {
+      notifications: {
+        enabled: true,
+        channels: [{ ...base, severityThreshold: 'warn', events: ['snapshot'] }],
+      },
+    }, { type: 'monitor' });
+    expect(fetchMock).toHaveBeenCalled();
+    expect(String(fetchMock.mock.calls[0][1].body)).not.toContain(SECRET);
+  });
+
   it('does not mail a raw session id', async () => {
     sendMail.mockClear();
     const leaky = {

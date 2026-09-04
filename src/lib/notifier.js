@@ -168,11 +168,10 @@ async function sendEmail(ch, message) {
 async function sendToChannel(ch, message, { kind, snapshot, org } = {}) {
   const label = channelLabel(ch);
   try {
-    // Redact once, here, for every channel type. This used to sit below the
-    // email branch and be repeated per webhook shape, which meant email — the
-    // one branch that returns early — sent raw org output while the comment
-    // below claimed full coverage. redactSensitiveData recurses over objects,
-    // so redacting the message up front covers every renderer downstream.
+    // Redact the message up front so the email branch below — which returns
+    // early and hands `message` straight to renderEmail — is covered. It used
+    // to sit *below* that branch, so email shipped raw org output while the
+    // comment claimed otherwise.
     message = redactSensitiveData(message);
     if (ch.type === 'email') {
       await sendEmail(ch, message);
@@ -182,8 +181,13 @@ async function sendToChannel(ch, message, { kind, snapshot, org } = {}) {
     if (!url) {
       return { channel: label, type: ch.type, ok: false, error: 'no webhook URL resolved (check webhookUrl/webhookUrlEnv/url)' };
     }
-    // `message` is already redacted above, so the renderers below only shape
-    // material that has been through redactSensitiveData.
+    // Redacting `message` alone is NOT enough here: renderWebhook embeds the raw
+    // `snapshot` argument and renderLoki the raw `org`, neither of which is part
+    // of `message`. Narrowing this to the message is precisely the regression
+    // that shipped a full unredacted `checks[]` array — secrets included — to any
+    // webhook channel. The rendered body is redacted as a whole, below, so any
+    // future renderer parameter is covered by construction rather than by
+    // remembering to add it here.
     let body;
     if (ch.type === 'slack') body = renderSlack(message);
     else if (ch.type === 'teams') body = renderTeams(message);
@@ -195,7 +199,7 @@ async function sendToChannel(ch, message, { kind, snapshot, org } = {}) {
     } else {
       return { channel: label, type: ch.type, ok: false, error: `unsupported channel type: ${ch.type}` };
     }
-    await postJson(url, body, channelHeaders(ch));
+    await postJson(url, redactSensitiveData(body), channelHeaders(ch));
     return { channel: label, type: ch.type, ok: true };
   } catch (err) {
     return { channel: label, type: ch.type, ok: false, error: err.message };
