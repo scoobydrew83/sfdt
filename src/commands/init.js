@@ -310,6 +310,11 @@ export function registerInitCommand(program) {
         // H1). Gitignoring it does not change that gate; it keeps *your*
         // prompts from becoming the next cloner's untrusted input.
         print.step('  .sfdt/prompts.json');
+        // Parked MCP results: whole tool payloads over the inline threshold —
+        // Apex debug logs, SOQL rows. Redacted and 0600 on disk as of
+        // sfdt-private#21, but there is no reason for them in version control,
+        // and this list is where people look. (`cache/` is derived data too.)
+        print.step('  .sfdt/cache/');
         console.log('');
       } catch (err) {
         print.error(`Init failed: ${err.message}`);

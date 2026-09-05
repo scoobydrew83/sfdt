@@ -9,6 +9,7 @@ import { query } from './org-query.js';
 import { orgRest, restErrorMessage } from './org-rest.js';
 import { apiVersion } from './record-runner.js';
 import { getOrgSession } from './org-session.js';
+import { assertApiName } from './safe-path.js';
 
 /**
  * `sfdt events` — Platform Events and Change Data Capture, CLI side.
@@ -104,6 +105,14 @@ export async function listEventChannels(orgAlias) {
  * @param {boolean} [options.dryRun] - Return the body without sending it.
  */
 export async function publishEvent(config, orgAlias, eventApiName, fields, { dryRun = false } = {}) {
+  // Shape first: this value is interpolated into a REST path below, and on the
+  // MCP surface it is model-supplied (see safe-path.js's header). The `__e`
+  // check under it is a usability check, not a security one — it is a *suffix*
+  // test, so it constrains nothing about the rest of the string. On its own it
+  // let `PermissionSetAssignment?x=__e` through, turning an approved "publish a
+  // platform event" into an arbitrary authenticated record insert, and a
+  // `../tooling/sobjects/ApexClass?x=__e` variant into an Apex class write.
+  assertApiName(eventApiName, 'platform event');
   if (!/__e$/i.test(eventApiName)) {
     // A near-certain mistake, and the org's error for it is unhelpful.
     throw new Error(
@@ -118,7 +127,10 @@ export async function publishEvent(config, orgAlias, eventApiName, fields, { dry
     return { outcome: 'dry-run', event: eventApiName, body: fields, id: null };
   }
   try {
-    const result = await orgRest(orgAlias, `/services/data/${apiVersion(config)}/sobjects/${eventApiName}/`, {
+    // Encoded as well as validated — the same treatment soql-runner.js:362 gives
+    // its path segments. Belt and braces: the assert above already rejects
+    // anything needing encoding, but the encode is what makes that non-load-bearing.
+    const result = await orgRest(orgAlias, `/services/data/${apiVersion(config)}/sobjects/${encodeURIComponent(eventApiName)}/`, {
       method: 'POST',
       body: fields,
     });

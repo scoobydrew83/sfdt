@@ -201,3 +201,92 @@ describe('MCP Parking', () => {
     });
   });
 });
+
+describe('parked payloads are 0600 and redacted (issue #21)', () => {
+  // A parked payload is a whole tool result — Apex debug logs, where session ids
+  // reliably appear, and SOQL rows. The same material is redacted on its way to
+  // a webhook. It was written with no mode (umask, usually 0644) and no
+  // redaction, into a directory the init gitignore guidance did not name.
+  const config = { _configDir: '/project/.sfdt' };
+  const big = (s) => s.padEnd(200_000, ' ');
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    fs.ensureDir.mockResolvedValue(undefined);
+    fs.writeFile.mockResolvedValue(undefined);
+  });
+
+  it('writes with mode 0600', async () => {
+    await parkIfNeeded({ rows: big('x') }, config);
+    expect(fs.writeFile).toHaveBeenCalled();
+    const opts = fs.writeFile.mock.calls[0][2];
+    expect(opts).toMatchObject({ mode: 0o600 });
+  });
+
+  it('redacts a session id before it reaches disk', async () => {
+    const SECRET = '00Dxx00000abcdEAA!secretvalue';
+    await parkIfNeeded({ log: big(`token=${SECRET}`) }, config);
+    expect(fs.writeFile).toHaveBeenCalled();
+    expect(String(fs.writeFile.mock.calls[0][1])).not.toContain(SECRET);
+  });
+
+  it('leaves a small payload inline, unparked', async () => {
+    const small = { rows: [1, 2, 3] };
+    expect(await parkIfNeeded(small, config)).toBe(small);
+    expect(fs.writeFile).not.toHaveBeenCalled();
+  });
+});
+
+describe('redaction operates on the object, not its serialization (issue #23)', () => {
+  // Redacting the JSON *string* had two defects, both introduced by the very
+  // commit that added redaction here:
+  //   M-1  PRIVATE_KEY_BLOCK_RE is BEGIN…[\s\S]*?…END, and [\s\S]*? does not stop
+  //        at JSON structure. Two attacker-written field values acting as
+  //        bookends deleted every record between them, and the output stayed
+  //        VALID JSON — so the loss was silent and the model was handed a
+  //        truncated set as complete.
+  //   L-1  redactSensitiveData only applies the SENSITIVE_KEYS backstop
+  //        (password/accessToken/sessionId/sid) on its object branch, so a
+  //        string skipped it entirely.
+  const config = { _configDir: '/project/.sfdt' };
+  const pad = (s) => s + ' '.repeat(80_000);   // comfortably over the park threshold
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    fs.ensureDir.mockResolvedValue(undefined);
+    fs.writeFile.mockResolvedValue(undefined);
+  });
+
+  it('does not drop records between two PEM bookends', async () => {
+    const records = Array.from({ length: 8 }, (_, i) => ({
+      Id: `500${i}`,
+      Description:
+        i === 1 ? '-----BEGIN PRIVATE KEY-----'
+          : i === 6 ? '-----END PRIVATE KEY-----'
+            : pad(`row ${i}`),
+    }));
+    await parkIfNeeded({ records }, config);
+
+    const written = JSON.parse(String(fs.writeFile.mock.calls[0][1]));
+    expect(written.records).toHaveLength(8);
+    expect(written.records.map((r) => r.Id)).toEqual(records.map((r) => r.Id));
+  });
+
+  it('applies the SENSITIVE_KEYS backstop that only the object branch has', async () => {
+    await parkIfNeeded(
+      { password: 'Hunter2!', sessionId: 'abc', nested: { access_token: pad('plain') } },
+      config,
+    );
+
+    const written = String(fs.writeFile.mock.calls[0][1]);
+    expect(written).not.toContain('Hunter2!');
+    expect(written).toContain('[REDACTED]');
+    expect(JSON.parse(written).nested.access_token).toBe('[REDACTED]');
+  });
+
+  it('still redacts a payload that arrives already serialized', async () => {
+    const SECRET = '00Dxx00000abcdEAA!secretvalue';
+    await parkIfNeeded(pad(`token=${SECRET}`), config);
+    expect(String(fs.writeFile.mock.calls[0][1])).not.toContain(SECRET);
+  });
+});

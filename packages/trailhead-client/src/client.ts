@@ -98,6 +98,8 @@ interface RuntimeGlobals {
   setTimeout(handler: () => void, timeout: number): unknown;
   clearTimeout(handle: unknown): void;
   AbortController?: new () => { readonly signal: unknown; abort(): void };
+  // Optional: a runtime without AbortController may equally lack console.
+  console?: { warn?: (message: string) => void };
 }
 const runtime = globalThis as unknown as RuntimeGlobals;
 
@@ -234,14 +236,38 @@ export class TrailheadClient {
     return handle;
   }
 
+  /**
+   * Cached results AND in-flight requests are shared.
+   *
+   * Only the resolved value was cached, so callers racing before the first
+   * load() settled all missed and all hit the network — 20 leaderboard rows for
+   * the same handle fired 20 requests against a public API even with
+   * cacheTtlMs set, which is the opposite of what cache.ts says the cache is
+   * for ("a burst of leaderboard renders for the same handle [is] one request
+   * instead of N"). The promise is tracked for the duration of the call and
+   * dropped on settle, so a failure is not cached. (sfdt-private#21)
+   */
+  #inFlight = new Map<string, Promise<unknown>>();
+  #warnedNoAbort = false;
+
   async #memoized<T>(key: string, load: () => Promise<T>): Promise<T> {
     const cache = this.#cache;
     if (!cache) return load();
     const hit = cache.get(key) as T | undefined;
     if (hit !== undefined) return hit;
-    const value = await load();
-    cache.set(key, value);
-    return value;
+
+    const pending = this.#inFlight.get(key) as Promise<T> | undefined;
+    if (pending) return pending;
+
+    const promise = (async () => {
+      const value = await load();
+      cache.set(key, value);
+      return value;
+    })().finally(() => {
+      this.#inFlight.delete(key);
+    });
+    this.#inFlight.set(key, promise);
+    return promise;
   }
 
   /**
@@ -282,6 +308,12 @@ export class TrailheadClient {
         if (RETRYABLE_STATUSES.has(response.status)) {
           if (response.status === 429) {
             lastRateLimit = new TrailheadRateLimitError(response.status, retryAfter);
+          } else {
+            // Cleared, or a 429 on an early attempt masks whatever actually
+            // ended the loop: 429 then 503 threw a rate-limit error for a
+            // response that was not one, so a caller branching on the type (to
+            // honour retryAfterSeconds, say) got a wrong diagnosis.
+            lastRateLimit = null;
           }
           if (attempt < this.#maxRetries) {
             await this.#sleep(this.#backoffMs(attempt, retryAfter));
@@ -308,7 +340,17 @@ export class TrailheadClient {
       }
 
       if (isNotFound(payload.errors)) throw new TrailheadProfileNotFoundError(handle);
-      if (payload.errors?.length && (payload.data === null || payload.data === undefined)) {
+      // `data: {}` counts as no data. Only checking null/undefined meant an
+      // unrecognised error alongside an empty object was dropped entirely, and
+      // normalize then threw TrailheadProfileNotFoundError — reporting a
+      // transient server error as "this handle does not exist", permanently.
+      // A *partial* response (some fields present) still normalizes on its
+      // merits, which is the documented behaviour below.
+      const noData =
+        payload.data === null ||
+        payload.data === undefined ||
+        (typeof payload.data === 'object' && Object.keys(payload.data).length === 0);
+      if (payload.errors?.length && noData) {
         throw new TrailheadGraphQLError(
           `Trailhead API returned GraphQL errors: ${payload.errors
             .map((e) => e.message ?? 'unknown error')
@@ -344,7 +386,23 @@ export class TrailheadClient {
     }
 
     const Abort = runtime.AbortController;
-    if (!this.#timeoutMs || !Abort) return this.#fetch(this.endpoint, init);
+    if (!this.#timeoutMs) return this.#fetch(this.endpoint, init);
+    if (!Abort) {
+      // A missing AbortController is not the same as `timeoutMs: 0`. Treating
+      // them alike meant a caller who configured a hang-guard silently did not
+      // have one, and a network stall on such a runtime hangs forever with
+      // nothing to explain why. Warn once rather than throw: the request itself
+      // is still valid, and refusing to work on an exotic runtime is a worse
+      // default than working without the guard and saying so. (sfdt-private#21)
+      if (!this.#warnedNoAbort) {
+        this.#warnedNoAbort = true;
+        runtime.console?.warn?.(
+          `@sfdt/trailhead-client: timeoutMs=${this.#timeoutMs} was configured, but this runtime ` +
+            'has no global AbortController, so no timeout is applied. Requests can hang indefinitely.',
+        );
+      }
+      return this.#fetch(this.endpoint, init);
+    }
 
     const controller = new Abort();
     const timer = runtime.setTimeout(() => controller.abort(), this.#timeoutMs);

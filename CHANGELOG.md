@@ -7,6 +7,88 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.25.0] - 2026-09-04
+
+A security release. Every finding from the v0.24.0 pre-release review that was left open,
+plus four more that the v0.25.0 gate found **in those very fixes**. Nothing here is a
+regression from 0.24.0 — these paths have shipped for several releases.
+
+<!-- Behaviour changes are listed under Changed; two of them need action. -->
+
+### Security
+
+- **Salesforce API names are validated at every point they reach a path.** `sfdt events
+  publish` interpolated a platform-event name into a REST path with no validation and no
+  encoding — the only check was that it *ended* in `__e`, which constrains nothing about
+  the rest of the string. `sfdt record get/edit/clone` had the same gap on `sobject`. Both
+  matter most through MCP, where the value is chosen by an AI model and this CLI feeds
+  that model untrusted org content: a name like `../tooling/sobjects/ApexClass` reached
+  the Tooling API, and `sfdt_record_get` is read-only with no confirmation prompt at all.
+  One shared guard now covers every call site.
+- **`sfdt field usage --offline` refuses a traversing object name.** The offline branch
+  skipped the validation its online sibling applies, so a crafted name walked out of the
+  project and listed another checkout's fields.
+- **Parked MCP results are redacted correctly and written `0600`.** Large tool results are
+  spilled to `.sfdt/cache/parked/`. They were written in the clear; the first fix for that
+  redacted the serialized JSON, which let a private-key pattern span records and silently
+  delete rows from the middle of a result while leaving valid JSON behind. Redaction now
+  runs on the data, so the key-name backstop applies and nothing is dropped. Add
+  `.sfdt/cache/` to `.gitignore` — `sfdt init` now says so.
+- **The dashboard's manifest viewer only serves manifests.** It could read any file under
+  the project, including `.env` and `.sfdt/config.json`; scoping it by name alone still
+  let a committed symlink through. It is now restricted to `.xml` under your manifest and
+  log directories, refuses symlinks, and re-checks the resolved path.
+- **Notification webhooks no longer follow redirects.** A 3xx from a configured endpoint
+  would re-send the message body *and* any `headersEnv` gateway token to wherever it
+  pointed. A redirect is now an error naming the destination.
+- **`sfdt retrofit` requires confirmation on both paths.** Without `--execute` it still
+  retrieved over your checkout and committed the result.
+- **A committed config can no longer supply MCP process arguments alone.** The guard fired
+  only when `command` was set, but `args` on its own applied attacker-chosen arguments to
+  the default `sf` binary.
+- **The `sfdt` GitHub Action writes its JWT key with `mktemp`,** not a fixed path and a
+  plain redirect that left it group- and world-readable on persistent runners.
+- **CI templates no longer interpolate a git ref into script or JSON text.** A branch name
+  may legally contain shell metacharacters and a double quote.
+- **Removed a dead extension handler** that returned raw session ids. It had no callers.
+
+### Changed
+
+- **Notification webhook redirects are refused** (see Security). If your endpoint relies on
+  a redirect, configure the final URL directly.
+- **`sfdt retrofit` and `sfdt_retrofit` now require confirmation even without `--execute`.**
+- **`.sfdt/config.json` rejects unknown keys under `mcp.salesforce`.** Only `transport`,
+  `command` and `args` are accepted; anything else now fails config load rather than being
+  ignored.
+- **Regenerate CI pipelines** created before this release:
+  `sfdt ci init --provider azure` and `--provider github`.
+- **New `SFDT_MCP_PROJECT_ROOTS`** — an optional, colon-separated allowlist pinning which
+  projects an MCP server will serve. Unset, nothing changes. Every tool accepts a
+  `projectRoot` and that value is model-chosen, so a call presented as "the current
+  project" can name a different checkout. Cross-project routing is a real feature, so this
+  is opt-in — set it on any machine holding more than one customer's checkout.
+  See [docs/MCP.md](./docs/MCP.md) and [docs/ENV-VARS.md](./docs/ENV-VARS.md).
+- **`@sfdt/trailhead-client`** distinguishes an unrecognised profile type from a private
+  one (`TrailheadProfileUnavailableError`), reports the status that actually ended a retry
+  loop rather than a stale 429, surfaces GraphQL errors that arrive beside empty data
+  instead of reporting "handle not found", and de-duplicates concurrent requests for the
+  same handle.
+
+### Fixed
+
+- The Chrome extension's Quality Results panel uses the standard timeout for what is a
+  local file read, instead of the 60-second deploy timeout.
+- `sfdt ui` no longer passes the dashboard's auth token as a command-line argument to the
+  browser, where any other user on the machine could read it from the process table.
+- The Docker image build waits for a freshly published package to become resolvable on the
+  registry, instead of failing on a 404 seconds after publish.
+
+### Unchanged
+
+- `@sfdt/flow-core` stays at **0.14.0** — no source changed this cycle.
+- The Chrome extension (0.15.0) and VS Code extension (0.7.0) version independently and
+  are untouched.
+
 ## [0.24.0] - 2026-09-04
 
 A feature release that also closes four High-severity findings from the pre-release security

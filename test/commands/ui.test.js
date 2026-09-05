@@ -122,7 +122,48 @@ describe('ui command', () => {
 
     await createProgram().parseAsync(['node', 'sfdt', 'ui']);
 
-    expect(open).toHaveBeenCalledWith('http://localhost:7654?token=test-launch-token');
+    expect(open).toHaveBeenCalledTimes(1);
+    const url = open.mock.calls[0][0];
+    // Three slashes, not two: built with pathToFileURL, never `'file://' + path`.
+    // On Windows path.join yields `C:\Users\…`, and concatenation produces
+    // `file://C:\Users\…` — not a well-formed file URL, so the browser never
+    // resolves the stub and the whole point of the change is lost. Asserting the
+    // parsed form also catches the import going missing: a bare pathToFileURL
+    // reference throws, the catch swallows it, and open() is never called.
+    expect(url).toMatch(/^file:\/\/\/.*sfdt-launch-[0-9a-f]+\.html$/);
+    expect(() => new URL(url)).not.toThrow();
+    expect(new URL(url).protocol).toBe('file:');
+  });
+
+  // open() spawns a child with its argument as an argv element, so a tokened URL
+  // lands in the process table and the browser's own argv for its lifetime —
+  // readable by any other user on a shared host. ~/.sfdt/bridge-token defends the
+  // same threat with mode 0600; this had no equivalent. (issue #21)
+  it('never passes the launch token to open() as an argv element', async () => {
+    const { default: open } = await import('open');
+
+    await createProgram().parseAsync(['node', 'sfdt', 'ui']);
+
+    expect(open).toHaveBeenCalled();
+    expect(open.mock.calls[0][0]).not.toContain('test-launch-token');
+    expect(open.mock.calls[0][0]).not.toContain('token=');
+  });
+
+  it('writes the redirect stub 0600, carrying the tokened URL', async () => {
+    const fsExtra = (await import('fs-extra')).default;
+    const { default: open } = await import('open');
+    const writeSpy = vi.spyOn(fsExtra, 'writeFile').mockResolvedValue(undefined);
+    vi.spyOn(fsExtra, 'remove').mockResolvedValue(undefined);
+
+    await createProgram().parseAsync(['node', 'sfdt', 'ui']);
+
+    expect(writeSpy).toHaveBeenCalled();
+    const [stubPath, html, opts] = writeSpy.mock.calls[0];
+    expect(opts).toEqual({ mode: 0o600 });
+    expect(html).toContain('http://localhost:7654?token=test-launch-token');
+    // and it is that file, not the URL, that open() receives
+    expect(open.mock.calls[0][0]).toBe(`file://${stubPath}`);
+    writeSpy.mockRestore();
   });
 
   it('does not open browser when --no-open is passed', async () => {

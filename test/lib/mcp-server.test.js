@@ -1,4 +1,5 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import path from 'path';
 
 const mockRegisteredHandlers = new Map();
 
@@ -175,6 +176,42 @@ describe('SfdtMcpServer', () => {
       expect(execa.mock.calls.map((call) => call[2].cwd)).toEqual(
         expect.arrayContaining(['/workspace/one', '/workspace/two'])
       );
+    });
+
+    // projectRoot is model-chosen and every tool accepts it, so a call the
+    // operator reads as "the current project" can name a different checkout and
+    // run against that org. Cross-project routing is a real feature (see the
+    // isolation test above), so pinning is opt-in via SFDT_MCP_PROJECT_ROOTS
+    // rather than default-deny. (issue #21)
+    describe('SFDT_MCP_PROJECT_ROOTS pins which roots a server will serve', () => {
+      afterEach(() => { delete process.env.SFDT_MCP_PROJECT_ROOTS; });
+
+      it('refuses a root outside the allowlist, without running anything', async () => {
+        process.env.SFDT_MCP_PROJECT_ROOTS = '/workspace/one';
+        execa.mockClear();
+        const res = await callTool('sfdt_preflight', { projectRoot: '/workspace/other' });
+        expect(res.content[0].text).toMatch(/not in SFDT_MCP_PROJECT_ROOTS/);
+        expect(execa).not.toHaveBeenCalled();
+      });
+
+      it('allows a root that is in the allowlist', async () => {
+        process.env.SFDT_MCP_PROJECT_ROOTS = ['/workspace/one', '/workspace/two'].join(path.delimiter);
+        loadConfig.mockImplementation(async (root) => ({
+          _projectRoot: root || '/project', _configDir: `${root || '/project'}/.sfdt`, logDir: `${root || '/project'}/logs`,
+        }));
+        execa.mockResolvedValue({ exitCode: 0, stdout: 'ok', stderr: '' });
+        const res = await callTool('sfdt_preflight', { projectRoot: '/workspace/two' });
+        expect(res.content[0].text).not.toMatch(/not in SFDT_MCP_PROJECT_ROOTS/);
+      });
+
+      it('is inert when unset — cross-project routing still works', async () => {
+        loadConfig.mockImplementation(async (root) => ({
+          _projectRoot: root || '/project', _configDir: `${root || '/project'}/.sfdt`, logDir: `${root || '/project'}/logs`,
+        }));
+        execa.mockResolvedValue({ exitCode: 0, stdout: 'ok', stderr: '' });
+        const res = await callTool('sfdt_preflight', { projectRoot: '/workspace/anywhere' });
+        expect(res.content[0].text).not.toMatch(/not in SFDT_MCP_PROJECT_ROOTS/);
+      });
     });
 
     it('executes sfdt_preflight tool', async () => {

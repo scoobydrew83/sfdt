@@ -54,6 +54,35 @@ export function resolveInProject(root, input, label = 'path') {
 }
 
 /**
+ * Salesforce API names — objects, fields, platform events. Same threat class as
+ * SET_RE above: these are interpolated into REST paths and filesystem paths, and
+ * on the MCP surface they are model-supplied.
+ *
+ * This lived privately in `field-impact-runner.js` while two other callers —
+ * `events-runner.js` (a REST path) and `field-usage-offline.js` (a
+ * `path.join`) — interpolated the same class of value with no check at all. One
+ * exported guard, so a new caller reaches for it instead of re-deriving it.
+ */
+export const API_NAME_RE = /^[A-Za-z][A-Za-z0-9_]*$/;
+
+/**
+ * Assert a Salesforce API name is a bare identifier. Returns it so callers can
+ * inline the call at the interpolation site.
+ *
+ * @param {unknown} value
+ * @param {string} what - what is being named, for the error text ('object', 'event', …)
+ */
+export function assertApiName(value, what = 'API name') {
+  const str = String(value ?? '');
+  if (!API_NAME_RE.test(str)) {
+    // Wording kept from the original private copy in field-impact-runner.js —
+    // this is a shared extraction, not a change to what users see.
+    throw new Error(`"${str}" is not a valid ${what} API name.`);
+  }
+  return str;
+}
+
+/**
  * Assert a data-set name is a bare identifier safe to use as a path segment.
  * Returns the name so callers can inline it.
  */

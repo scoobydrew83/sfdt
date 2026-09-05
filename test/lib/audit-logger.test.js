@@ -220,3 +220,51 @@ describe('session-id redaction covers the secret half (v0.24.0 security gate, H2
     expect(redactSensitiveData(`refresh_token ${d}`)).not.toContain(d);
   });
 });
+
+describe('the PEM pattern cannot swallow surrounding content (PR #352 review)', () => {
+  // `[\s\S]*?` between BEGIN and END stops at no structural boundary, so two
+  // BEGIN/END-shaped lines anywhere in one string delete everything between them
+  // — and the result stays well-formed, so the loss is silent. The first fix
+  // moved parking to redact objects, which compartmentalises per leaf; it did
+  // NOT help the string branch, and `sfdt_apex_logs` returns a raw log STRING.
+  // Bounding the length alone does not help either: content closer together than
+  // the bound is still swallowed. The body is now constrained to base64, which is
+  // what a PEM body actually is.
+  const SECRET = '-----BEGIN RSA PRIVATE KEY-----\n'
+    + 'MIIEowIBAAKCAQEAxLd9\n'.repeat(40)
+    + '-----END RSA PRIVATE KEY-----';
+
+  it('redacts a real PEM block whole', () => {
+    expect(redactSensitiveData(`before ${SECRET} after`)).toBe('before [REDACTED_PRIVATE_KEY] after');
+  });
+
+  it('does not delete log lines sitting between two PEM-shaped markers', () => {
+    const log = [
+      '12:00:01 USER_DEBUG line A',
+      '-----BEGIN PRIVATE KEY-----',
+      '12:00:02 USER_DEBUG KEEP_THIS_LINE',
+      '12:00:03 USER_DEBUG and this one',
+      '-----END PRIVATE KEY-----',
+      '12:00:04 USER_DEBUG line Z',
+    ].join('\n');
+    const out = redactSensitiveData(log);
+
+    expect(out).toContain('KEEP_THIS_LINE');
+    expect(out).toContain('and this one');
+    expect(out.split('\n')).toHaveLength(log.split('\n').length);
+  });
+
+  it('does not delete JSON records sitting between two PEM-shaped markers', () => {
+    const json = JSON.stringify({
+      records: [
+        { Id: '5000', d: '-----BEGIN PRIVATE KEY-----' },
+        { Id: '5001', d: 'KEEP_THIS_RECORD' },
+        { Id: '5002', d: '-----END PRIVATE KEY-----' },
+      ],
+    });
+    const out = redactSensitiveData(json);
+
+    expect(out).toContain('KEEP_THIS_RECORD');
+    expect(JSON.parse(out).records).toHaveLength(3);
+  });
+});

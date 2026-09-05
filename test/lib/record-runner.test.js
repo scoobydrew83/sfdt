@@ -247,3 +247,41 @@ describe('cloneRecord', () => {
     expect(writes).toHaveLength(0);
   });
 });
+
+describe('sobject is validated before it reaches a REST path (issue #23, H-1)', () => {
+  // `recordId` was shape-checked; `sobject` was the other free path segment and
+  // was not. It is a model-supplied MCP argument on sfdt_record_get (read-only,
+  // NO confirmExecution), sfdt_record_edit and sfdt_record_clone. The sf CLI
+  // builds a WHATWG URL, which collapses dot segments — so
+  // `../tooling/sobjects/ApexClass` reaches the Tooling API: reading Apex source
+  // with no prompt at all, or PATCHing it behind a prompt that says "update a
+  // record". The v0.25.0 batch-1 commit fixed events-runner and
+  // field-usage-offline and named these four siblings without converting them.
+  const config = { apiVersion: '62.0' };
+  const RECORD_ID = '001800000000001AAA';
+
+  const TRAVERSALS = [
+    ['tooling sObject write', '../tooling/sobjects/ApexClass'],
+    ['tooling query read',    '../tooling/query?q=SELECT+Id,Body+FROM+ApexClass&z='],
+    ['separator',             'Account/../ApexClass'],
+    ['leading dot',           '.hidden'],
+    ['query string',          'Account?x='],
+  ];
+
+  beforeEach(() => vi.mocked(orgRest).mockReset());
+
+  it.each(TRAVERSALS)('getRecord refuses %s without calling the org', async (_label, sobject) => {
+    await expect(getRecord(config, RECORD_ID, { org: 'dev', sobject }))
+      .rejects.toThrow(/not a valid object API name/);
+    expect(orgRest).not.toHaveBeenCalled();
+  });
+
+  it('still accepts a legitimate custom object', async () => {
+    vi.mocked(orgRest)
+      .mockResolvedValueOnce({ name: 'My_Object__c', label: 'My Object', fields: [] })
+      .mockResolvedValueOnce({ Id: RECORD_ID });
+    await expect(getRecord(config, RECORD_ID, { org: 'dev', sobject: 'My_Object__c' }))
+      .resolves.toBeTruthy();
+    expect(orgRest).toHaveBeenCalled();
+  });
+});

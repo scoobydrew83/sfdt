@@ -64,6 +64,31 @@ export class TrailheadProfilePrivateError extends TrailheadError {
   }
 }
 
+/**
+ * The profile union returned a member this client does not know.
+ *
+ * Distinct from TrailheadProfilePrivateError because failing *safe* and
+ * asserting the wrong *reason* are different things: every non-PublicProfile
+ * typename used to be reported as "private", so a future `SuspendedProfile` or
+ * `DeletedProfile` would tell a UI to show "this user has hidden their profile"
+ * for an account that was suspended or deleted. This client does not own the
+ * schema, so an unknown member is expected eventually. (sfdt-private#21)
+ */
+export class TrailheadProfileUnavailableError extends TrailheadError {
+  override readonly name = 'TrailheadProfileUnavailableError';
+
+  constructor(
+    public readonly handle: string,
+    public readonly typename: string,
+  ) {
+    super(
+      `Trailhead profile "${handle}" is not readable: the API returned a ` +
+        `"${typename}" profile, which this client does not recognise. It reads ` +
+        `public profiles only.`
+    );
+  }
+}
+
 /** The API answered 429, or 503 with a `Retry-After`, after all retries. */
 export class TrailheadRateLimitError extends TrailheadError {
   override readonly name = 'TrailheadRateLimitError';

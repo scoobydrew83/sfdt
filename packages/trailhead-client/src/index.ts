@@ -38,6 +38,7 @@ export {
   TrailheadInvalidHandleError,
   TrailheadProfileNotFoundError,
   TrailheadProfilePrivateError,
+  TrailheadProfileUnavailableError,
   TrailheadRateLimitError,
   TrailheadTransportError,
 } from './errors.js';

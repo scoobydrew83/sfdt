@@ -7,6 +7,7 @@
  */
 
 import { describe, it, expect, vi, beforeAll, afterAll } from 'vitest';
+import { constants as fsConstants } from 'fs';
 
 // ─── Mocks ──────────────────────────────────────────────────────────────────
 
@@ -47,6 +48,12 @@ vi.mock('fs-extra', () => ({
     readFile: vi.fn().mockResolvedValue(''),
     outputJson: vi.fn().mockResolvedValue(undefined),
     stat: vi.fn().mockResolvedValue({ mtime: new Date(), size: 0, isDirectory: () => false }),
+    // /api/manifests/content refuses a symlink and re-checks containment against
+    // the resolved path, because scoping by string alone let a committed
+    // `prod-package.xml -> ~/.npmrc` through every check (sfdt-private#23, M-2).
+    // Default: a real file that resolves to itself.
+    lstat: vi.fn().mockResolvedValue({ isSymbolicLink: () => false, isFile: () => true }),
+    realpath: vi.fn(async (p) => p),
     remove: vi.fn().mockResolvedValue(undefined),
     ensureDir: vi.fn().mockResolvedValue(undefined),
     writeFile: vi.fn().mockResolvedValue(undefined),
@@ -357,6 +364,83 @@ describe('GET /api/manifests/content', () => {
     const res = await request(app).get('/api/manifests/content?path=manifest/release/pkg.xml');
     expect(res.status).toBe(200);
     expect(res.body.xml).toContain('<Package');
+  });
+
+  // Containment was correct — traversal already failed — but nothing scoped the
+  // read to manifestDir or to .xml, so this was a general file-read primitive
+  // over the whole project. Verified live returning `.env` and
+  // `.sfdt/config.json`, which `sfdt init` designates for local secrets. The
+  // only relPaths /api/manifests hands the GUI are .xml under manifestDir
+  // (flat or one subdir deep) or under logDir. (issue #21)
+  it.each([
+    ['dotenv at the root',   '.env'],
+    ['the config file',      '.sfdt/config.json'],
+    ['the local secrets file', '.sfdt/creds.local.json'],
+    ['git config',           '.git/config'],
+    ['source outside both dirs', 'force-app/main/default/classes/Foo.cls'],
+    ['an xml outside both dirs', 'package.xml'],
+  ])('refuses %s even though it is inside the project', async (_label, rel) => {
+    // Deliberately no readFile mock queued: the route must refuse *before*
+    // reading, and a queued value would leak into the next test if it did not.
+    const res = await request(app).get(`/api/manifests/content?path=${encodeURIComponent(rel)}`);
+    expect(res.status).toBe(403);
+    expect(res.body.xml).toBeUndefined();
+  });
+
+  // Scoping by string alone left the primitive intact and merely renamed it:
+  // path.resolve does not follow symlinks and readFile does, so a committed
+  // `manifest/release/prod-package.xml -> ~/.npmrc` passed the extension check,
+  // the containment check and the under() check. The listing route's fs.stat
+  // follows links too, so it appeared as a normal manifest. (issue #23, M-2)
+  it('refuses a manifest-shaped symlink pointing outside the project', async () => {
+    const { default: fsMock } = await import('fs-extra');
+    fsMock.readFile.mockClear();   // this file's mocks persist across tests
+    // O_NOFOLLOW makes the kernel refuse at open time; Node surfaces that as
+    // ELOOP. Verified against a real symlink outside the suite.
+    const eloop = Object.assign(new Error('ELOOP'), { code: 'ELOOP' });
+    fsMock.readFile.mockRejectedValueOnce(eloop);
+
+    const res = await request(app).get('/api/manifests/content?path=manifest/release/prod-package.xml');
+    expect(res.status).toBe(403);
+  });
+
+  it('passes O_NOFOLLOW so the check and the read are one operation', async () => {
+    const { default: fsMock } = await import('fs-extra');
+    fsMock.readFile.mockClear();
+    fsMock.readFile.mockResolvedValueOnce('<Package/>');
+
+    await request(app).get('/api/manifests/content?path=manifest/release/pkg.xml');
+    const opts = fsMock.readFile.mock.calls[0][1];
+    // eslint-disable-next-line no-bitwise
+    expect(opts.flag & fsConstants.O_NOFOLLOW).toBe(fsConstants.O_NOFOLLOW);
+  });
+
+  it('refuses when the resolved path escapes the permitted directories', async () => {
+    const { default: fsMock } = await import('fs-extra');
+    fsMock.readFile.mockClear();
+    // O_NOFOLLOW only refuses a symlinked *leaf*; a symlinked parent directory
+    // resolves normally, so containment is re-checked on the realpath.
+    fsMock.realpath.mockResolvedValueOnce('/etc/passwd');
+
+    const res = await request(app).get('/api/manifests/content?path=manifest/release/pkg.xml');
+    expect(res.status).toBe(403);
+    expect(fsMock.readFile).not.toHaveBeenCalled();
+  });
+
+  it('still serves a compare manifest out of logDir', async () => {
+    const { default: fsMock } = await import('fs-extra');
+    fsMock.readFile.mockResolvedValueOnce('<Package/>');
+
+    const res = await request(app).get('/api/manifests/content?path=logs/compare-1.xml');
+    expect(res.status).toBe(200);
+  });
+
+  it('still serves a subpath-layout manifest one directory deep', async () => {
+    const { default: fsMock } = await import('fs-extra');
+    fsMock.readFile.mockResolvedValueOnce('<Package/>');
+
+    const res = await request(app).get('/api/manifests/content?path=manifest/release/core/pkg.xml');
+    expect(res.status).toBe(200);
   });
 });
 

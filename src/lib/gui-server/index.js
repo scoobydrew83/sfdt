@@ -9,6 +9,7 @@
 import { spawn } from 'child_process';
 import express from 'express';
 import fs from 'fs-extra';
+import { constants as fsConstants } from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { execa } from 'execa';
@@ -166,11 +167,26 @@ export function createGuiApp(config, version, port = DEFAULT_UI_PORT) {
   const originGuard = createOriginGuard(port);
   app.use('/api/', originGuard);
 
+  // The `?csrf=` form exists because EventSource cannot set headers, and
+  // security.js's docstring scopes it to that. It was wired globally, so all
+  // ~55 GET routes accepted a token in the query string — and the route at
+  // /api/compare/stream documents the consequence itself: "any cross-origin
+  // page could trigger retrieves by loading the URL in an <img>". A subresource
+  // load sends no Origin, and the origin guard only rejects a *present* bad
+  // one, so once the token appears anywhere the design already treats as leaky
+  // (access log, HAR, support bundle) every GET route was drivable from any
+  // site. A header-only token forces a preflight, which sends Origin, which
+  // 403s. gui/src/api.js's csrfQuery() has exactly one caller — Compare.jsx —
+  // so this is the whole surface that needs the exception. (sfdt-private#21)
+  const QUERY_CSRF_ROUTES = new Set(['/compare/stream']);
   app.use('/api/', (req, res, next) => {
     if (req.path === '/health' || req.path === '/csrf-token' || req.path.startsWith('/bridge')) {
       return next();
     }
-    if (!requireCsrfTokenFromQueryOrHeader(req, res, csrfToken)) return;
+    const check = QUERY_CSRF_ROUTES.has(req.path)
+      ? requireCsrfTokenFromQueryOrHeader
+      : requireCsrfToken;
+    if (!check(req, res, csrfToken)) return;
     next();
   });
 
@@ -1817,7 +1833,55 @@ export function createGuiApp(config, version, port = DEFAULT_UI_PORT) {
       if (!absPath.startsWith(projectRoot + path.sep) && absPath !== projectRoot) {
         return res.status(403).json({ error: 'Forbidden' });
       }
-      const xml = await fs.readFile(absPath, 'utf8');
+      // Containment alone made this a general file-read primitive scoped to the
+      // project: verified reading `.env` and `.sfdt/config.json`, the very file
+      // `sfdt init` designates for local secrets. Nothing about the route's name
+      // or its callers wants that. The only relPaths /api/manifests hands the GUI
+      // are `.xml` under manifestDir (flat or one subdir deep) or under logDir,
+      // so that is the whole permitted surface. Scoping it costs nothing and
+      // removes the primitive. (sfdt-private#21)
+      const manifestDir = path.resolve(projectRoot, config.manifestDir ?? 'manifest/release');
+      const logDirAbs = path.resolve(projectRoot, config.logDir ?? 'logs');
+      const under = (dir) => absPath === dir || absPath.startsWith(dir + path.sep);
+      if (!absPath.toLowerCase().endsWith('.xml') || !(under(manifestDir) || under(logDirAbs))) {
+        return res.status(403).json({ error: 'Forbidden' });
+      }
+      // The checks above are all on the *string*. path.resolve does not follow
+      // symlinks and readFile does — so scoping by name alone left the primitive
+      // intact and merely renamed it: a committed
+      // `manifest/release/prod-package.xml` symlinked to ~/.npmrc, ~/.aws/credentials
+      // or the project's .env passed every check and rendered in the dashboard,
+      // and the listing route's fs.stat follows links so it looked like a real
+      // manifest. Resolve the real path and re-check, and refuse a symlink
+      // outright so the failure is explicit rather than silently following it
+      // somewhere legitimate. (sfdt-private#23, M-2)
+      // O_NOFOLLOW on the read itself, so there is no window between the check
+      // and the read. lstat-then-readFile is separate syscalls against a *name*:
+      // a concurrent write could swap the file for a symlink after the check said
+      // "not a symlink" and before the read followed it. Passing the flag makes
+      // the kernel refuse at open time, so the check and the read are one
+      // operation and the race has nowhere to live. (sfdt-private#23)
+      //
+      // Containment is still re-checked on the resolved path below, because
+      // O_NOFOLLOW only refuses a symlinked *leaf* — a symlinked parent
+      // directory resolves normally.
+      const realPath = await fs.realpath(absPath).catch(() => null);
+      const realUnder = (dir) => realPath === dir || realPath?.startsWith(dir + path.sep);
+      if (!realPath || !(realUnder(manifestDir) || realUnder(logDirAbs))) {
+        return res.status(403).json({ error: 'Forbidden' });
+      }
+      let xml;
+      try {
+        xml = await fs.readFile(absPath, {
+          encoding: 'utf8',
+          flag: fsConstants.O_RDONLY | fsConstants.O_NOFOLLOW,
+        });
+      } catch (err) {
+        // ELOOP is O_NOFOLLOW refusing a symlink — a refusal, not a missing file,
+        // so it should not fall through to the generic 404 below.
+        if (err?.code === 'ELOOP') return res.status(403).json({ error: 'Forbidden' });
+        throw err;
+      }
       res.json({ xml });
     } catch {
       res.status(404).json({ error: 'Not found' });

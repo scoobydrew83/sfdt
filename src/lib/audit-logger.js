@@ -30,7 +30,22 @@ const SENSITIVE_CLI_ARGS_RE = /(-p|--password|--client-secret|--access-token|-u|
 // PEM private key blocks. The header comment above has always claimed these
 // were handled; no pattern existed. A JWT signing key pasted into a log or a
 // deploy error was passed through verbatim.
-const PRIVATE_KEY_BLOCK_RE = /-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----/g;
+// The body is BOUNDED. An unbounded `[\s\S]*?` does not stop at any structural
+// boundary, so two BEGIN/END-shaped lines anywhere in the same string swallow
+// everything between them — and because the result is still well-formed text (or
+// still-valid JSON), the deletion is silent. Reproduced on a parked Apex log: six
+// lines became three, and on a serialized SOQL result: eight records became three,
+// handed to the model as complete. That is an evasion primitive against the very
+// scanning these tools perform, so the fix belongs here rather than at each caller.
+//
+// The body is also constrained to what a PEM body actually is: base64 plus
+// whitespace. That is the real discriminator — bounding the length alone does not
+// help, because arbitrary content *closer together* than the bound is still
+// swallowed. Log lines and JSON carry `:` `,` `"` `{`, none of which are base64,
+// so they can no longer sit inside a match. 8000 comfortably exceeds any real key
+// (RSA-4096 armours to ~3.2 kB).
+const PRIVATE_KEY_BLOCK_RE =
+  /-----BEGIN [A-Z ]*PRIVATE KEY-----[A-Za-z0-9+/=\s]{0,8000}?-----END [A-Z ]*PRIVATE KEY-----/g;
 
 // sfdx auth URL — a complete, replayable org credential in a single string.
 // `sf org display --verbose` prints these, and that output lands in logs.

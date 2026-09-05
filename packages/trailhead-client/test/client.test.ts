@@ -5,6 +5,7 @@ import {
   TrailheadInvalidHandleError,
   TrailheadProfileNotFoundError,
   TrailheadProfilePrivateError,
+  TrailheadProfileUnavailableError,
   TrailheadRateLimitError,
   TrailheadTransportError,
 } from '../src/errors.js';
@@ -315,5 +316,94 @@ describe('construction', () => {
       'example-handle'
     );
     expect(requests[0]?.url).toBe('https://proxy.example/graphql');
+  });
+});
+
+describe('error classification is accurate, not just safe (issue #21)', () => {
+  it('reports the status that actually ended the loop, not a stale 429', async () => {
+    // lastRateLimit was set on any 429 and never cleared, so a 429 followed by a
+    // 503 threw a rate-limit error for a response that was not one — a caller
+    // branching on the type to honour retryAfterSeconds got a wrong diagnosis.
+    const { sleep } = recordingSleep();
+    const { fetch } = stubFetch([
+      { status: 429, headers: { 'retry-after': '1' } },
+      { status: 503 },
+    ]);
+    const client = createTrailheadClient({ fetch, sleep, maxRetries: 1 });
+
+    const err = await client.getProfile('example-handle').catch((e) => e);
+    expect(err).toBeInstanceOf(TrailheadTransportError);
+    expect(err).not.toBeInstanceOf(TrailheadRateLimitError);
+    expect(err.status).toBe(503);   // the response that actually ended the loop
+  });
+
+  it('still reports a rate limit when 429 is what exhausted the retries', async () => {
+    const { sleep } = recordingSleep();
+    const { fetch } = stubFetch([
+      { status: 429, headers: { 'retry-after': '1' } },
+      { status: 429, headers: { 'retry-after': '1' } },
+    ]);
+    const client = createTrailheadClient({ fetch, sleep, maxRetries: 1 });
+
+    await expect(client.getProfile('example-handle')).rejects.toBeInstanceOf(TrailheadRateLimitError);
+  });
+
+  it('surfaces a GraphQL error when data is an empty object', async () => {
+    // Only null/undefined counted as "no data", so an unrecognised error beside
+    // `data: {}` was dropped and normalize then threw NotFound — reporting a
+    // transient server error as "this handle does not exist", permanently.
+    const { fetch } = stubFetch([
+      {
+        status: 200,
+        body: JSON.stringify({
+          data: {},
+          errors: [{ message: 'internal error', extensions: { code: 'INTERNAL' } }],
+        }),
+      },
+    ]);
+    const client = createTrailheadClient({ fetch });
+
+    await expect(client.getProfile('example-handle')).rejects.toBeInstanceOf(TrailheadGraphQLError);
+  });
+});
+
+describe('an unknown profile typename is not called "private" (issue #21)', () => {
+  const withTypename = (typename: string) =>
+    stubFetch([{ status: 200, body: JSON.stringify({ data: { profile: { __typename: typename } } }) }]);
+
+  it('still reports a genuinely private profile as private', async () => {
+    const { fetch } = withTypename('PrivateProfile');
+    await expect(createTrailheadClient({ fetch }).getProfile('example-handle'))
+      .rejects.toBeInstanceOf(TrailheadProfilePrivateError);
+  });
+
+  it.each(['SuspendedProfile', 'DeletedProfile', 'SomethingNew'])(
+    'reports %s as unavailable, naming the typename',
+    async (typename) => {
+      const { fetch } = withTypename(typename);
+      const err = await createTrailheadClient({ fetch }).getProfile('example-handle').catch((e) => e);
+      expect(err).toBeInstanceOf(TrailheadProfileUnavailableError);
+      expect(err).not.toBeInstanceOf(TrailheadProfilePrivateError);
+      expect(err.typename).toBe(typename);
+      // it must still refuse to read — failing safe was never the problem
+      expect(err.message).not.toMatch(/is private/);
+    },
+  );
+});
+
+describe('concurrent calls for one handle make one request (issue #21)', () => {
+  it('de-duplicates in-flight loads, not just resolved ones', async () => {
+    // The cache was only consulted before load() started and only stored the
+    // resolved value, so a burst racing the first request all missed — the
+    // opposite of what cache.ts says the cache is for.
+    const { fetch, requests } = stubFixture('profile-public.json');
+    const client = createTrailheadClient({ fetch, now: FIXED_NOW, cacheTtlMs: 60_000 });
+
+    const results = await Promise.all(
+      Array.from({ length: 20 }, () => client.getProfile('example-handle')),
+    );
+
+    expect(requests).toHaveLength(1);
+    expect(new Set(results.map((r) => r.handle)).size).toBe(1);
   });
 });
