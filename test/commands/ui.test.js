@@ -123,7 +123,16 @@ describe('ui command', () => {
     await createProgram().parseAsync(['node', 'sfdt', 'ui']);
 
     expect(open).toHaveBeenCalledTimes(1);
-    expect(open.mock.calls[0][0]).toMatch(/^file:\/\/.*sfdt-launch-[0-9a-f]+\.html$/);
+    const url = open.mock.calls[0][0];
+    // Three slashes, not two: built with pathToFileURL, never `'file://' + path`.
+    // On Windows path.join yields `C:\Users\…`, and concatenation produces
+    // `file://C:\Users\…` — not a well-formed file URL, so the browser never
+    // resolves the stub and the whole point of the change is lost. Asserting the
+    // parsed form also catches the import going missing: a bare pathToFileURL
+    // reference throws, the catch swallows it, and open() is never called.
+    expect(url).toMatch(/^file:\/\/\/.*sfdt-launch-[0-9a-f]+\.html$/);
+    expect(() => new URL(url)).not.toThrow();
+    expect(new URL(url).protocol).toBe('file:');
   });
 
   // open() spawns a child with its argument as an argv element, so a tokened URL

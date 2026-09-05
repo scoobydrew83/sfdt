@@ -3,7 +3,7 @@ import os from 'os';
 import crypto from 'crypto';
 import fs from 'fs-extra';
 import path from 'path';
-import { fileURLToPath } from 'url';
+import { fileURLToPath, pathToFileURL } from 'url';
 import { loadConfig } from '../lib/config.js';
 import { print, printSplash } from '../lib/output.js';
 import { startGuiServer } from '../lib/gui-server/index.js';
@@ -83,7 +83,12 @@ export function registerUiCommand(program) {
               `<p>Opening <a href="${url}">the sfdt dashboard</a>…</p>`,
             { mode: 0o600 },
           );
-          await open(`file://${stub}`);
+          // pathToFileURL, not string concatenation: path.join gives
+          // `C:\Users\…` on Windows, and `file://` + that is not a well-formed
+          // file URL (it needs `file:///C:/Users/…`). The browser would fail to
+          // resolve the stub, silently defeating the point of this change — the
+          // operator falls back to pasting the tokened URL by hand.
+          await open(pathToFileURL(stub).href);
         } catch {
           // `open` is optional — non-fatal if unavailable.
           print.info(`Open ${url} in your browser.`);

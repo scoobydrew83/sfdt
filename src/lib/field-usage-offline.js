@@ -47,11 +47,11 @@ export async function fieldsForObject(config, object) {
   const fields = [];
   for (const base of packageBases(config)) {
     // The online sibling validates (field-impact-runner.js), this branch did not —
-  // so `sfdt_field_usage`, a read-only MCP tool with no confirmExecution, could
-  // walk `../../..` out of the project and return the schema of an unrelated
-  // customer's repo, with a non-match returning [] as a directory-existence oracle.
-  assertApiName(object, 'object');
-  const dir = path.join(base, 'objects', object, 'fields');
+    // so `sfdt_field_usage`, a read-only MCP tool with no confirmExecution, could
+    // walk `../../..` out of the project and return the schema of an unrelated
+    // customer's repo, with a non-match returning [] as a directory-existence oracle.
+    assertApiName(object, 'object');
+    const dir = path.join(base, 'objects', object, 'fields');
     const files = await glob('*.field-meta.xml', { cwd: dir, absolute: true }).catch(() => []);
     for (const file of files) {
       const name = path.basename(file).replace(/\.field-meta\.xml$/i, '');

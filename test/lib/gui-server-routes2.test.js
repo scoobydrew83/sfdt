@@ -7,6 +7,7 @@
  */
 
 import { describe, it, expect, vi, beforeAll, afterAll } from 'vitest';
+import { constants as fsConstants } from 'fs';
 
 // ─── Mocks ──────────────────────────────────────────────────────────────────
 
@@ -394,19 +395,31 @@ describe('GET /api/manifests/content', () => {
   it('refuses a manifest-shaped symlink pointing outside the project', async () => {
     const { default: fsMock } = await import('fs-extra');
     fsMock.readFile.mockClear();   // this file's mocks persist across tests
-    fsMock.lstat.mockResolvedValueOnce({ isSymbolicLink: () => true, isFile: () => true });
+    // O_NOFOLLOW makes the kernel refuse at open time; Node surfaces that as
+    // ELOOP. Verified against a real symlink outside the suite.
+    const eloop = Object.assign(new Error('ELOOP'), { code: 'ELOOP' });
+    fsMock.readFile.mockRejectedValueOnce(eloop);
 
     const res = await request(app).get('/api/manifests/content?path=manifest/release/prod-package.xml');
     expect(res.status).toBe(403);
-    expect(fsMock.readFile).not.toHaveBeenCalled();
+  });
+
+  it('passes O_NOFOLLOW so the check and the read are one operation', async () => {
+    const { default: fsMock } = await import('fs-extra');
+    fsMock.readFile.mockClear();
+    fsMock.readFile.mockResolvedValueOnce('<Package/>');
+
+    await request(app).get('/api/manifests/content?path=manifest/release/pkg.xml');
+    const opts = fsMock.readFile.mock.calls[0][1];
+    // eslint-disable-next-line no-bitwise
+    expect(opts.flag & fsConstants.O_NOFOLLOW).toBe(fsConstants.O_NOFOLLOW);
   });
 
   it('refuses when the resolved path escapes the permitted directories', async () => {
     const { default: fsMock } = await import('fs-extra');
     fsMock.readFile.mockClear();
-    // Not a symlink itself — a symlinked *parent* directory, which lstat on the
-    // leaf cannot see. Only re-checking containment on the real path catches it.
-    fsMock.lstat.mockResolvedValueOnce({ isSymbolicLink: () => false, isFile: () => true });
+    // O_NOFOLLOW only refuses a symlinked *leaf*; a symlinked parent directory
+    // resolves normally, so containment is re-checked on the realpath.
     fsMock.realpath.mockResolvedValueOnce('/etc/passwd');
 
     const res = await request(app).get('/api/manifests/content?path=manifest/release/pkg.xml');

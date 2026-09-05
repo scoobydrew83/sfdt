@@ -9,6 +9,7 @@
 import { spawn } from 'child_process';
 import express from 'express';
 import fs from 'fs-extra';
+import { constants as fsConstants } from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { execa } from 'execa';
@@ -1854,18 +1855,33 @@ export function createGuiApp(config, version, port = DEFAULT_UI_PORT) {
       // manifest. Resolve the real path and re-check, and refuse a symlink
       // outright so the failure is explicit rather than silently following it
       // somewhere legitimate. (sfdt-private#23, M-2)
-      const link = await fs.lstat(absPath).catch(() => null);
-      if (!link || link.isSymbolicLink() || !link.isFile()) {
-        return res.status(403).json({ error: 'Forbidden' });
-      }
-      // Re-run the same containment on the resolved path, which catches a
-      // symlinked *parent* directory that lstat on the leaf cannot see.
+      // O_NOFOLLOW on the read itself, so there is no window between the check
+      // and the read. lstat-then-readFile is separate syscalls against a *name*:
+      // a concurrent write could swap the file for a symlink after the check said
+      // "not a symlink" and before the read followed it. Passing the flag makes
+      // the kernel refuse at open time, so the check and the read are one
+      // operation and the race has nowhere to live. (sfdt-private#23)
+      //
+      // Containment is still re-checked on the resolved path below, because
+      // O_NOFOLLOW only refuses a symlinked *leaf* — a symlinked parent
+      // directory resolves normally.
       const realPath = await fs.realpath(absPath).catch(() => null);
       const realUnder = (dir) => realPath === dir || realPath?.startsWith(dir + path.sep);
       if (!realPath || !(realUnder(manifestDir) || realUnder(logDirAbs))) {
         return res.status(403).json({ error: 'Forbidden' });
       }
-      const xml = await fs.readFile(realPath, 'utf8');
+      let xml;
+      try {
+        xml = await fs.readFile(absPath, {
+          encoding: 'utf8',
+          flag: fsConstants.O_RDONLY | fsConstants.O_NOFOLLOW,
+        });
+      } catch (err) {
+        // ELOOP is O_NOFOLLOW refusing a symlink — a refusal, not a missing file,
+        // so it should not fall through to the generic 404 below.
+        if (err?.code === 'ELOOP') return res.status(403).json({ error: 'Forbidden' });
+        throw err;
+      }
       res.json({ xml });
     } catch {
       res.status(404).json({ error: 'Not found' });
