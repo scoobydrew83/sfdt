@@ -1845,7 +1845,27 @@ export function createGuiApp(config, version, port = DEFAULT_UI_PORT) {
       if (!absPath.toLowerCase().endsWith('.xml') || !(under(manifestDir) || under(logDirAbs))) {
         return res.status(403).json({ error: 'Forbidden' });
       }
-      const xml = await fs.readFile(absPath, 'utf8');
+      // The checks above are all on the *string*. path.resolve does not follow
+      // symlinks and readFile does — so scoping by name alone left the primitive
+      // intact and merely renamed it: a committed
+      // `manifest/release/prod-package.xml` symlinked to ~/.npmrc, ~/.aws/credentials
+      // or the project's .env passed every check and rendered in the dashboard,
+      // and the listing route's fs.stat follows links so it looked like a real
+      // manifest. Resolve the real path and re-check, and refuse a symlink
+      // outright so the failure is explicit rather than silently following it
+      // somewhere legitimate. (sfdt-private#23, M-2)
+      const link = await fs.lstat(absPath).catch(() => null);
+      if (!link || link.isSymbolicLink() || !link.isFile()) {
+        return res.status(403).json({ error: 'Forbidden' });
+      }
+      // Re-run the same containment on the resolved path, which catches a
+      // symlinked *parent* directory that lstat on the leaf cannot see.
+      const realPath = await fs.realpath(absPath).catch(() => null);
+      const realUnder = (dir) => realPath === dir || realPath?.startsWith(dir + path.sep);
+      if (!realPath || !(realUnder(manifestDir) || realUnder(logDirAbs))) {
+        return res.status(403).json({ error: 'Forbidden' });
+      }
+      const xml = await fs.readFile(realPath, 'utf8');
       res.json({ xml });
     } catch {
       res.status(404).json({ error: 'Not found' });

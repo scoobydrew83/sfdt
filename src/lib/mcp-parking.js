@@ -52,7 +52,26 @@ export async function parkIfNeeded(payload, config) {
   // also absent from the gitignore guidance in init.js, which lists only
   // *.local.json and prompts.json, so a habitual `git add .sfdt` publishes it.
   // apex-runner.js already writes its artifacts { mode: 0o600 }. (sfdt-private#21)
-  await fs.writeFile(filePath, redactSensitiveData(jsonString), { encoding: 'utf8', mode: 0o600 });
+  //
+  // Redact the OBJECT, then serialize — never the serialized string. Two reasons,
+  // both verified rather than assumed:
+  //
+  //  1. `PRIVATE_KEY_BLOCK_RE` is `BEGIN…[\s\S]*?…END`, and `[\s\S]*?` does not
+  //     stop at JSON structure. Two attacker-written field values acting as
+  //     bookends deleted every record between them — 8 rows became 3 — and the
+  //     result stayed *valid JSON*, so the loss was silent and `getParkedResult`
+  //     handed the truncated set to the model as complete. That is an evasion
+  //     primitive against the very scanning these tools perform.
+  //  2. `redactSensitiveData` only applies the SENSITIVE_KEYS backstop
+  //     (`password`, `accessToken`, `sessionId`, `sid`, …) on its *object*
+  //     branch. Passing a string skipped it entirely, which is the backstop
+  //     org-session.js explicitly relies on.
+  //
+  // notifier.js redacts the object for the same reason. (sfdt-private#23)
+  const redacted = typeof payload === 'string'
+    ? redactSensitiveData(jsonString)
+    : JSON.stringify(redactSensitiveData(payload), null, 2);
+  await fs.writeFile(filePath, redacted, { encoding: 'utf8', mode: 0o600 });
 
   // Generate a preview
   let preview = '';

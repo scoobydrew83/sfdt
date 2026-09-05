@@ -47,6 +47,12 @@ vi.mock('fs-extra', () => ({
     readFile: vi.fn().mockResolvedValue(''),
     outputJson: vi.fn().mockResolvedValue(undefined),
     stat: vi.fn().mockResolvedValue({ mtime: new Date(), size: 0, isDirectory: () => false }),
+    // /api/manifests/content refuses a symlink and re-checks containment against
+    // the resolved path, because scoping by string alone let a committed
+    // `prod-package.xml -> ~/.npmrc` through every check (sfdt-private#23, M-2).
+    // Default: a real file that resolves to itself.
+    lstat: vi.fn().mockResolvedValue({ isSymbolicLink: () => false, isFile: () => true }),
+    realpath: vi.fn(async (p) => p),
     remove: vi.fn().mockResolvedValue(undefined),
     ensureDir: vi.fn().mockResolvedValue(undefined),
     writeFile: vi.fn().mockResolvedValue(undefined),
@@ -378,6 +384,34 @@ describe('GET /api/manifests/content', () => {
     const res = await request(app).get(`/api/manifests/content?path=${encodeURIComponent(rel)}`);
     expect(res.status).toBe(403);
     expect(res.body.xml).toBeUndefined();
+  });
+
+  // Scoping by string alone left the primitive intact and merely renamed it:
+  // path.resolve does not follow symlinks and readFile does, so a committed
+  // `manifest/release/prod-package.xml -> ~/.npmrc` passed the extension check,
+  // the containment check and the under() check. The listing route's fs.stat
+  // follows links too, so it appeared as a normal manifest. (issue #23, M-2)
+  it('refuses a manifest-shaped symlink pointing outside the project', async () => {
+    const { default: fsMock } = await import('fs-extra');
+    fsMock.readFile.mockClear();   // this file's mocks persist across tests
+    fsMock.lstat.mockResolvedValueOnce({ isSymbolicLink: () => true, isFile: () => true });
+
+    const res = await request(app).get('/api/manifests/content?path=manifest/release/prod-package.xml');
+    expect(res.status).toBe(403);
+    expect(fsMock.readFile).not.toHaveBeenCalled();
+  });
+
+  it('refuses when the resolved path escapes the permitted directories', async () => {
+    const { default: fsMock } = await import('fs-extra');
+    fsMock.readFile.mockClear();
+    // Not a symlink itself — a symlinked *parent* directory, which lstat on the
+    // leaf cannot see. Only re-checking containment on the real path catches it.
+    fsMock.lstat.mockResolvedValueOnce({ isSymbolicLink: () => false, isFile: () => true });
+    fsMock.realpath.mockResolvedValueOnce('/etc/passwd');
+
+    const res = await request(app).get('/api/manifests/content?path=manifest/release/pkg.xml');
+    expect(res.status).toBe(403);
+    expect(fsMock.readFile).not.toHaveBeenCalled();
   });
 
   it('still serves a compare manifest out of logDir', async () => {

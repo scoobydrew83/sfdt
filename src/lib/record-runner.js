@@ -5,6 +5,7 @@ import {
   mapSaveErrors,
 } from '@sfdt/flow-core';
 import { orgRest, restErrorMessage, restErrorDetails } from './org-rest.js';
+import { assertApiName } from './safe-path.js';
 
 /**
  * Single-record read / edit / clone.
@@ -83,9 +84,12 @@ export async function resolveSObject(orgAlias, recordId, config) {
 
 /** Describe an sObject, keeping the flags the editability model reads. */
 export async function describeForEdit(orgAlias, sobject, config) {
+  // Exported and called directly as well as through loadRecordContext, so it
+  // asserts for itself rather than trusting its caller.
+  assertApiName(sobject, 'object');
   const data = await orgRest(
     orgAlias,
-    `/services/data/${apiVersion(config)}/sobjects/${sobject}/describe`,
+    `/services/data/${apiVersion(config)}/sobjects/${encodeURIComponent(sobject)}/describe`,
   );
   const fields = Array.isArray(data?.fields) ? data.fields : [];
   return { name: data?.name ?? sobject, label: data?.label ?? sobject, fields };
@@ -129,9 +133,19 @@ async function loadRecordContext(config, recordId, { org, sobject } = {}) {
   }
   const type = sobject ?? (await resolveSObject(org, recordId, config));
   if (!type) throw new Error(`Could not resolve an sObject for the key prefix "${recordId.slice(0, 3)}".`);
+  // `recordId` was shape-checked above; `type` is the other free segment of every
+  // REST path below and, on the MCP surface, is model-supplied. Unvalidated it
+  // was the same primitive events-runner.js already closed: the sf CLI builds a
+  // WHATWG URL, which collapses dot segments, so
+  // `sobject: "../tooling/sobjects/ApexClass"` reaches the Tooling API — reading
+  // Apex through the *read-only, unconfirmed* sfdt_record_get, or PATCHing it
+  // through sfdt_record_edit behind a prompt that says "update a record".
+  // Validated here rather than at the four call sites so a fifth cannot be
+  // written unguarded. (sfdt-private#23, H-1)
+  assertApiName(type, 'object');
 
   const describe = await describeForEdit(org, type, config);
-  const record = await orgRest(org, `/services/data/${apiVersion(config)}/sobjects/${type}/${recordId}`);
+  const record = await orgRest(org, `/services/data/${apiVersion(config)}/sobjects/${encodeURIComponent(type)}/${recordId}`);
   return { type, describe, record: record ?? {} };
 }
 
@@ -244,7 +258,7 @@ export async function cloneRecord(config, recordId, values, { org, sobject, dryR
   }
 
   try {
-    const resp = await orgRest(org, `/services/data/${apiVersion(config)}/sobjects/${current.sobject}`, {
+    const resp = await orgRest(org, `/services/data/${apiVersion(config)}/sobjects/${encodeURIComponent(current.sobject)}`, {
       method: 'POST',
       body,
     });

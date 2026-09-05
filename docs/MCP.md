@@ -32,6 +32,25 @@ The server supports both project-bound and multi-project clients:
 
 Configuration is isolated per request, so concurrent calls can safely target different projects. The project must already contain `sfdx-project.json` and a valid `.sfdt/` configuration; otherwise the call returns an error before invoking a command. This routes the local project only—it does not authorize or implicitly select a Salesforce org.
 
+### Pinning which projects a server will serve
+
+`projectRoot` is chosen by the **model**, and SFDT's AI surfaces feed that model
+untrusted org content — Apex compile errors, flow metadata, deploy failure text. So a
+call an operator reads as *"query the current project"* can name a **different checkout**
+and run against that project's authenticated org, and the tool list will still present it
+as read-only.
+
+Cross-project routing is deliberate — it is what lets one server serve several checkouts —
+so SFDT does not refuse it by default. On a machine holding more than one customer's
+checkout, pin the server:
+
+```bash
+export SFDT_MCP_PROJECT_ROOTS="/work/customer-a:/work/customer-b"
+```
+
+Colon-separated absolute paths (`path.delimiter`). When set, a `projectRoot` outside the
+list is refused before any command runs. **Unset — the default — nothing changes.**
+
 ---
 
 ## Config Options
