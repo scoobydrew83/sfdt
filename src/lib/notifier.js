@@ -122,7 +122,23 @@ async function postJson(url, body, headers = {}) {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...headers },
     body: JSON.stringify(body),
+    // Do not follow. undici's default is `follow`, and 307/308 preserve the
+    // method AND the body — so a configured host that answers
+    // `307 Location: https://attacker.example` receives the notification body
+    // plus whatever resolveEnvHeaders put in `headersEnv`, which is exactly
+    // where gateway tokens live. undici strips Authorization cross-origin but
+    // not custom headers. This defeats the primary control rather than merely
+    // lacking depth: config-trust validates the *configured* URL and has no say
+    // over a redirect target. A webhook has no legitimate reason to redirect.
+    // (sfdt-private#21)
+    redirect: 'manual',
   });
+  if (res.status >= 300 && res.status < 400) {
+    throw new Error(
+      `Webhook redirected (HTTP ${res.status}) — refusing to resend the body and headers to ` +
+        `"${res.headers.get('location') ?? 'an undisclosed location'}". Configure the final URL directly.`,
+    );
+  }
   if (!res.ok) {
     let detail = '';
     try {

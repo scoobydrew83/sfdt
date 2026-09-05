@@ -1,5 +1,6 @@
 import { analyzeFieldImpact, analyzeFieldUsage, applyPopulation } from '@sfdt/flow-core';
 import { query, search, count } from './org-query.js';
+import { assertApiName } from './safe-path.js';
 import { describeSObject } from './soql-runner.js';
 import { getOrgInstanceUrl } from './org-session.js';
 
@@ -26,14 +27,9 @@ import { getOrgInstanceUrl } from './org-session.js';
  * nothing to escape. The only defence is refusing anything that is not shaped
  * like an API name in the first place.
  */
-const API_NAME_RE = /^[A-Za-z][A-Za-z0-9_]*$/;
-
-function assertApiName(value, what) {
-  if (!API_NAME_RE.test(String(value ?? ''))) {
-    throw new Error(`"${value}" is not a valid ${what} API name.`);
-  }
-  return value;
-}
+// The guard now lives in safe-path.js, imported above: it was private here while
+// events-runner.js and field-usage-offline.js interpolated the same class of
+// value with no check. One definition, so a new caller reaches for it.
 
 /** `Account.Region__c` → `{ object, field }`. */
 export function parseFieldRef(ref) {

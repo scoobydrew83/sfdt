@@ -1,4 +1,7 @@
 import { readFileSync } from 'fs';
+import os from 'os';
+import crypto from 'crypto';
+import fs from 'fs-extra';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { loadConfig } from '../lib/config.js';
@@ -54,14 +57,42 @@ export function registerUiCommand(program) {
       print.info('Open the URL above — it includes a one-time auth token (regenerated each launch).');
       print.info('Press Ctrl+C to stop.');
 
-      // Open browser unless suppressed
+      // Open browser unless suppressed.
+      //
+      // The tokened URL is deliberately NOT passed to `open()`: that spawns a
+      // child process with the URL as an argv element, so the token lands in
+      // the process table and in the browser's own argv for its lifetime —
+      // readable by any other user on a shared or containerised host via
+      // `ps -Ao args` or /proc/<pid>/cmdline. `~/.sfdt/bridge-token` defends the
+      // same threat with mode 0600; this had no equivalent, and the client-side
+      // scrub in gui/src/api.js clears the address bar but cannot clear argv.
+      //
+      // Instead a 0600 redirect stub carries the token: only its path reaches
+      // argv, and the file is unlinked once the browser has had time to read it.
+      // Making the token single-use was the other option and would break a plain
+      // page reload, which re-exchanges it. (sfdt-private#21)
       if (options.open !== false) {
+        let stub;
         try {
           const { default: open } = await import('open');
-          await open(url);
+          stub = path.join(os.tmpdir(), `sfdt-launch-${crypto.randomBytes(8).toString('hex')}.html`);
+          await fs.writeFile(
+            stub,
+            `<!doctype html><meta charset="utf-8"><title>Opening sfdt…</title>` +
+              `<meta http-equiv="refresh" content="0;url=${url}">` +
+              `<p>Opening <a href="${url}">the sfdt dashboard</a>…</p>`,
+            { mode: 0o600 },
+          );
+          await open(`file://${stub}`);
         } catch {
-          // `open` is optional — non-fatal if unavailable
+          // `open` is optional — non-fatal if unavailable.
           print.info(`Open ${url} in your browser.`);
+        } finally {
+          if (stub) {
+            // Long enough for any browser to have loaded and followed it; the
+            // file is 0600 in the meantime, so the window is not a real exposure.
+            setTimeout(() => { fs.remove(stub).catch(() => {}); }, 15_000).unref?.();
+          }
         }
       }
 

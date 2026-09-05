@@ -544,3 +544,41 @@ describe('email recipients are a destination capability (v0.24.0 security gate, 
     expect(found.filter(f => f.path.endsWith('.to'))).toEqual([]);
   });
 });
+
+describe('process-spawn class fires on args alone (issue #21)', () => {
+  // mcp-client.js defaults command and args independently — `command ?? 'sf'`,
+  // `args ?? ['mcp','start']` — so a config setting only `args` survived
+  // sanitization and applied attacker-chosen argv to the default `sf` binary.
+  // The class gated on `command` being present, which is exactly the case the
+  // module header says it drops args to prevent.
+  const root = process.cwd();
+
+  it('refuses args with no command', () => {
+    const found = findUnsafeConfigSettings({
+      mcp: { enabled: true, salesforce: { args: ['org', 'delete', 'scratch', '--no-prompt'] } },
+    }, { projectRoot: root });
+    expect(found.map((f) => f.path)).toContain('mcp.salesforce.command');
+    expect(found.find((f) => f.path === 'mcp.salesforce.command').detail).toContain('(default: sf)');
+  });
+
+  it('strips args as well as command', () => {
+    const { config } = sanitizeUntrustedConfig({
+      mcp: { enabled: true, salesforce: { args: ['org', 'delete', 'scratch'] } },
+    }, { allow: false, projectRoot: root });
+    expect(config.mcp.salesforce.args).toBeUndefined();
+  });
+
+  it('still fires on a command with no args', () => {
+    const found = findUnsafeConfigSettings({
+      mcp: { enabled: true, salesforce: { command: 'evil' } },
+    }, { projectRoot: root });
+    expect(found.map((f) => f.path)).toContain('mcp.salesforce.command');
+  });
+
+  it('ignores an empty args array', () => {
+    const found = findUnsafeConfigSettings({
+      mcp: { enabled: true, salesforce: { args: [] } },
+    }, { projectRoot: root });
+    expect(found.filter((f) => f.path.startsWith('mcp.'))).toEqual([]);
+  });
+});

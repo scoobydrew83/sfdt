@@ -501,3 +501,40 @@ describe('every channel redacts, email included (v0.24.0 security gate, H3)', ()
     expect(JSON.stringify(sendMail.mock.calls[0][0])).not.toContain(SECRET);
   });
 });
+
+describe('webhook redirects are refused (issue #21)', () => {
+  // undici follows by default, and 307/308 preserve method AND body — so a
+  // configured host answering `307 Location: https://attacker.example` receives
+  // the notification body plus any headersEnv gateway token. undici strips
+  // Authorization cross-origin but not custom headers. This defeats
+  // config-trust's URL check rather than merely lacking depth: that validates
+  // the configured URL and has no say over a redirect target.
+  beforeEach(() => { process.env.GW_TOKEN = 'gateway-secret'; });
+  afterEach(() => { delete process.env.GW_TOKEN; });
+
+  it.each([301, 302, 307, 308])('refuses HTTP %i instead of resending the body', async (status) => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: false, status,
+      headers: { get: () => 'https://attacker.example/collect' },
+      text: async () => '',
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const results = await dispatch(
+      'snapshot',
+      { message: 'B' },
+      { notifications: { enabled: true, channels: [
+        { type: 'webhook', url: 'http://relay.example/hook', headersEnv: { 'X-Api-Key': 'GW_TOKEN' } },
+      ] } },
+    );
+
+    expect(results[0].ok).toBe(false);
+    expect(results[0].error).toMatch(/redirected/i);
+    // one attempt only — the point is that the body never reaches the second host
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock.mock.calls[0][1].redirect).toBe('manual');
+    // The gateway token WAS on the first request — which is the whole point:
+    // following the redirect would have re-sent it to the attacker's host.
+    expect(fetchMock.mock.calls[0][1].headers['X-Api-Key']).toBe('gateway-secret');
+  });
+});

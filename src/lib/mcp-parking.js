@@ -1,4 +1,5 @@
 import fs from 'fs-extra';
+import { redactSensitiveData } from './audit-logger.js';
 import path from 'path';
 import crypto from 'crypto';
 
@@ -45,7 +46,13 @@ export async function parkIfNeeded(payload, config) {
   await fs.ensureDir(cacheDir);
 
   const filePath = path.join(cacheDir, `${uuid}.json`);
-  await fs.writeFile(filePath, jsonString, 'utf8');
+  // 0600, and redacted first. Parked payloads are whole tool results — Apex
+  // debug logs (where session ids reliably appear) and SOQL rows (PII) — and
+  // the same material is redacted when it goes to a webhook. `.sfdt/cache/` is
+  // also absent from the gitignore guidance in init.js, which lists only
+  // *.local.json and prompts.json, so a habitual `git add .sfdt` publishes it.
+  // apex-runner.js already writes its artifacts { mode: 0o600 }. (sfdt-private#21)
+  await fs.writeFile(filePath, redactSensitiveData(jsonString), { encoding: 'utf8', mode: 0o600 });
 
   // Generate a preview
   let preview = '';

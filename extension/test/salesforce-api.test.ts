@@ -28,16 +28,13 @@ function fakeWin(href: string): Window {
 
 // A message bus that answers the two worker routes the client uses:
 //  - sfApiFetch  → a proxied REST/Tooling/SOAP response (bodyText, never a sid)
-//  - getSidForUrls → the Event-Monitor session bridge (temporary PR2 exception)
 // `proxy` may be a single response or a queue consumed in call order.
 function makeBus(opts: {
   proxy?: SfApiFetchResponse | SfApiFetchResponse[];
-  sids?: Record<string, string | null>;
 }): MessageBus {
   const queue = Array.isArray(opts.proxy) ? [...opts.proxy] : null;
   return {
     sendMessage: vi.fn(async (msg: { action?: string }) => {
-      if (msg.action === 'getSidForUrls') return { ok: true, sids: opts.sids ?? {} };
       if (msg.action === 'sfApiFetch') {
         if (queue) return queue.shift() ?? { ok: false, errors: [] };
         return opts.proxy ?? { ok: false, errors: [] };

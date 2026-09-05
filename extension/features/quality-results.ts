@@ -18,7 +18,7 @@
 import { detectContext, CONTEXTS } from '../lib/context-detector.js';
 import type { Feature } from '../lib/feature-registry.js';
 import { getSalesforceApi, type SalesforceApiClient } from '../lib/salesforce-api.js';
-import { createBridgeClient, LONG_RUNNING_TIMEOUT_MS } from '../lib/sfdt-bridge.js';
+import { createBridgeClient } from '../lib/sfdt-bridge.js';
 import { loadSettings } from '../lib/settings.js';
 import { escapeSoql } from '../lib/escape.js';
 import { showToast } from '../ui/toast.js';
@@ -370,10 +370,12 @@ export function createQualityResultsFeature(options: QualityResultsOptions = {})
       refreshBtn.disabled = true;
       try {
         const bridge = await bridgeFactory();
-        const response = await bridge.call(
-          { kind: 'quality.results' },
-          { timeoutMs: LONG_RUNNING_TIMEOUT_MS },
-        );
+        // The bridge's default (~8s), not LONG_RUNNING_TIMEOUT_MS. This kind
+        // reads one already-written file off disk — it never starts a scan, which
+        // is the whole reason the kind is snapshot-only. Borrowing the 60s
+        // deploy/retrieve/AI timeout meant a hung host left the panel on
+        // "Loading" for a minute before surfacing anything. (sfdt-private#21)
+        const response = await bridge.call({ kind: 'quality.results' });
         if (!response.ok) {
           statusPill.className = 'sfdt-pill sfdt-warning';
           statusPill.textContent = 'Unavailable';

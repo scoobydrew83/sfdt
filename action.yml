@@ -177,7 +177,14 @@ runs:
           echo "auth-method jwt requires the consumer-key, jwt-secret-key, and username inputs (pass secrets)" >&2
           exit 1
         fi
-        KEY_FILE="${RUNNER_TEMP}/server.key"
+        # mktemp, not a fixed path with a plain redirect: `>` creates the file
+        # under the umask (usually 0644), so the connected-app signing key was
+        # world-readable at a predictable path. On a self-hosted runner
+        # RUNNER_TEMP is a stable directory on a persistent host, so any later
+        # third-party action in the same job could read it — and that key is not
+        # job-scoped. 28d20fa moved all four CI partials to this pattern; the
+        # composite action, which is the recommended runner, was missed.
+        KEY_FILE="$(mktemp "${RUNNER_TEMP:-${TMPDIR:-/tmp}}/server.key.XXXXXX")"
         trap 'rm -f "$KEY_FILE"' EXIT
         printf '%s\n' "$SFDX_JWT_SECRET_KEY" > "$KEY_FILE"
         sf org login jwt --client-id "$SFDX_CONSUMER_KEY" --jwt-key-file "$KEY_FILE" --username "$SFDX_USERNAME" --instance-url "${SFDX_INSTANCE_URL:-https://login.salesforce.com}" --alias "$ORG_ALIAS" --set-default

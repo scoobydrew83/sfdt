@@ -109,6 +109,25 @@ describe('publishEvent', () => {
     expect(orgRest).not.toHaveBeenCalled();
   });
 
+  // The `__e` check is a *suffix* test — it constrains nothing about the rest of
+  // the string, and its own comment calls it a usability check. On the MCP
+  // surface `event` is model-supplied, so these reached a REST path unvalidated
+  // and unencoded: the query-string form performs an arbitrary authenticated
+  // record insert behind a prompt the human approves as "publish a platform
+  // event", and the `../tooling/` form reaches the Tooling API. (issue #21, H5)
+  it.each([
+    ['query string smuggles a different sObject', 'PermissionSetAssignment?x=__e'],
+    ['traversal reaches the Tooling API',          '../tooling/sobjects/ApexClass?x=__e'],
+    ['path separator',                             'Account/../ApexClass__e'],
+    ['leading dot',                                '.hidden__e'],
+    ['space',                                      'Order Placed__e'],
+    ['encoded traversal',                          '%2e%2e%2fApexClass__e'],
+  ])('refuses %s, before any call', async (_label, evt) => {
+    await expect(publishEvent(config, 'dev', evt, { A: '1' }))
+      .rejects.toThrow(/not a valid platform event API name/);
+    expect(orgRest).not.toHaveBeenCalled();
+  });
+
   it('refuses an empty body', async () => {
     await expect(publishEvent(config, 'dev', 'X__e', {})).rejects.toThrow(/at least one/);
   });

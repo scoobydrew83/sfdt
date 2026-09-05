@@ -201,3 +201,38 @@ describe('MCP Parking', () => {
     });
   });
 });
+
+describe('parked payloads are 0600 and redacted (issue #21)', () => {
+  // A parked payload is a whole tool result — Apex debug logs, where session ids
+  // reliably appear, and SOQL rows. The same material is redacted on its way to
+  // a webhook. It was written with no mode (umask, usually 0644) and no
+  // redaction, into a directory the init gitignore guidance did not name.
+  const config = { _configDir: '/project/.sfdt' };
+  const big = (s) => s.padEnd(200_000, ' ');
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    fs.ensureDir.mockResolvedValue(undefined);
+    fs.writeFile.mockResolvedValue(undefined);
+  });
+
+  it('writes with mode 0600', async () => {
+    await parkIfNeeded({ rows: big('x') }, config);
+    expect(fs.writeFile).toHaveBeenCalled();
+    const opts = fs.writeFile.mock.calls[0][2];
+    expect(opts).toMatchObject({ mode: 0o600 });
+  });
+
+  it('redacts a session id before it reaches disk', async () => {
+    const SECRET = '00Dxx00000abcdEAA!secretvalue';
+    await parkIfNeeded({ log: big(`token=${SECRET}`) }, config);
+    expect(fs.writeFile).toHaveBeenCalled();
+    expect(String(fs.writeFile.mock.calls[0][1])).not.toContain(SECRET);
+  });
+
+  it('leaves a small payload inline, unparked', async () => {
+    const small = { rows: [1, 2, 3] };
+    expect(await parkIfNeeded(small, config)).toBe(small);
+    expect(fs.writeFile).not.toHaveBeenCalled();
+  });
+});
