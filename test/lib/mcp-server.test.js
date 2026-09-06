@@ -66,9 +66,37 @@ import { parkIfNeeded, getParkedResult } from '../../src/lib/mcp-parking.js';
 describe('SfdtMcpServer', () => {
   let mcpServer;
 
+  // How a server was LAUNCHED decides whether it may be routed elsewhere, so the
+  // two modes are set up explicitly rather than inherited from whatever the
+  // previous test left on the loadConfig mock. `vi.clearAllMocks()` clears calls
+  // but NOT implementations, so before this the shared server silently became
+  // project-bound or neutral depending on test order.
+  //
+  //   project-bound — started inside a project; serves that project only
+  //   neutral       — started outside one; routes every call, unrestricted
+  //
+  // See #assertRootAllowed in src/lib/mcp-server.js.
+  const PROJECT_BOUND_ROOT = '/project';
+
+  async function startNeutralServer() {
+    mockRegisteredHandlers.clear();
+    loadConfig.mockReset();
+    loadConfig.mockRejectedValueOnce(new Error('no configured project in cwd'));
+    const server = new SfdtMcpServer();
+    await server.start();
+    return server;
+  }
+
   beforeEach(async () => {
     mockRegisteredHandlers.clear();
     vi.clearAllMocks();
+    loadConfig.mockReset();
+    // The common case: a server started inside a project.
+    loadConfig.mockResolvedValueOnce({
+      _projectRoot: PROJECT_BOUND_ROOT,
+      _configDir: `${PROJECT_BOUND_ROOT}/.sfdt`,
+      logDir: `${PROJECT_BOUND_ROOT}/logs`,
+    });
     mcpServer = new SfdtMcpServer();
     await mcpServer.start();
   });
@@ -121,7 +149,13 @@ describe('SfdtMcpServer', () => {
       return callHandler({ params: { name, arguments: args } });
     };
 
+    // Multi-project routing is what a NEUTRAL server is for, so these start one
+    // rather than redirecting a project-bound server — which is now refused, and
+    // is the case a model could abuse. (sfdt-private#23)
     it('routes a call through configuration loaded from explicit projectRoot', async () => {
+      await startNeutralServer();
+      const callNeutral = (name, args = {}) =>
+        mockRegisteredHandlers.get('call-tool')({ params: { name, arguments: args } });
       loadConfig.mockResolvedValueOnce({
         _projectRoot: '/workspace/customer-project',
         _configDir: '/workspace/customer-project/.sfdt',
@@ -130,7 +164,7 @@ describe('SfdtMcpServer', () => {
       });
       execa.mockResolvedValueOnce({ exitCode: 0, stdout: 'preflight pass', stderr: '' });
 
-      await callTool('sfdt_preflight', {
+      await callNeutral('sfdt_preflight', {
         projectRoot: '/workspace/customer-project',
         strict: true,
       });
@@ -144,9 +178,12 @@ describe('SfdtMcpServer', () => {
     });
 
     it('rejects an invalid explicit projectRoot without executing a command', async () => {
+      await startNeutralServer();
+      const callNeutral = (name, args = {}) =>
+        mockRegisteredHandlers.get('call-tool')({ params: { name, arguments: args } });
       loadConfig.mockRejectedValueOnce(new Error('project is not initialized with .sfdt'));
 
-      const result = await callTool('sfdt_preflight', {
+      const result = await callNeutral('sfdt_preflight', {
         projectRoot: '/workspace/not-a-project',
       });
 
@@ -156,6 +193,9 @@ describe('SfdtMcpServer', () => {
     });
 
     it('isolates concurrent calls routed to different project roots', async () => {
+      await startNeutralServer();
+      const callTool = (name, args = {}) =>
+        mockRegisteredHandlers.get('call-tool')({ params: { name, arguments: args } });
       loadConfig.mockImplementation(async (root) => ({
         _projectRoot: root || '/project',
         _configDir: `${root || '/project'}/.sfdt`,
@@ -183,6 +223,53 @@ describe('SfdtMcpServer', () => {
     // run against that org. Cross-project routing is a real feature (see the
     // isolation test above), so pinning is opt-in via SFDT_MCP_PROJECT_ROOTS
     // rather than default-deny. (issue #21)
+    // The default this ticket exists to change: a server launched INSIDE a project
+    // now serves that project only. projectRoot is model-chosen, and the operator
+    // reading the call believes it is scoped to the project they started the
+    // server in. (sfdt-private#23)
+    describe('a project-bound server is not redirectable', () => {
+      it('refuses a projectRoot outside its own project, before running anything', async () => {
+        execa.mockClear();
+        const res = await callTool('sfdt_preflight', { projectRoot: '/workspace/other-customer' });
+
+        expect(res.isError).toBe(true);
+        expect(res.content[0].text).toMatch(/outside this server's project/);
+        expect(execa).not.toHaveBeenCalled();
+      });
+
+      it('accepts its own root restated', async () => {
+        loadConfig.mockResolvedValueOnce({
+          _projectRoot: PROJECT_BOUND_ROOT,
+          _configDir: `${PROJECT_BOUND_ROOT}/.sfdt`,
+          logDir: `${PROJECT_BOUND_ROOT}/logs`,
+        });
+        execa.mockResolvedValueOnce({ exitCode: 0, stdout: 'ok', stderr: '' });
+
+        const res = await callTool('sfdt_preflight', { projectRoot: PROJECT_BOUND_ROOT });
+        expect(res.content[0].text).not.toMatch(/outside this server's project/);
+      });
+
+      it('still allows omitting projectRoot entirely', async () => {
+        execa.mockResolvedValueOnce({ exitCode: 0, stdout: 'ok', stderr: '' });
+        const res = await callTool('sfdt_preflight', {});
+        expect(res.content[0].text).not.toMatch(/outside this server's project/);
+      });
+
+      it('SFDT_MCP_PROJECT_ROOTS widens it deliberately', async () => {
+        process.env.SFDT_MCP_PROJECT_ROOTS = ['/project', '/workspace/other-customer'].join(path.delimiter);
+        loadConfig.mockResolvedValueOnce({
+          _projectRoot: '/workspace/other-customer',
+          _configDir: '/workspace/other-customer/.sfdt',
+          logDir: '/workspace/other-customer/logs',
+        });
+        execa.mockResolvedValueOnce({ exitCode: 0, stdout: 'ok', stderr: '' });
+
+        const res = await callTool('sfdt_preflight', { projectRoot: '/workspace/other-customer' });
+        expect(res.content[0].text).not.toMatch(/outside this server's project/);
+        delete process.env.SFDT_MCP_PROJECT_ROOTS;
+      });
+    });
+
     describe('SFDT_MCP_PROJECT_ROOTS pins which roots a server will serve', () => {
       afterEach(() => { delete process.env.SFDT_MCP_PROJECT_ROOTS; });
 

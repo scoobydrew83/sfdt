@@ -40,16 +40,27 @@ call an operator reads as *"query the current project"* can name a **different c
 and run against that project's authenticated org, and the tool list will still present it
 as read-only.
 
-Cross-project routing is deliberate — it is what lets one server serve several checkouts —
-so SFDT does not refuse it by default. On a machine holding more than one customer's
-checkout, pin the server:
+**Since 0.26.0 the default depends on how the server was launched** — which is the thing that
+actually separates the safe case from the abusable one:
+
+| Launched | `projectRoot` behaviour |
+|---|---|
+| **Inside a project** (`loadConfig()` succeeded at startup) | Serves **that project only**. It may be restated but not redirected. This is the case a model can abuse, because the operator believes the server is scoped to the project they started it in. |
+| **Outside any project** (neutral) | **Unrestricted.** Routing every call is this mode's entire purpose; nothing changed for it. |
+
+A multi-project server is therefore one you start *outside* any project — which is what it
+already was. To keep a **project-bound** server serving several checkouts, name them:
 
 ```bash
 export SFDT_MCP_PROJECT_ROOTS="/work/customer-a:/work/customer-b"
 ```
 
-Colon-separated absolute paths (`path.delimiter`). When set, a `projectRoot` outside the
-list is refused before any command runs. **Unset — the default — nothing changes.**
+Colon-separated absolute paths (`path.delimiter`). The allowlist wins wherever it is set.
+
+> **Upgrading from 0.25.0.** If you start the server inside one project and route calls to
+> another, that now fails with *"outside this server's project"*. Either start it outside any
+> project, or list the roots in `SFDT_MCP_PROJECT_ROOTS`. 0.25.0 shipped this as opt-in only,
+> so the default was unchanged and the model still chose the root.
 
 ---
 

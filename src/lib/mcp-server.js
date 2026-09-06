@@ -1061,15 +1061,24 @@ function validateFieldNames(fields) {
 export class SfdtMcpServer {
   #server;
   #config;
+  // The project this server was launched in, or null when it started neutral.
+  // Set once at startup — the difference between "scoped to a project" and
+  // "routes every call" is a property of how the server was launched, not of any
+  // individual request. See #assertRootAllowed.
+  #launchRoot = null;
   #callConfig = new AsyncLocalStorage();
 
   async start() {
     try {
       this.#config = await loadConfig();
+      this.#launchRoot = this.#config?._projectRoot
+        ? path.resolve(this.#config._projectRoot)
+        : null;
     } catch (err) {
       // Neutral startup lets clients route each request with projectRoot while
       // preserving legacy cwd-bound behavior when a default config is found.
       this.#config = null;
+      this.#launchRoot = null;
       console.error(`sfdt MCP starting without a default project: ${err.message}`);
     }
 
@@ -1142,37 +1151,66 @@ export class SfdtMcpServer {
   }
 
   /**
-   * Optional allowlist for `projectRoot`.
+   * Refuse a `projectRoot` that redirects a **project-bound** server elsewhere.
    *
-   * `projectRoot` is accepted by every tool and validated only as a non-empty
+   * `projectRoot` is accepted by every tool and was validated only as a non-empty
    * string. It is chosen by a model, and this CLI feeds that model untrusted org
-   * content — so a call the operator reads as "query the current project" can
-   * name a *different* checkout and run against that project's authenticated
-   * org. With `SFDT_ALLOW_UNSAFE_CONFIG=1` exported it also reaches the other
-   * project's plugin `import()`.
+   * content (Apex compile errors, flow metadata, deploy failure text) — so a call
+   * the operator reads as "query the current project" could name a *different*
+   * checkout and run against that project's authenticated org, while the tool
+   * list still presented it as read-only. With `SFDT_ALLOW_UNSAFE_CONFIG=1`
+   * exported it also reached the other project's plugin `import()`.
    *
-   * Cross-project routing is nonetheless a real feature here, not an oversight:
-   * it is what lets one server serve several checkouts, and the suite asserts
-   * it ("isolates concurrent calls routed to different project roots"). So this
-   * is opt-in rather than default-deny — refusing by default would break the
-   * documented behaviour of every existing multi-project setup.
+   * The distinction that makes a default safe here is **how the server was
+   * launched**, not what the argument says:
    *
-   * Set SFDT_MCP_PROJECT_ROOTS (colon-separated) to pin a server to a known set.
-   * Unset, behaviour is unchanged. This is a mitigation, not a fix: without it
-   * the model still chooses the root. Tracked in sfdt-private#21.
+   *   - **Project-bound** — started inside an initialized project, so `loadConfig()`
+   *     succeeded at startup. It has a project. `projectRoot` may re-state that
+   *     root but not point somewhere else. This is the case a model can abuse,
+   *     because the operator believes the server is scoped to the project they
+   *     started it in.
+   *   - **Neutral** — started outside any project, so there is no default and every
+   *     call must route itself. Multi-project routing is this server's documented
+   *     purpose, so it is unrestricted. Nothing changes for it.
+   *
+   * `SFDT_MCP_PROJECT_ROOTS` (colon-separated) widens a project-bound server to a
+   * known set, for anyone who deliberately wants one project-bound server across
+   * several checkouts.
+   *
+   * This replaces the opt-in-only mitigation shipped in 0.25.0, which left the
+   * default unchanged and so left the model choosing the root. See
+   * sfdt-private#23 for why the first attempt was not default-deny: refusing
+   * *any* other root broke three tests including one named "isolates concurrent
+   * calls routed to different project roots". Scoping the refusal to project-bound
+   * servers keeps that case working — it just has to be launched neutrally, which
+   * is what a multi-project server is.
    */
   #assertRootAllowed(requested) {
+    const resolved = path.resolve(requested);
+
+    // Explicit allowlist wins wherever it is set.
     const allowed = (process.env.SFDT_MCP_PROJECT_ROOTS ?? '')
       .split(path.delimiter)
       .map((p) => p.trim())
       .filter(Boolean)
       .map((p) => path.resolve(p));
-    if (allowed.length === 0) return;                    // not configured — unchanged
-    const resolved = path.resolve(requested);
-    if (allowed.includes(resolved)) return;
+    if (allowed.length) {
+      if (allowed.includes(resolved)) return;
+      throw new Error(
+        `projectRoot "${requested}" is not in SFDT_MCP_PROJECT_ROOTS. ` +
+          `This server is pinned to: ${allowed.join(', ')}.`,
+      );
+    }
+
+    // Neutral server: routing each call is the whole point. Unrestricted.
+    if (!this.#launchRoot) return;
+
+    if (resolved === this.#launchRoot) return;
     throw new Error(
-      `projectRoot "${requested}" is not in SFDT_MCP_PROJECT_ROOTS. ` +
-        `This server is pinned to: ${allowed.join(', ')}.`,
+      `projectRoot "${requested}" is outside this server's project (${this.#launchRoot}). ` +
+        'This server was launched inside a project, so it serves that project only. ' +
+        'To serve several projects from one server, start it outside any project, ' +
+        'or list them in SFDT_MCP_PROJECT_ROOTS (colon-separated).',
     );
   }
 
