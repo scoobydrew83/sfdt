@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- **A project-bound MCP server serves only its own project.** Every tool accepts a
+  `projectRoot` argument that was validated only as a non-empty string, and that value is
+  chosen by an AI model this CLI feeds untrusted org content (Apex compile errors, flow
+  metadata, deploy failure text). So a call the operator read as "query the current
+  project" could name a *different* checkout and run against that project's authenticated
+  org, while the tool list still presented it as read-only; with
+  `SFDT_ALLOW_UNSAFE_CONFIG=1` exported it also reached the other project's plugin
+  `import()`. A server started inside an initialized project now refuses a `projectRoot`
+  outside it. The `SFDT_MCP_PROJECT_ROOTS` allowlist shipped in 0.25.0 was opt-in only, so
+  by default the model still chose the root.
+
+### Changed
+
+- **BREAKING: one MCP server no longer serves several checkouts by default.** Multi-project
+  routing is unchanged in two supported shapes: start the server *outside* any initialized
+  project — a neutral server has no default, so every call routes itself and nothing is
+  restricted — or list the roots in `SFDT_MCP_PROJECT_ROOTS` (colon-separated), which
+  widens a project-bound server and wins wherever it is set. Only the implicit case is
+  refused: a server launched inside project A, asked for project B, with no allowlist.
+
 ## [0.25.0] - 2026-09-04
 
 A security release. Every finding from the v0.24.0 pre-release review that was left open,
