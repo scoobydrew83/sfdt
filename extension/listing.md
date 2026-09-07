@@ -18,13 +18,16 @@
 > **syntax-highlighting editor** for SOQL and Apex, **Generate query** (NL→SOQL, off
 > by default), and **Bulk delete from SOQL results** (off by default).
 >
-> The *published extension* on the Web Store is **0.14.0** — `extension.yml`'s release job
-> uploads with `--auto-publish` and its 2026-08-24 run logged `Publishing... / Publish
-> successful`. Note that is the **zip**, not this copy: the description and Privacy
-> practices fields are dashboard-only and change only when a human pastes them, so the
-> live *text* still lags the code. This file is ahead at 0.15.0 / 48. Paste the sections
-> below into the CWS dashboard during the v0.15.0 upload, then this file and the store
-> are back in sync.
+> The *published extension* on the Web Store is **0.15.0** — confirmed live 2026-09-06.
+> `extension.yml`'s release job uploads with `--auto-publish`.
+>
+> Note that is the **zip**, not this copy. The description and Privacy practices fields are
+> dashboard-only and change only when a human pastes them, so the live *text* can still lag
+> the code even when the zip is current. **Unverified from here:** whether the sections below
+> were pasted into the CWS dashboard during the 0.15.0 upload. If they were not, the store
+> still describes 0.14.0's feature set — 49 features including Quality Results and Deployment
+> Status is what this file claims, and only a human looking at the dashboard can confirm the
+> store says the same.
 >
 > **The item name is already live as "SFDT for Salesforce".** It was renamed from
 > "SFDT SF Helper" in a dashboard edit and is what the store shows today. The

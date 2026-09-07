@@ -142,6 +142,30 @@ describe('redactSensitiveData — free-text secrets', () => {
     expect(out).toBe('Authorization: Bearer [REDACTED]');
   });
 
+  // A base64 `user:password` is as replayable as a bearer token. The scheme word is also an
+  // ordinary English adjective, so the pattern requires the credential to look like base64 —
+  // "Basic authentication required" must survive intact.
+  it('redacts a Basic credential but keeps the scheme readable', () => {
+    expect(redactSensitiveData('Authorization: Basic dXNlcjpwYXNzd29yZDEyMw==')).toBe(
+      'Authorization: Basic [REDACTED]',
+    );
+  });
+
+  // The scheme token is case-insensitive per RFC 7617 and loggers lowercase header text. This
+  // shipped as `/g` instead of `/gi`, and the miss compounded: SECRET_ASSIGNMENT_RE's bare
+  // alternative skips anything matching `Basic\b` case-INsensitively, on the assumption this
+  // pattern already handled it. Both declined and the credential passed through.
+  it.each(['basic', 'BASIC', 'BaSiC'])('redacts a %s credential regardless of case', (scheme) => {
+    const out = redactSensitiveData(`authorization: ${scheme} dXNlcjpwYXNzd29yZDEyMw==`);
+    expect(out).toContain('[REDACTED]');
+    expect(out).not.toContain('dXNlcjpwYXNzd29yZDEyMw==');
+  });
+
+  it.each(['Basic authentication required', 'Basic configuration options'])(
+    'leaves ordinary prose alone: %s',
+    (text) => expect(redactSensitiveData(text)).toBe(text),
+  );
+
   it('redacts secret-ish assignments in prose, preserving the key name', () => {
     const out = redactSensitiveData('failed: api_key=abc123secret, password: hunter2xyz');
     expect(out).toContain('api_key=[REDACTED]');

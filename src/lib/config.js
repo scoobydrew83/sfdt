@@ -168,7 +168,16 @@ export async function loadConfig(startDir) {
   // Enrich with sfdx-project.json values if not already set
   const sfdxPath = path.join(merged._projectRoot, SFDX_PROJECT_FILE);
   if (await fs.pathExists(sfdxPath)) {
-    const sfdxProject = await fs.readJson(sfdxPath);
+    // Committed file — a malformed one threw a raw SyntaxError here, which read as a crash
+    // rather than a config problem at every call site.
+    let sfdxProject;
+    try {
+      sfdxProject = await fs.readJson(sfdxPath);
+    } catch (err) {
+      throw new ConfigError(
+        `Failed to parse ${sfdxPath}: ${err.message}\nEnsure the file contains valid JSON.`,
+      );
+    }
     if (!merged.sourceApiVersion && sfdxProject.sourceApiVersion) {
       merged.sourceApiVersion = sfdxProject.sourceApiVersion;
     }
@@ -226,6 +235,29 @@ export function validateConfig(config) {
   if (!valid) {
     throw new ConfigError(formatAjvErrors(_validate.errors));
   }
+}
+
+/**
+ * The nearest ancestor of startDir that looks like a Salesforce DX project
+ * (contains sfdx-project.json), or null if there is none. Never throws.
+ *
+ * Deliberately looser than findProjectWithConfig: a project whose `.sfdt/` is missing, or
+ * whose committed config does not parse, is STILL a project. A security decision that asks
+ * "was I launched inside a project?" must not depend on that project's files being
+ * well-formed — `sfdx-project.json` and `.sfdt/config.json` are committed and arrive with
+ * whatever repo was cloned, so a hostile repo could otherwise choose the answer by shipping
+ * a broken one. See SfdtMcpServer#start.
+ */
+export function findProjectRoot(startDir) {
+  let current = path.resolve(startDir || process.cwd());
+  const { root } = path.parse(current);
+
+  while (current !== root) {
+    if (fs.pathExistsSync(path.join(current, SFDX_PROJECT_FILE))) return current;
+    current = path.dirname(current);
+  }
+
+  return null;
 }
 
 /**

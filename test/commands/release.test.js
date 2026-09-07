@@ -23,6 +23,8 @@ vi.mock('fs-extra', () => ({
   default: {
     ensureDir: vi.fn(),
     pathExists: vi.fn().mockResolvedValue(false),
+    // The command now persists the notes itself instead of granting the model Write.
+    writeFile: vi.fn().mockResolvedValue(undefined),
   },
 }));
 
@@ -132,7 +134,15 @@ describe('release command', () => {
 
     expect(runAiPrompt).toHaveBeenCalledWith(
       expect.stringContaining('release notes'),
-      expect.objectContaining({ aiEnabled: true, interactive: true }),
+      // Captured, not streamed: the notes come back on stdout so this command writes the
+      // file. The model is no longer granted Write. (sfdt-private#23, H-3)
+      expect.objectContaining({
+        aiEnabled: true,
+        interactive: false,
+        // The security property itself: asserting only on "interactive" would pass
+        // unchanged if someone put 'Write' back. (sfdt-private#23, H-3)
+        allowedTools: expect.not.arrayContaining(['Write', 'Edit']),
+      }),
     );
   });
 

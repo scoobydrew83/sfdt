@@ -9,7 +9,6 @@
 import { spawn } from 'child_process';
 import express from 'express';
 import fs from 'fs-extra';
-import { constants as fsConstants } from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { execa } from 'execa';
@@ -49,7 +48,7 @@ import {
   searchSObjects, describeSObject, discoverRelationships,
   validateQuery, explainQuery, runQuery, runSearch, toCsv,
 } from '../soql-runner.js';
-import { resolveInProject, isPathWithinRoot, PROJECT_PATH_CONFIG_KEYS } from '../safe-path.js';
+import { resolveInProject, readFileContained, writeFileContained, isPathWithinRoot, PROJECT_PATH_CONFIG_KEYS } from '../safe-path.js';
 import { PRIVILEGE_CONFIG_KEYS } from '../config-trust.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -1865,22 +1864,21 @@ export function createGuiApp(config, version, port = DEFAULT_UI_PORT) {
       // Containment is still re-checked on the resolved path below, because
       // O_NOFOLLOW only refuses a symlinked *leaf* — a symlinked parent
       // directory resolves normally.
-      const realPath = await fs.realpath(absPath).catch(() => null);
-      const realUnder = (dir) => realPath === dir || realPath?.startsWith(dir + path.sep);
-      if (!realPath || !(realUnder(manifestDir) || realUnder(logDirAbs))) {
-        return res.status(403).json({ error: 'Forbidden' });
-      }
+      // This route was the first to get the guard and, until now, the only hand-written copy
+      // of it — the same two layers readFileContained implements, kept in parallel. Since the
+      // whole point of that helper is that a guard applied at one call site drifts from its
+      // siblings, the duplicate is the risk it exists to remove. It takes several roots so
+      // this route's "under manifestDir OR logDir" rule fits without a bespoke check.
       let xml;
       try {
-        xml = await fs.readFile(absPath, {
-          encoding: 'utf8',
-          flag: fsConstants.O_RDONLY | fsConstants.O_NOFOLLOW,
-        });
+        xml = await readFileContained([manifestDir, logDirAbs], absPath, { label: 'manifest' });
       } catch (err) {
-        // ELOOP is O_NOFOLLOW refusing a symlink — a refusal, not a missing file,
-        // so it should not fall through to the generic 404 below.
-        if (err?.code === 'ELOOP') return res.status(403).json({ error: 'Forbidden' });
-        throw err;
+        // Only a containment/symlink refusal is a 403. Everything else — a missing file, an
+        // unreadable one (EACCES) — falls through to the outer catch's 404, which is what the
+        // inline version did before this route moved onto the shared helper.
+        const refused = /resolves outside the project|symlinks are not allowed/.test(err?.message ?? '');
+        if (!refused) throw err;
+        return res.status(403).json({ error: 'Forbidden' });
       }
       res.json({ xml });
     } catch {
@@ -2279,7 +2277,7 @@ export function createGuiApp(config, version, port = DEFAULT_UI_PORT) {
         return res.json({ content: '', exists: false, file: path.relative(projectRoot, changelogPath) });
       }
 
-      const raw = await fs.readFile(changelogPath, 'utf8');
+      const raw = await readFileContained(projectRoot, changelogPath, { label: 'changelog' });
       const match = raw.match(/## \[Unreleased\]([\s\S]*?)(?=\n## \[|$)/);
       const content = match ? match[1].trim() : '';
       res.json({ content, exists: true, file: path.relative(projectRoot, changelogPath) });
@@ -2305,7 +2303,7 @@ export function createGuiApp(config, version, port = DEFAULT_UI_PORT) {
 
       let fullContent = '';
       if (await fs.pathExists(changelogPath)) {
-        fullContent = await fs.readFile(changelogPath, 'utf8');
+        fullContent = await readFileContained(projectRoot, changelogPath, { label: 'changelog' });
       } else {
         fullContent = '# Changelog\n\nAll notable changes to this project will be documented in this file.\n\n## [Unreleased]\n';
       }
@@ -2328,7 +2326,7 @@ export function createGuiApp(config, version, port = DEFAULT_UI_PORT) {
         }
       }
 
-      await fs.writeFile(changelogPath, updated);
+      await writeFileContained(projectRoot, changelogPath, updated, { label: 'changelog' });
       res.json({ ok: true, file: path.relative(projectRoot, changelogPath) });
     } catch (err) {
       res.status(err.statusCode ?? 500).json({ error: err.message });
@@ -2513,9 +2511,9 @@ export function createGuiApp(config, version, port = DEFAULT_UI_PORT) {
         return res.status(403).json({ error: 'Deployed manifests are read-only' });
       }
 
-      const xml = await fs.readFile(absPath, 'utf8');
+      const xml = await readFileContained(projectRoot, absPath, { label: 'manifest' });
       const updatedXml = removeComponentFromXml(xml, type, member);
-      await fs.writeFile(absPath, updatedXml);
+      await writeFileContained(projectRoot, absPath, updatedXml, { label: 'manifest' });
       res.json({ ok: true });
     } catch (err) {
       res.status(500).json({ error: err.message });
@@ -2775,7 +2773,7 @@ export function createGuiApp(config, version, port = DEFAULT_UI_PORT) {
         if (absPath.startsWith(deployedDir + path.sep) || absPath === deployedDir) {
           return res.status(403).json({ error: 'Deployed manifests are read-only' });
         }
-        let xml = await fs.readFile(absPath, 'utf8');
+        let xml = await readFileContained(projectRoot, absPath, { label: 'manifest' });
         let added = 0;
         for (const [type, members] of Object.entries(metadata)) {
           for (const member of members) {
@@ -2783,7 +2781,7 @@ export function createGuiApp(config, version, port = DEFAULT_UI_PORT) {
             added++;
           }
         }
-        await fs.writeFile(absPath, xml);
+        await writeFileContained(projectRoot, absPath, xml, { label: 'manifest' });
         return res.json({ ok: true, added, path: path.relative(projectRoot, absPath) });
       }
 
@@ -3053,9 +3051,9 @@ export function createGuiApp(config, version, port = DEFAULT_UI_PORT) {
         return res.status(403).json({ error: 'Deployed manifests are read-only' });
       }
 
-      const xml = await fs.readFile(absPath, 'utf8');
+      const xml = await readFileContained(projectRoot, absPath, { label: 'manifest' });
       const updatedXml = addComponentToXml(xml, type, member);
-      await fs.writeFile(absPath, updatedXml);
+      await writeFileContained(projectRoot, absPath, updatedXml, { label: 'manifest' });
       res.json({ ok: true });
     } catch (err) {
       res.status(500).json({ error: err.message });
@@ -3073,7 +3071,7 @@ export function createGuiApp(config, version, port = DEFAULT_UI_PORT) {
 
       if (!(await fs.pathExists(absPath))) return res.status(404).json({ error: 'Manifest not found' });
 
-      const xml = await fs.readFile(absPath, 'utf8');
+      const xml = await readFileContained(projectRoot, absPath, { label: 'manifest' });
 
       // Ported logic from deployment-assistant.sh:
       // Extract <types> block where <name>ApexClass</name> exists
@@ -3235,7 +3233,20 @@ export function createGuiApp(config, version, port = DEFAULT_UI_PORT) {
       }
 
       const MAX_LOG_BYTES = 512 * 1024;
-      let logContent = await fs.readFile(resolvedLogPath, 'utf8');
+      let logContent;
+      try {
+        logContent = await readFileContained(projectRoot, resolvedLogPath, { label: 'log' });
+      } catch (err) {
+        // A missing file is a 404-shaped condition, not a containment refusal. Without this
+        // the SSE stream reported "resolves outside the project" for a path the caller simply
+        // mistyped.
+        if (err?.code === 'ENOENT') {
+          send({ type: 'error', message: `Log file not found: ${path.relative(projectRoot, resolvedLogPath)}` });
+          res.end();
+          return;
+        }
+        throw err;
+      }
       if (logContent.length > MAX_LOG_BYTES) logContent = logContent.slice(-MAX_LOG_BYTES);
 
       const available = await checkAi(config);
@@ -3805,7 +3816,7 @@ export function createGuiApp(config, version, port = DEFAULT_UI_PORT) {
         return res.status(404).json({ error: 'Manifest file not found' });
       }
 
-      const xml = await fs.readFile(absManifest, 'utf8');
+      const xml = await readFileContained(projectRoot, absManifest, { label: 'manifest' });
       const manifestComponents = parseManifestComponents(xml);
 
       if (!manifestComponents.size) {

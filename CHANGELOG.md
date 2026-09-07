@@ -7,6 +7,93 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.26.0] - 2026-09-06
+
+A security release, and a short one — four days after 0.25.0, because 0.25.0 shipped this
+vulnerability's mitigation as opt-in only and left the default open.
+
+The pre-release gate changed this release twice. It found that the headline fix itself failed
+open, and then that the repair for *that* was bypassable by a symlink and had regressed three
+redaction behaviours. Both rounds are below. The pattern is worth naming: in nearly every case
+the correct control already existed in this codebase, applied at one call site and never moved
+to where its siblings route.
+
+<!-- One behaviour change needs action; it is the first item under Changed. -->
+
+### Security
+
+- **A project-bound MCP server serves only its own project.** Every tool accepts a
+  `projectRoot` argument that was validated only as a non-empty string, and that value is
+  chosen by an AI model this CLI feeds untrusted org content (Apex compile errors, flow
+  metadata, deploy failure text). So a call the operator read as "query the current
+  project" could name a *different* checkout and run against that project's authenticated
+  org, while the tool list still presented it as read-only; with
+  `SFDT_ALLOW_UNSAFE_CONFIG=1` exported it also reached the other project's plugin
+  `import()`. A server started inside a project now refuses a `projectRoot` outside it. The
+  `SFDT_MCP_PROJECT_ROOTS` allowlist shipped in 0.25.0 was opt-in only, so by default the
+  model still chose the root.
+- **A project whose config will not load is still a project.** Whether the server binds is
+  decided by *finding* the project, not by whether `loadConfig()` succeeded. It throws on the
+  content of `.sfdt/config.json`, `.sfdt/environments.json` and `sfdx-project.json` — all
+  committed files that arrive with whatever repo was cloned — so the first cut of the check
+  above let a hostile repository ship one malformed file and silently downgrade its own server
+  to unrestricted routing. Found by the pre-release review of that very change.
+- **A committed symlink no longer redirects a project-bound MCP server.** The containment
+  check compared resolved *lexical* paths, and `path.resolve` does not follow symlinks while
+  the config loader's discovery does. An `escape -> /` symlink committed in a cloned repo
+  produced a `projectRoot` that was lexically inside the project and physically another
+  checkout: the check passed and the other project's authenticated org was served. Both sides
+  are now compared as physical paths. Found by the second pre-release review, of the fix for
+  the finding above.
+- **A malformed `sfdx-project.json` reports a config error** instead of an unhandled
+  `SyntaxError` from the middle of `loadConfig`.
+- **Secrets are redacted in JSON and XML, not just prose.** Every AI path redacts the
+  assembled prompt *string*, so only the text patterns ever ran — and they required a name
+  followed by `:` or `=`. In JSON the next character is a closing quote and in XML it is `>`,
+  so `{"password":"…"}` and `<password>…</password>` reached the configured provider verbatim.
+  Values containing spaces, commas, semicolons or braces also leaked their tails, and
+  `SF_PASSWORD=…` — the shape most likely to appear in a log, since this CLI references
+  secrets by env-var name — was never matched at all. A variable *name* like
+  `apiKeyEnv: "MY_VAR"` is still left readable, which is the point of that convention.
+- **Notification AI summaries redact before serializing,** not after; the key-based rules
+  cannot see a key once the object is a string.
+- **`sfdt release` no longer grants the model write access.** Generating release notes gave it
+  unrestricted `Write` at the project root while it reasoned over `git log` output — commit
+  bodies, which in a cloned repo are authored by whoever wrote the history. It was the only
+  such grant outside the `SFDT_ALLOW_AI_WRITE` gate, which exists so a repository cannot
+  arrange exactly that. The command now captures the notes and writes the file itself.
+- **Project file reads and writes refuse symlinks.** Containment was checked lexically, which
+  stops `../` but not a link: an in-project `logs/deploy.log` pointing at `~/.sfdx/<user>.json`
+  passed the check and was read — and, on the dashboard's explain route, sent to the AI
+  provider. A committed `changelogs/<pkg>.md` pointing at a file outside the project was
+  written through. 0.25.0 closed this on one route; the guard now lives in the shared helper
+  every caller routes through, and covers writes as well as reads.
+- **Parked MCP results return a redacted preview.** The spilled file was written redacted and
+  `0600`, but the preview returned in the tool envelope — the copy that actually leaves the
+  machine — was built from the raw payload. These are the results large enough to spill: Apex
+  debug logs carrying session ids, SOQL rows carrying PII.
+- **`SFDT_MCP_PROJECT_ROOTS` is checked against the project actually served.** Config
+  resolution walks up to the nearest initialized ancestor, so in a monorepo an allowlisted
+  package directory could serve its parent's config and org — a project the allowlist never
+  named.
+
+### Changed
+
+- **BREAKING: one MCP server no longer serves several checkouts by default.** Multi-project
+  routing is unchanged in two supported shapes: start the server *outside* any initialized
+  project — a neutral server has no default, so every call routes itself and nothing is
+  restricted — or list the roots in `SFDT_MCP_PROJECT_ROOTS` (colon-separated), which
+  widens a project-bound server and wins wherever it is set. Only the implicit case is
+  refused: a server launched inside project A, asked for project B, with no allowlist.
+  Subdirectories of the launch root are accepted — they name the same project, since config
+  resolution walks up regardless.
+- **`sfdt release` no longer streams AI release notes to the terminal.** It captures them
+  instead, because the model can no longer write the file itself (see Security). Same file,
+  same confirmation message, no live output.
+- **A file the dashboard cannot find still reports "not found",** not a containment error. The
+  physical-path check made both conditions look alike for a while; they are told apart again,
+  because a mistyped filename should not read as a security refusal.
+
 ## [0.25.0] - 2026-09-04
 
 A security release. Every finding from the v0.24.0 pre-release review that was left open,

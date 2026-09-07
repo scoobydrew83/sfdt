@@ -68,27 +68,36 @@ export async function parkIfNeeded(payload, config) {
   //     org-session.js explicitly relies on.
   //
   // notifier.js redacts the object for the same reason. (sfdt-private#23)
-  const redacted = typeof payload === 'string'
+  // Redact ONCE. This function only runs on payloads past the parking threshold (50 KB by
+  // default), so walking a large object twice — once for the file, once for the preview — is
+  // exactly the case it exists to handle.
+  const safePayload = typeof payload === 'string'
     ? redactSensitiveData(jsonString)
-    : JSON.stringify(redactSensitiveData(payload), null, 2);
+    : redactSensitiveData(payload);
+  const redacted = typeof payload === 'string' ? safePayload : JSON.stringify(safePayload, null, 2);
   await fs.writeFile(filePath, redacted, { encoding: 'utf8', mode: 0o600 });
 
-  // Generate a preview
+  // Generate a preview — from the REDACTED payload, never the raw one. The file above is
+  // written redacted and 0600, but the preview is the copy that actually leaves the machine:
+  // mcp-server.js serializes it straight into the tool envelope handed to the model client.
+  // Redacting the on-disk artifact while shipping the original in the response inverted the
+  // whole point of parking these results — and the payloads are exactly the sensitive ones
+  // named above (Apex debug logs carrying session ids, SOQL rows carrying PII).
   let preview = '';
   let rowCount = undefined;
 
-  if (Array.isArray(payload)) {
-    rowCount = payload.length;
-    preview = JSON.stringify(payload.slice(0, 5), null, 2);
-  } else if (payload && typeof payload === 'object') {
-    const keys = Object.keys(payload);
+  if (Array.isArray(safePayload)) {
+    rowCount = safePayload.length;
+    preview = JSON.stringify(safePayload.slice(0, 5), null, 2);
+  } else if (safePayload && typeof safePayload === 'object') {
+    const keys = Object.keys(safePayload);
     const slicedObj = {};
     for (const key of keys.slice(0, 5)) {
-      slicedObj[key] = payload[key];
+      slicedObj[key] = safePayload[key];
     }
     preview = JSON.stringify(slicedObj, null, 2);
   } else {
-    preview = String(payload).slice(0, 500);
+    preview = String(safePayload).slice(0, 500);
   }
 
   if (preview.length > 1000) {
