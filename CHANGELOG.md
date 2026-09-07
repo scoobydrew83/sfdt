@@ -90,8 +90,9 @@ to where its siblings route.
 - **`sfdt release` no longer streams AI release notes to the terminal.** It captures them
   instead, because the model can no longer write the file itself (see Security). Same file,
   same confirmation message, no live output.
-- **A file the dashboard cannot resolve reports a containment error rather than "not found".**
-  A consequence of checking physical paths; worth knowing when reading logs.
+- **A file the dashboard cannot find still reports "not found",** not a containment error. The
+  physical-path check made both conditions look alike for a while; they are told apart again,
+  because a mistyped filename should not read as a security refusal.
 
 ## [0.25.0] - 2026-09-04
 

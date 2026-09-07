@@ -111,6 +111,34 @@ describe('readFileInProject / readFileContained', () => {
     });
   });
 
+  // Several roots: the manifest-viewer route allows a file under manifestDir OR logDir. That
+  // rule is why the route kept a hand-written copy of this guard; the helper takes an array so
+  // there is one implementation again.
+  describe('multiple roots', () => {
+    it('accepts a file under either root', async () => {
+      const other = path.join(tmp, 'second-root');
+      await fs.ensureDir(other);
+      await fs.writeFile(path.join(other, 'ok.xml'), '<x/>\n');
+
+      await expect(readFileContained([project, other], path.join(other, 'ok.xml'))).resolves.toContain('<x/>');
+      await expect(readFileContained([project, other], path.join(project, 'logs', 'real.log'))).resolves.toContain('ordinary log');
+    });
+
+    it('still refuses a path under neither', async () => {
+      const other = path.join(tmp, 'second-root');
+      await expect(readFileContained([project, other], secretPath)).rejects.toThrow(/outside the project/);
+    });
+  });
+
+  // A missing file and an escaping one are both refusals, but callers map them to 404 and 403.
+  // Reporting "resolves outside the project" for a mistyped filename sent operators hunting a
+  // security problem that was not there.
+  it('reports a missing file as ENOENT, not as a containment failure', async () => {
+    await expect(readFileInProject(project, 'logs/nope.log')).rejects.toMatchObject({
+      code: 'ENOENT',
+    });
+  });
+
   it('does not leak the secret through any of the above', async () => {
     for (const attempt of ['logs/deploy.log', 'linkdir/note.txt']) {
       const result = await readFileInProject(project, attempt).catch((err) => err.message);

@@ -68,9 +68,13 @@ export async function parkIfNeeded(payload, config) {
   //     org-session.js explicitly relies on.
   //
   // notifier.js redacts the object for the same reason. (sfdt-private#23)
-  const redacted = typeof payload === 'string'
+  // Redact ONCE. This function only runs on payloads past the parking threshold (50 KB by
+  // default), so walking a large object twice — once for the file, once for the preview — is
+  // exactly the case it exists to handle.
+  const safePayload = typeof payload === 'string'
     ? redactSensitiveData(jsonString)
-    : JSON.stringify(redactSensitiveData(payload), null, 2);
+    : redactSensitiveData(payload);
+  const redacted = typeof payload === 'string' ? safePayload : JSON.stringify(safePayload, null, 2);
   await fs.writeFile(filePath, redacted, { encoding: 'utf8', mode: 0o600 });
 
   // Generate a preview — from the REDACTED payload, never the raw one. The file above is
@@ -79,8 +83,6 @@ export async function parkIfNeeded(payload, config) {
   // Redacting the on-disk artifact while shipping the original in the response inverted the
   // whole point of parking these results — and the payloads are exactly the sensitive ones
   // named above (Apex debug logs carrying session ids, SOQL rows carrying PII).
-  const safePayload = typeof payload === 'string' ? redacted : redactSensitiveData(payload);
-
   let preview = '';
   let rowCount = undefined;
 

@@ -87,15 +87,6 @@ export async function readFileInProject(root, input, options = {}) {
 }
 
 /**
- * Same guarantee as `readFileInProject`, for callers that already hold a resolved absolute
- * path (a glob hit, or a route that built and prefix-checked it itself).
- *
- * @param {string} root      Directory the file must stay inside.
- * @param {string} absPath   Already-resolved absolute path.
- * @param {object} [options] `encoding` (default 'utf8'), `label` (default 'path').
- * @returns {Promise<string|Buffer>}
- */
-/**
  * Write a file that must genuinely live inside `root` on disk.
  *
  * The counterpart to `readFileContained`, and needed for the same reason. Lexical containment
@@ -112,17 +103,15 @@ export async function readFileInProject(root, input, options = {}) {
  */
 export async function writeFileContained(root, absPath, data, options = {}) {
   const { encoding = 'utf8', label = 'path' } = options;
-  const realRoot = await realpathOrSelf(path.resolve(root));
   const resolved = path.resolve(absPath);
 
-  if (resolved !== realRoot && !resolved.startsWith(path.resolve(root) + path.sep)) {
+  if (!lexicallyInside(root, resolved)) {
     throw new Error(`Invalid ${label}: resolves outside the project`);
   }
 
+  // The PARENT, not the leaf: the file may not exist yet, so it has no realpath of its own.
   const realParent = await realpathOrSelf(path.dirname(resolved));
-  if (realParent !== realRoot && !realParent.startsWith(realRoot + path.sep)) {
-    throw new Error(`Invalid ${label}: resolves outside the project`);
-  }
+  await assertInsideRoot(root, realParent, label);
 
   try {
     await fs.writeFile(path.join(realParent, path.basename(resolved)), data, {
@@ -150,23 +139,63 @@ export async function realpathOrSelf(p) {
   return fs.realpath(p).catch(() => p);
 }
 
+/**
+ * Assert that an already-resolved PHYSICAL path lies inside `root`, comparing realpath to
+ * realpath. Returns the realpathed root so callers can build on it.
+ *
+ * Factored out rather than written twice. The bug this release exists to fix survived because
+ * the same guard was applied at one call site and not extracted to where its siblings route;
+ * leaving the physical-containment comparison duplicated between the read and write helpers
+ * would be that identical risk one level down — a future edit only has to miss one copy.
+ *
+ * Resolving only ONE side breaks wherever the root itself sits under a link: macOS puts temp
+ * dirs at /var/folders/… which is a symlink to /private/var/folders/…, and legitimate files
+ * would be refused.
+ */
+async function assertInsideRoot(root, physical, label) {
+  for (const r of toRoots(root)) {
+    const realRoot = await realpathOrSelf(path.resolve(r));
+    if (physical === realRoot || physical.startsWith(realRoot + path.sep)) return realRoot;
+  }
+  throw new Error(`Invalid ${label}: resolves outside the project`);
+}
+
+/** `root` may be a single directory or several — a file legitimately reachable under any. */
+const toRoots = (root) => (Array.isArray(root) ? root : [root]);
+
+/** Lexical containment against any of the roots. Cheap pre-check; never a proof on its own. */
+function lexicallyInside(root, resolved) {
+  return toRoots(root).some((r) => {
+    const abs = path.resolve(r);
+    return resolved === abs || resolved.startsWith(abs + path.sep);
+  });
+}
+
+/**
+ * Same guarantee as `readFileInProject`, for callers that already hold a resolved absolute
+ * path (a glob hit, or a route that built and prefix-checked it itself).
+ *
+ * @param {string} root      Directory the file must stay inside.
+ * @param {string} absPath   Already-resolved absolute path.
+ * @param {object} [options] `encoding` (default 'utf8'), `label` (default 'path').
+ * @returns {Promise<string|Buffer>}
+ */
 export async function readFileContained(root, absPath, options = {}) {
   const { encoding = 'utf8', label = 'path' } = options;
-  const rootAbs = path.resolve(root);
   const resolved = path.resolve(absPath);
 
-  if (resolved !== rootAbs && !resolved.startsWith(rootAbs + path.sep)) {
+  if (!lexicallyInside(root, resolved)) {
     throw new Error(`Invalid ${label}: resolves outside the project`);
   }
 
-  // Compare realpath to REALPATH. Resolving only one side breaks on any system where the
-  // root itself sits under a link — macOS puts temp dirs at /var/folders/… which is a
-  // symlink to /private/var/folders/… — and would refuse perfectly legitimate files.
-  const realRoot = await realpathOrSelf(rootAbs);
   const realPath = await fs.realpath(resolved).catch(() => null);
-  if (!realPath || (realPath !== realRoot && !realPath.startsWith(realRoot + path.sep))) {
-    throw new Error(`Invalid ${label}: resolves outside the project`);
+  if (!realPath) {
+    // Distinguish "not there" from "escapes the project". Both are refusals, but a caller
+    // mapping one to a 404 and the other to a 403 needs to tell them apart, and an operator
+    // reading the log should not see a containment error for a plain missing file.
+    throw Object.assign(new Error(`Invalid ${label}: file not found`), { code: 'ENOENT' });
   }
+  await assertInsideRoot(root, realPath, label);
 
   try {
     return await fs.readFile(resolved, {

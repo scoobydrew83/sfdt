@@ -62,7 +62,12 @@ const BEARER_RE = /\b(Bearer)\s+[A-Za-z0-9._~+/-]{12,}={0,2}/gi;
 // required" into "Basic [REDACTED] required", corrupting prose on its way to the model and
 // into the audit trail. The lookahead demands the token actually look like base64 (at least
 // one digit, `+`, `/` or `=`), which no English word satisfies.
-const BASIC_AUTH_RE = /\b(Basic)\s+(?=[A-Za-z0-9+/]*[0-9+/=])[A-Za-z0-9+/]{12,}={0,2}/g;
+// `gi`, not `g`. The scheme token is case-insensitive per RFC 7617 and loggers routinely
+// lowercase header text, but the miss was worse than one pattern failing: SECRET_ASSIGNMENT_RE
+// below shares the `gi` flags, so its bare-value lookahead `(?!Bearer\b|Basic\b)` skips
+// "basic" case-insensitively on the assumption this pattern already handled it. Both declined,
+// and `authorization: basic <base64 user:password>` passed through untouched.
+const BASIC_AUTH_RE = /\b(Basic)\s+(?=[A-Za-z0-9+/]*[0-9+/=])[A-Za-z0-9+/]{12,}={0,2}/gi;
 
 // key=value / key: value for secret-ish names in prose. The `\b` after the name
 // matters: it keeps `apiKeyEnv: "MY_VAR"` (a variable NAME, not a secret) from

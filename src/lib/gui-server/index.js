@@ -9,7 +9,6 @@
 import { spawn } from 'child_process';
 import express from 'express';
 import fs from 'fs-extra';
-import { constants as fsConstants } from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { execa } from 'execa';
@@ -1865,22 +1864,18 @@ export function createGuiApp(config, version, port = DEFAULT_UI_PORT) {
       // Containment is still re-checked on the resolved path below, because
       // O_NOFOLLOW only refuses a symlinked *leaf* — a symlinked parent
       // directory resolves normally.
-      const realPath = await fs.realpath(absPath).catch(() => null);
-      const realUnder = (dir) => realPath === dir || realPath?.startsWith(dir + path.sep);
-      if (!realPath || !(realUnder(manifestDir) || realUnder(logDirAbs))) {
-        return res.status(403).json({ error: 'Forbidden' });
-      }
+      // This route was the first to get the guard and, until now, the only hand-written copy
+      // of it — the same two layers readFileContained implements, kept in parallel. Since the
+      // whole point of that helper is that a guard applied at one call site drifts from its
+      // siblings, the duplicate is the risk it exists to remove. It takes several roots so
+      // this route's "under manifestDir OR logDir" rule fits without a bespoke check.
       let xml;
       try {
-        xml = await fs.readFile(absPath, {
-          encoding: 'utf8',
-          flag: fsConstants.O_RDONLY | fsConstants.O_NOFOLLOW,
-        });
+        xml = await readFileContained([manifestDir, logDirAbs], absPath, { label: 'manifest' });
       } catch (err) {
-        // ELOOP is O_NOFOLLOW refusing a symlink — a refusal, not a missing file,
-        // so it should not fall through to the generic 404 below.
-        if (err?.code === 'ELOOP') return res.status(403).json({ error: 'Forbidden' });
-        throw err;
+        // A missing file is the generic 404 below; a containment or symlink refusal is a 403.
+        if (err?.code === 'ENOENT') throw err;
+        return res.status(403).json({ error: 'Forbidden' });
       }
       res.json({ xml });
     } catch {
@@ -2515,7 +2510,7 @@ export function createGuiApp(config, version, port = DEFAULT_UI_PORT) {
 
       const xml = await readFileContained(projectRoot, absPath, { label: 'manifest' });
       const updatedXml = removeComponentFromXml(xml, type, member);
-      await fs.writeFile(absPath, updatedXml);
+      await writeFileContained(projectRoot, absPath, updatedXml, { label: 'manifest' });
       res.json({ ok: true });
     } catch (err) {
       res.status(500).json({ error: err.message });
@@ -2783,7 +2778,7 @@ export function createGuiApp(config, version, port = DEFAULT_UI_PORT) {
             added++;
           }
         }
-        await fs.writeFile(absPath, xml);
+        await writeFileContained(projectRoot, absPath, xml, { label: 'manifest' });
         return res.json({ ok: true, added, path: path.relative(projectRoot, absPath) });
       }
 
@@ -3055,7 +3050,7 @@ export function createGuiApp(config, version, port = DEFAULT_UI_PORT) {
 
       const xml = await readFileContained(projectRoot, absPath, { label: 'manifest' });
       const updatedXml = addComponentToXml(xml, type, member);
-      await fs.writeFile(absPath, updatedXml);
+      await writeFileContained(projectRoot, absPath, updatedXml, { label: 'manifest' });
       res.json({ ok: true });
     } catch (err) {
       res.status(500).json({ error: err.message });
@@ -3235,7 +3230,20 @@ export function createGuiApp(config, version, port = DEFAULT_UI_PORT) {
       }
 
       const MAX_LOG_BYTES = 512 * 1024;
-      let logContent = await readFileContained(projectRoot, resolvedLogPath, { label: 'log' });
+      let logContent;
+      try {
+        logContent = await readFileContained(projectRoot, resolvedLogPath, { label: 'log' });
+      } catch (err) {
+        // A missing file is a 404-shaped condition, not a containment refusal. Without this
+        // the SSE stream reported "resolves outside the project" for a path the caller simply
+        // mistyped.
+        if (err?.code === 'ENOENT') {
+          send({ type: 'error', message: `Log file not found: ${path.relative(projectRoot, resolvedLogPath)}` });
+          res.end();
+          return;
+        }
+        throw err;
+      }
       if (logContent.length > MAX_LOG_BYTES) logContent = logContent.slice(-MAX_LOG_BYTES);
 
       const available = await checkAi(config);
