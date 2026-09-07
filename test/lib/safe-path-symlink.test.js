@@ -24,7 +24,10 @@ beforeAll(async () => {
 
   // Stands in for ~/.sfdx/<user>.json or ~/.aws/credentials — outside the project.
   secretPath = path.join(tmp, 'secrets.json');
-  await fs.writeJson(secretPath, { accessToken: '00Dxx0000001gEa!SUPERSECRET' });
+  // A canary, deliberately NOT shaped like a real credential. The test only needs a string it
+  // can prove never came back; giving it a Salesforce session-id shape adds nothing and trips
+  // secret scanners on every commit.
+  await fs.writeJson(secretPath, { note: 'CANARY-MUST-NOT-BE-READ' });
 
   await fs.writeFile(path.join(project, 'logs', 'real.log'), 'ordinary log content\n');
 });
@@ -111,7 +114,7 @@ describe('readFileInProject / readFileContained', () => {
   it('does not leak the secret through any of the above', async () => {
     for (const attempt of ['logs/deploy.log', 'linkdir/note.txt']) {
       const result = await readFileInProject(project, attempt).catch((err) => err.message);
-      expect(result).not.toContain('SUPERSECRET');
+      expect(result).not.toContain('CANARY-MUST-NOT-BE-READ');
     }
   });
 });
