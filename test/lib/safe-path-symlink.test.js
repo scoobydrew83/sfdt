@@ -7,6 +7,7 @@ import {
   readFileInProject,
   readFileContained,
   writeFileContained,
+  resolveForExternalRead,
   resolveInProject,
 } from '../../src/lib/safe-path.js';
 
@@ -136,6 +137,34 @@ describe('readFileInProject / readFileContained', () => {
   it('reports a missing file as ENOENT, not as a containment failure', async () => {
     await expect(readFileInProject(project, 'logs/nope.log')).rejects.toMatchObject({
       code: 'ENOENT',
+    });
+  });
+
+  // A path handed to an EXTERNAL reader (`sf apex run --file`, the CI script env vars) cannot
+  // use O_NOFOLLOW, because this process never opens it. Physical containment has to be proven
+  // before handing it over — otherwise a committed symlink's target is uploaded to the org as
+  // anonymous Apex, and the compile error echoes it back to the model that chose the path.
+  describe('resolveForExternalRead', () => {
+    it('accepts an ordinary in-project file', async () => {
+      await expect(resolveForExternalRead(project, 'logs/real.log', 'file')).resolves.toContain('real.log');
+    });
+
+    it('refuses a symlink pointing outside the project', async () => {
+      const link = path.join(project, 'logs', 'escape.apex');
+      await fs.remove(link);
+      await fs.symlink(secretPath, link);
+
+      // The lexical guard accepts it — which is the entire gap.
+      expect(resolveInProject(project, 'logs/escape.apex', 'file')).toBe(link);
+      await expect(resolveForExternalRead(project, 'logs/escape.apex', 'file')).rejects.toThrow(
+        /outside the project/,
+      );
+    });
+
+    it('reports a missing file as ENOENT', async () => {
+      await expect(resolveForExternalRead(project, 'logs/absent.apex', 'file')).rejects.toMatchObject({
+        code: 'ENOENT',
+      });
     });
   });
 

@@ -1873,8 +1873,11 @@ export function createGuiApp(config, version, port = DEFAULT_UI_PORT) {
       try {
         xml = await readFileContained([manifestDir, logDirAbs], absPath, { label: 'manifest' });
       } catch (err) {
-        // A missing file is the generic 404 below; a containment or symlink refusal is a 403.
-        if (err?.code === 'ENOENT') throw err;
+        // Only a containment/symlink refusal is a 403. Everything else — a missing file, an
+        // unreadable one (EACCES) — falls through to the outer catch's 404, which is what the
+        // inline version did before this route moved onto the shared helper.
+        const refused = /resolves outside the project|symlinks are not allowed/.test(err?.message ?? '');
+        if (!refused) throw err;
         return res.status(403).json({ error: 'Forbidden' });
       }
       res.json({ xml });

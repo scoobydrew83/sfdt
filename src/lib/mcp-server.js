@@ -12,7 +12,7 @@ import path from 'path';
 import fs from 'fs-extra';
 import { fileURLToPath } from 'url';
 import { AsyncLocalStorage } from 'node:async_hooks';
-import { resolveInProject, assertSetName } from './safe-path.js';
+import { resolveForExternalRead, assertSetName } from './safe-path.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -1647,7 +1647,10 @@ export class SfdtMcpServer {
         if (!args.file && !args.apexCode) {
           throw new Error('Provide "file" (a path in the project) or "apexCode" (inline Apex).');
         }
-        let apexFile = args.file ? resolveInProject(projectRoot, args.file, 'file') : null;
+        // `sf` opens this file, not us — so O_NOFOLLOW is unavailable and physical containment
+        // has to be proven before the path is handed over. A committed symlink otherwise had
+        // its target uploaded to the org as anonymous Apex. (PR #353 review)
+        let apexFile = args.file ? await resolveForExternalRead(projectRoot, args.file, 'file') : null;
         let tmpDir = null;
         if (!apexFile) {
           tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'sfdt-mcp-apex-'));
@@ -1813,7 +1816,7 @@ export class SfdtMcpServer {
           SFDT_TARGET_ORG: args.targetOrg,
           SFDT_DRY_RUN: 'true',
         };
-        if (args.manifest) env.SFDT_MANIFEST_PATH = resolveInProject(projectRoot, args.manifest, 'manifest');
+        if (args.manifest) env.SFDT_MANIFEST_PATH = await resolveForExternalRead(projectRoot, args.manifest, 'manifest');
         if (args.testLevel) env.SFDT_TEST_LEVEL = args.testLevel;
         if (Array.isArray(args.testClasses) && args.testClasses.length > 0) {
           env.SFDT_SPECIFIED_TESTS = args.testClasses.join(' ');
@@ -1844,7 +1847,7 @@ export class SfdtMcpServer {
           SFDT_TARGET_ORG: args.targetOrg,
           SFDT_DRY_RUN: args.dryRun ? 'true' : 'false',
         };
-        if (args.manifest) env.SFDT_MANIFEST_PATH = resolveInProject(projectRoot, args.manifest, 'manifest');
+        if (args.manifest) env.SFDT_MANIFEST_PATH = await resolveForExternalRead(projectRoot, args.manifest, 'manifest');
         if (args.testLevel) env.SFDT_TEST_LEVEL = args.testLevel;
         if (args.destructiveTiming) env.SFDT_DESTRUCTIVE_TIMING = args.destructiveTiming;
         if (Array.isArray(args.testClasses) && args.testClasses.length > 0) {

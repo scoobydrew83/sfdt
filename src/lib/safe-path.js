@@ -127,6 +127,34 @@ export async function writeFileContained(root, absPath, data, options = {}) {
 }
 
 /**
+ * Resolve a caller-supplied relative path that will be read by SOMETHING ELSE — an external
+ * process, not this one.
+ *
+ * `readFileInProject` can use `O_NOFOLLOW` because it does the opening. When the path is
+ * handed to `sf` (or any child process), that process opens it and follows links, so the only
+ * guard available here is to prove physical containment before handing it over. Lexical
+ * containment is not enough and never was: a committed `scripts/x.apex -> ~/.sfdx/<user>.json`
+ * passes `resolveInProject` intact, and `sf apex run --file` then uploads that file's contents
+ * to the org as anonymous Apex — where the compile error echoes them straight back to the
+ * model that chose the path.
+ *
+ * There is an unavoidable TOCTOU gap between this check and the child process's open. It is
+ * still worth checking: the attack this closes is a symlink COMMITTED in a repo, which is
+ * present before the call and does not need to race it.
+ *
+ * @returns {Promise<string>} the resolved path, once proven to be physically inside `root`.
+ */
+export async function resolveForExternalRead(root, input, label = 'path') {
+  const resolved = resolveInProject(root, input, label);
+  const real = await fs.realpath(resolved).catch(() => null);
+  if (!real) {
+    throw Object.assign(new Error(`Invalid ${label}: file not found`), { code: 'ENOENT' });
+  }
+  await assertInsideRoot(root, real, label);
+  return resolved;
+}
+
+/**
  * `fs.realpath`, falling back to the input when it cannot be resolved (the path does not
  * exist yet, or is a dangling link).
  *
