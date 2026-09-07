@@ -1,4 +1,6 @@
 import path from 'path';
+import fs from 'fs-extra';
+import { constants as fsConstants } from 'node:fs';
 
 /**
  * Path-containment guards shared by every surface that turns caller-supplied
@@ -31,9 +33,12 @@ export const SET_RE = /^[A-Za-z0-9][A-Za-z0-9_-]*$/;
  * Throws rather than returning null: every caller treats a rejected path as a
  * hard error, and a thrown message keeps the reason attached to the value.
  *
- * ponytail: string-prefix containment, so a symlink inside the project can
- * still point outside it. Upgrade to fs.realpath comparison if untrusted
- * writers ever gain the ability to plant symlinks in the project tree.
+ * Lexical containment only: `path.resolve` does not resolve symlinks, so this alone does
+ * not prove the path stays inside the project on disk. That is fine for a WRITE target,
+ * which may not exist yet — but a read must additionally go through `readFileInProject`
+ * below. The `ponytail:` note that used to sit here deferred the symlink upgrade until
+ * "untrusted writers gain the ability to plant symlinks in the project tree"; a cloned
+ * repository is that writer, so the upgrade came due. (sfdt-private#23)
  */
 export function resolveInProject(root, input, label = 'path') {
   if (typeof input !== 'string' || input.length === 0) {
@@ -51,6 +56,131 @@ export function resolveInProject(root, input, label = 'path') {
     throw new Error(`Invalid ${label}: resolves outside the project`);
   }
   return resolved;
+}
+
+/**
+ * Read a file that must genuinely live inside `root` on disk.
+ *
+ * `resolveInProject` proves containment lexically, which a symlink defeats: `path.resolve`
+ * does not follow links and `fs.readFile` does, so an in-project `logs/deploy.log` pointing
+ * at `~/.sfdx/<user>.json` or `~/.aws/credentials` passed the check and read the target.
+ * This was closed once on the manifest-viewer route and left on the five sibling routes that
+ * share the primitive, so it lives here now — the guard belongs where all callers pass
+ * through, not at whichever route someone remembers.
+ *
+ * Two layers, because neither is sufficient alone:
+ *  - `O_NOFOLLOW` makes the kernel refuse a symlinked LEAF at open time, so the check and
+ *    the read are one operation and a TOCTOU race has nowhere to live.
+ *  - realpath containment catches a symlinked PARENT directory, which resolves normally and
+ *    O_NOFOLLOW would happily open through.
+ *
+ * @param {string} root       Directory the file must resolve inside.
+ * @param {string} input      Caller-supplied relative path.
+ * @param {object} [options]
+ * @param {string} [options.encoding='utf8']
+ * @param {string} [options.label='path']
+ * @returns {Promise<string|Buffer>}
+ */
+export async function readFileInProject(root, input, options = {}) {
+  const { label = 'path' } = options;
+  return readFileContained(root, resolveInProject(root, input, label), options);
+}
+
+/**
+ * Same guarantee as `readFileInProject`, for callers that already hold a resolved absolute
+ * path (a glob hit, or a route that built and prefix-checked it itself).
+ *
+ * @param {string} root      Directory the file must stay inside.
+ * @param {string} absPath   Already-resolved absolute path.
+ * @param {object} [options] `encoding` (default 'utf8'), `label` (default 'path').
+ * @returns {Promise<string|Buffer>}
+ */
+/**
+ * Write a file that must genuinely live inside `root` on disk.
+ *
+ * The counterpart to `readFileContained`, and needed for the same reason. Lexical containment
+ * is enough to stop `../` traversal in a write target, which is why it was left at that — but
+ * it does nothing about a symlink, and a committed `changelogs/pkg.md -> ~/.zshrc` arrives
+ * with the clone. `O_NOFOLLOW` makes the kernel refuse a symlinked leaf at open time; the
+ * parent directory is realpath-checked because the leaf may not exist yet, so it cannot be
+ * resolved on its own.
+ *
+ * @param {string} root      Directory the file must stay inside.
+ * @param {string} absPath   Already-resolved absolute path.
+ * @param {string} data      Contents to write.
+ * @param {object} [options] `encoding` (default 'utf8'), `label` (default 'path').
+ */
+export async function writeFileContained(root, absPath, data, options = {}) {
+  const { encoding = 'utf8', label = 'path' } = options;
+  const realRoot = await realpathOrSelf(path.resolve(root));
+  const resolved = path.resolve(absPath);
+
+  if (resolved !== realRoot && !resolved.startsWith(path.resolve(root) + path.sep)) {
+    throw new Error(`Invalid ${label}: resolves outside the project`);
+  }
+
+  const realParent = await realpathOrSelf(path.dirname(resolved));
+  if (realParent !== realRoot && !realParent.startsWith(realRoot + path.sep)) {
+    throw new Error(`Invalid ${label}: resolves outside the project`);
+  }
+
+  try {
+    await fs.writeFile(path.join(realParent, path.basename(resolved)), data, {
+      encoding,
+      flag: fsConstants.O_WRONLY | fsConstants.O_CREAT | fsConstants.O_TRUNC | fsConstants.O_NOFOLLOW,
+    });
+  } catch (err) {
+    if (err?.code === 'ELOOP') {
+      throw new Error(`Invalid ${label}: symlinks are not allowed`);
+    }
+    throw err;
+  }
+}
+
+/**
+ * `fs.realpath`, falling back to the input when it cannot be resolved (the path does not
+ * exist yet, or is a dangling link).
+ *
+ * Every containment check in this file compares PHYSICAL paths, because the lexical ones lie:
+ * `path.resolve` does not follow symlinks, but every filesystem call that comes after it does.
+ * The fallback is safe for containment specifically because a path that cannot be realpathed
+ * also cannot be opened — the operation the check guards fails on its own.
+ */
+export async function realpathOrSelf(p) {
+  return fs.realpath(p).catch(() => p);
+}
+
+export async function readFileContained(root, absPath, options = {}) {
+  const { encoding = 'utf8', label = 'path' } = options;
+  const rootAbs = path.resolve(root);
+  const resolved = path.resolve(absPath);
+
+  if (resolved !== rootAbs && !resolved.startsWith(rootAbs + path.sep)) {
+    throw new Error(`Invalid ${label}: resolves outside the project`);
+  }
+
+  // Compare realpath to REALPATH. Resolving only one side breaks on any system where the
+  // root itself sits under a link — macOS puts temp dirs at /var/folders/… which is a
+  // symlink to /private/var/folders/… — and would refuse perfectly legitimate files.
+  const realRoot = await realpathOrSelf(rootAbs);
+  const realPath = await fs.realpath(resolved).catch(() => null);
+  if (!realPath || (realPath !== realRoot && !realPath.startsWith(realRoot + path.sep))) {
+    throw new Error(`Invalid ${label}: resolves outside the project`);
+  }
+
+  try {
+    return await fs.readFile(resolved, {
+      encoding,
+      flag: fsConstants.O_RDONLY | fsConstants.O_NOFOLLOW,
+    });
+  } catch (err) {
+    // ELOOP is O_NOFOLLOW refusing a symlink — a refusal, not a missing file. Callers map
+    // "not found" to 404 and this must not land there.
+    if (err?.code === 'ELOOP') {
+      throw new Error(`Invalid ${label}: symlinks are not allowed`);
+    }
+    throw err;
+  }
 }
 
 /**

@@ -264,7 +264,10 @@ async function buildSnapshotSummary(snapshot, type, config) {
       summary: snapshot?.summary ?? {},
       checks: (snapshot?.checks ?? []).map((c) => ({ id: c.id, title: c.title, status: c.status, summary: c.summary })),
     };
-    const payload = redactSensitiveData(JSON.stringify(compact));
+    // Redact the OBJECT, then serialize. The other order (stringify first) reaches only the
+    // string patterns, so the key-based branch never sees a key it could match — the same
+    // inversion mcp-parking.js documents at length and line 218 above already avoids.
+    const payload = JSON.stringify(redactSensitiveData(compact));
     const prompt = `${interpolate(tmpl, { type, org: snapshot?.org ?? 'org' })}\n\nSNAPSHOT JSON:\n${payload}`;
     const res = await runAiPrompt(prompt, {
       config,

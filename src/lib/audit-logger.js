@@ -53,13 +53,70 @@ const SFDX_AUTH_URL_RE = /force:\/\/[^\s"']+/g;
 
 // `Authorization: Bearer <token>` as it appears in a captured request or a
 // curl line. Keeps the scheme so the redaction is readable in context.
+// `Basic` too: a base64 `user:password` is every bit as replayable, and the same
+// captured-request text carries it.
 const BEARER_RE = /\b(Bearer)\s+[A-Za-z0-9._~+/-]{12,}={0,2}/gi;
+
+// `Basic <base64(user:password)>` is every bit as replayable, but the scheme word is also an
+// ordinary English adjective — a bare `Basic\s+\w{12,}` turned "Basic authentication
+// required" into "Basic [REDACTED] required", corrupting prose on its way to the model and
+// into the audit trail. The lookahead demands the token actually look like base64 (at least
+// one digit, `+`, `/` or `=`), which no English word satisfies.
+const BASIC_AUTH_RE = /\b(Basic)\s+(?=[A-Za-z0-9+/]*[0-9+/=])[A-Za-z0-9+/]{12,}={0,2}/g;
 
 // key=value / key: value for secret-ish names in prose. The `\b` after the name
 // matters: it keeps `apiKeyEnv: "MY_VAR"` (a variable NAME, not a secret) from
 // being redacted, while still catching `api_key: abc123`.
-const SECRET_ASSIGNMENT_RE =
-  /\b(password|passwd|secret|client[_-]?secret|api[_-]?key|apikey|token|access[_-]?token|refresh[_-]?token|private[_-]?key)\b(\s*[:=]\s*)(["']?)([^\s"',;}]{4,})\3/gi;
+//
+// The separator has to survive SERIALIZATION, not just prose. Every AI path redacts the
+// assembled prompt *string* (ai.js), so this pattern — not the key-based object branch
+// below — is what actually runs on payloads. A bare `[:=]` only ever matched the prose
+// form: in JSON the next character after the name is a closing quote (`"password":"x"`)
+// and in XML it is `>` (`<password>x</password>`), so the two most common serializations
+// of a secret passed through verbatim. The optional quote before the separator and the
+// `>` in its class close both. `<` and `>` are excluded from the value so an XML match
+// stops at the closing tag instead of swallowing it.
+const SECRET_NAMES =
+  'password|passwd|secret|client[_-]?secret|consumer[_-]?secret|api[_-]?key|apikey|' +
+  'authorization|token|access[_-]?token|refresh[_-]?token|private[_-]?key';
+
+// Three shapes, three groups of alternatives:
+//
+//  - The leading `(?<![A-Za-z0-9])` replaces a plain `\b`. `\b` does not fire between `_` and
+//    a letter, so `SF_PASSWORD=...` — and every other env-var spelling — was passed through
+//    verbatim. Golden principle #4 makes env vars the canonical secret channel here, so an
+//    `env` dump or a `sf` error echoing one is exactly the text that reaches a provider. The
+//    lookbehind still refuses a match inside a word like `mypassword`.
+//  - A QUOTED value runs lazily to its matching quote, so spaces, commas, semicolons and
+//    braces inside it no longer end the match early and leave the tail in the clear.
+//  - A BARE value keeps the old conservative class, and `<`/`>` stay INSIDE it so
+//    `password: <hunter2>` still redacts — 0.25.0 caught that and an earlier cut of this
+//    change stopped catching it.
+//
+// The trailing `\b` after the name is what keeps `apiKeyEnv: "MY_VAR"` — a variable NAME, not
+// a secret — readable. That inverse matters as much as the redaction itself.
+//
+// `authorization` IS included, guarded by a scheme lookahead: its value is
+// `<scheme> <credential>`, so an unguarded match would redact the scheme and leave the
+// credential beside it. BEARER_RE / BASIC_AUTH_RE handle those two properly and run first;
+// this catches the schemeless remainder (`Authorization: sk-ant-...`).
+const SECRET_ASSIGNMENT_RE = new RegExp(
+  `(?<![A-Za-z0-9])(${SECRET_NAMES})\\b` +
+    '(["\']?\\s*[:=]\\s*)' +
+    '(?:(["\'])((?:(?!\\3)[^\\r\\n]){4,}?)\\3|(?!Bearer\\b|Basic\\b)([^\\s"\',;}]{4,}))',
+  'gi',
+);
+
+// XML/HTML element form, which the assignment pattern cannot express: the separator is `>`
+// and the value ends at `<`. Putting `>` into the assignment separator instead was a mistake
+// — it also matched the `>` of a CLOSING tag and of a comparison, so `</token> hardcoded`
+// silently deleted the following word. That is the same silent-deletion evasion primitive
+// PRIVATE_KEY_BLOCK_RE above documents, pointed at prose. Attributes are preserved so the
+// surrounding document still parses.
+const SECRET_ELEMENT_RE = new RegExp(
+  `<(${SECRET_NAMES})\\b([^>]*)>([^<]{4,})<\\/\\1(\\s*)>`,
+  'gi',
+);
 
 // JSON keys that should have their values redacted
 const SENSITIVE_KEYS = [
@@ -79,6 +136,18 @@ const SENSITIVE_KEYS = [
   'sessionid',
   'session_id',
   'sid',
+  // Keys are normalised with `.replace(/[^a-z]/g, '')` before lookup, so these entries are
+  // the letters-only forms: `x-api-key` arrives as `xapikey`, `Consumer Secret` as
+  // `consumersecret`. The list had no api-key, authorization, consumer-secret or
+  // private-key entry at all, so an object carrying any of them under its own name was
+  // returned verbatim even on the paths where this branch does run.
+  'apikey',
+  'xapikey',
+  'authorization',
+  'consumersecret',
+  'privatekey',
+  'passwd',
+  'sfdxauthurl',
 ];
 
 /**
@@ -109,9 +178,18 @@ export function redactSensitiveData(value) {
     redacted = redacted.replace(PRIVATE_KEY_BLOCK_RE, '[REDACTED_PRIVATE_KEY]');
     redacted = redacted.replace(SFDX_AUTH_URL_RE, '[REDACTED_SFDX_AUTH_URL]');
     redacted = redacted.replace(BEARER_RE, '$1 [REDACTED]');
+    redacted = redacted.replace(BASIC_AUTH_RE, '$1 [REDACTED]');
+    redacted = redacted.replace(SECRET_ELEMENT_RE, '<$1$2>[REDACTED]</$1$4>');
     redacted = redacted.replace(
       SECRET_ASSIGNMENT_RE,
-      (match, key, sep, quote) => `${key}${sep}${quote}[REDACTED]${quote}`,
+      // Quoted and bare values are separate alternatives, so exactly one of `quoted`/`bare`
+      // is defined. Re-emitting the quotes keeps JSON and YAML valid after redaction.
+      // `_bare` is the bare-value alternative; unused because that branch needs no quotes
+      // re-emitted, but named so the group positions stay readable against the pattern.
+      (match, key, sep, quote, quoted, _bare) =>
+        quoted !== undefined
+          ? `${key}${sep}${quote}[REDACTED]${quote}`
+          : `${key}${sep}[REDACTED]`,
     );
 
     return redacted;

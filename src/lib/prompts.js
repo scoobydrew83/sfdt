@@ -251,7 +251,8 @@ Focus on what changed from the user's perspective.
 
 TASK: Run \`git log\` and \`git diff\` to understand what changed, then write the release notes.
 Version: {{version}}
-Write the output to: {{outputPath}}
+Return the notes as your response — do not attempt to create or modify any file.
+sfdt saves them to {{outputPath}} itself.
 
 OUTPUT FORMAT:
 ## Overview

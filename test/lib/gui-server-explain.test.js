@@ -42,6 +42,8 @@ vi.mock('fs-extra', () => ({
     readJson: vi.fn().mockResolvedValue({}),
     readdir: vi.fn().mockResolvedValue([]),
     readFile: vi.fn().mockResolvedValue(''),
+    // Identity: these suites use virtual paths, and readFileContained realpaths before reading.
+    realpath: vi.fn().mockImplementation(async (p) => p),
     outputJson: vi.fn().mockResolvedValue(undefined),
     stat: vi.fn().mockResolvedValue({ mtime: new Date(), mtimeMs: Date.now(), size: 100, isDirectory: () => false }),
     remove: vi.fn().mockResolvedValue(undefined),
@@ -128,6 +130,7 @@ beforeEach(async () => {
   fsMock.existsSync.mockReturnValue(false);
   fsMock.pathExists.mockResolvedValue(false);
   fsMock.readJson.mockResolvedValue({});
+  fsMock.realpath.mockImplementation(async (p) => p);
   fsMock.readdir.mockResolvedValue([]);
   fsMock.readFile.mockResolvedValue('');
   fsMock.outputJson.mockResolvedValue(undefined);

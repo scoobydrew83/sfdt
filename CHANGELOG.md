@@ -16,9 +16,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   project" could name a *different* checkout and run against that project's authenticated
   org, while the tool list still presented it as read-only; with
   `SFDT_ALLOW_UNSAFE_CONFIG=1` exported it also reached the other project's plugin
-  `import()`. A server started inside an initialized project now refuses a `projectRoot`
-  outside it. The `SFDT_MCP_PROJECT_ROOTS` allowlist shipped in 0.25.0 was opt-in only, so
-  by default the model still chose the root.
+  `import()`. A server started inside a project now refuses a `projectRoot` outside it. The
+  `SFDT_MCP_PROJECT_ROOTS` allowlist shipped in 0.25.0 was opt-in only, so by default the
+  model still chose the root.
+- **A project whose config will not load is still a project.** Whether the server binds is
+  decided by *finding* the project, not by whether `loadConfig()` succeeded. It throws on the
+  content of `.sfdt/config.json`, `.sfdt/environments.json` and `sfdx-project.json` — all
+  committed files that arrive with whatever repo was cloned — so the first cut of the check
+  above let a hostile repository ship one malformed file and silently downgrade its own server
+  to unrestricted routing. Found by the pre-release review of that very change.
+- **A malformed `sfdx-project.json` reports a config error** instead of an unhandled
+  `SyntaxError` from the middle of `loadConfig`.
 
 ### Changed
 
@@ -28,6 +36,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   restricted — or list the roots in `SFDT_MCP_PROJECT_ROOTS` (colon-separated), which
   widens a project-bound server and wins wherever it is set. Only the implicit case is
   refused: a server launched inside project A, asked for project B, with no allowlist.
+  Subdirectories of the launch root are accepted — they name the same project, since config
+  resolution walks up regardless.
 
 ## [0.25.0] - 2026-09-04
 

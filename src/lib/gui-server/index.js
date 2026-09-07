@@ -49,7 +49,7 @@ import {
   searchSObjects, describeSObject, discoverRelationships,
   validateQuery, explainQuery, runQuery, runSearch, toCsv,
 } from '../soql-runner.js';
-import { resolveInProject, isPathWithinRoot, PROJECT_PATH_CONFIG_KEYS } from '../safe-path.js';
+import { resolveInProject, readFileContained, writeFileContained, isPathWithinRoot, PROJECT_PATH_CONFIG_KEYS } from '../safe-path.js';
 import { PRIVILEGE_CONFIG_KEYS } from '../config-trust.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -2279,7 +2279,7 @@ export function createGuiApp(config, version, port = DEFAULT_UI_PORT) {
         return res.json({ content: '', exists: false, file: path.relative(projectRoot, changelogPath) });
       }
 
-      const raw = await fs.readFile(changelogPath, 'utf8');
+      const raw = await readFileContained(projectRoot, changelogPath, { label: 'changelog' });
       const match = raw.match(/## \[Unreleased\]([\s\S]*?)(?=\n## \[|$)/);
       const content = match ? match[1].trim() : '';
       res.json({ content, exists: true, file: path.relative(projectRoot, changelogPath) });
@@ -2305,7 +2305,7 @@ export function createGuiApp(config, version, port = DEFAULT_UI_PORT) {
 
       let fullContent = '';
       if (await fs.pathExists(changelogPath)) {
-        fullContent = await fs.readFile(changelogPath, 'utf8');
+        fullContent = await readFileContained(projectRoot, changelogPath, { label: 'changelog' });
       } else {
         fullContent = '# Changelog\n\nAll notable changes to this project will be documented in this file.\n\n## [Unreleased]\n';
       }
@@ -2328,7 +2328,7 @@ export function createGuiApp(config, version, port = DEFAULT_UI_PORT) {
         }
       }
 
-      await fs.writeFile(changelogPath, updated);
+      await writeFileContained(projectRoot, changelogPath, updated, { label: 'changelog' });
       res.json({ ok: true, file: path.relative(projectRoot, changelogPath) });
     } catch (err) {
       res.status(err.statusCode ?? 500).json({ error: err.message });
@@ -2513,7 +2513,7 @@ export function createGuiApp(config, version, port = DEFAULT_UI_PORT) {
         return res.status(403).json({ error: 'Deployed manifests are read-only' });
       }
 
-      const xml = await fs.readFile(absPath, 'utf8');
+      const xml = await readFileContained(projectRoot, absPath, { label: 'manifest' });
       const updatedXml = removeComponentFromXml(xml, type, member);
       await fs.writeFile(absPath, updatedXml);
       res.json({ ok: true });
@@ -2775,7 +2775,7 @@ export function createGuiApp(config, version, port = DEFAULT_UI_PORT) {
         if (absPath.startsWith(deployedDir + path.sep) || absPath === deployedDir) {
           return res.status(403).json({ error: 'Deployed manifests are read-only' });
         }
-        let xml = await fs.readFile(absPath, 'utf8');
+        let xml = await readFileContained(projectRoot, absPath, { label: 'manifest' });
         let added = 0;
         for (const [type, members] of Object.entries(metadata)) {
           for (const member of members) {
@@ -3053,7 +3053,7 @@ export function createGuiApp(config, version, port = DEFAULT_UI_PORT) {
         return res.status(403).json({ error: 'Deployed manifests are read-only' });
       }
 
-      const xml = await fs.readFile(absPath, 'utf8');
+      const xml = await readFileContained(projectRoot, absPath, { label: 'manifest' });
       const updatedXml = addComponentToXml(xml, type, member);
       await fs.writeFile(absPath, updatedXml);
       res.json({ ok: true });
@@ -3073,7 +3073,7 @@ export function createGuiApp(config, version, port = DEFAULT_UI_PORT) {
 
       if (!(await fs.pathExists(absPath))) return res.status(404).json({ error: 'Manifest not found' });
 
-      const xml = await fs.readFile(absPath, 'utf8');
+      const xml = await readFileContained(projectRoot, absPath, { label: 'manifest' });
 
       // Ported logic from deployment-assistant.sh:
       // Extract <types> block where <name>ApexClass</name> exists
@@ -3235,7 +3235,7 @@ export function createGuiApp(config, version, port = DEFAULT_UI_PORT) {
       }
 
       const MAX_LOG_BYTES = 512 * 1024;
-      let logContent = await fs.readFile(resolvedLogPath, 'utf8');
+      let logContent = await readFileContained(projectRoot, resolvedLogPath, { label: 'log' });
       if (logContent.length > MAX_LOG_BYTES) logContent = logContent.slice(-MAX_LOG_BYTES);
 
       const available = await checkAi(config);
@@ -3805,7 +3805,7 @@ export function createGuiApp(config, version, port = DEFAULT_UI_PORT) {
         return res.status(404).json({ error: 'Manifest file not found' });
       }
 
-      const xml = await fs.readFile(absManifest, 'utf8');
+      const xml = await readFileContained(projectRoot, absManifest, { label: 'manifest' });
       const manifestComponents = parseManifestComponents(xml);
 
       if (!manifestComponents.size) {

@@ -45,8 +45,20 @@ actually separates the safe case from the abusable one:
 
 | Launched | `projectRoot` behaviour |
 |---|---|
-| **Inside a project** (`loadConfig()` succeeded at startup) | Serves **that project only**. It may be restated but not redirected. This is the case a model can abuse, because the operator believes the server is scoped to the project they started it in. |
+| **Inside a project** (an `sfdx-project.json` exists at or above the launch directory) | Serves **that project only**. `projectRoot` may restate the root, or name any path *under* it, but not point somewhere else. This is the case a model can abuse, because the operator believes the server is scoped to the project they started it in. |
 | **Outside any project** (neutral) | **Unrestricted.** Routing every call is this mode's entire purpose; nothing changed for it. |
+
+Being inside a project is decided by looking for the project, not by whether its configuration
+loads. A project whose `.sfdt/config.json`, `.sfdt/environments.json`, or `sfdx-project.json` is
+malformed still binds the server — the tools will report the config error rather than quietly
+serving somewhere else. Those files are committed and arrive with whatever repo was cloned, so
+the alternative would let a repository decide that the server reviewing it should be
+unrestricted.
+
+Subdirectories are accepted: `projectRoot: "<root>/force-app/main/default"` names the same
+project, because config resolution walks up to the nearest `sfdx-project.json` + `.sfdt/` anyway.
+A sibling that merely shares the prefix (`/work/customer-a-old` against `/work/customer-a`) is
+still refused.
 
 A multi-project server is therefore one you start *outside* any project — which is what it
 already was. To keep a **project-bound** server serving several checkouts, name them:

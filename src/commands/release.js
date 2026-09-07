@@ -102,16 +102,24 @@ export function registerReleaseCommand(program) {
               prompt += frameProvidedContext('Git history', gitLog);
             }
 
+            // No `Write`. This was the only site granting the model write access outside the
+            // SFDT_ALLOW_AI_WRITE-gated agent loop, and the content it reasons over is
+            // `git log` output — commit BODIES, which in a cloned repo are authored by
+            // whoever wrote the history. A body ending in instructions to write
+            // `.git/hooks/post-checkout` or a `package.json` postinstall would have been
+            // acted on with unrestricted Write at the project root. `sfdt changelog` and the
+            // GUI's release-notes route already do this same job read-only; this now matches
+            // them. Capture rather than stream, so the notes come back on stdout and THIS
+            // code writes the one file that should be written.
             const notesResponse = await runAiPrompt(prompt, {
               config,
-              allowedTools: ['Bash(git log:*)', 'Read', 'Write'],
+              allowedTools: ['Bash(git log:*)', 'Read'],
               cwd: projectRoot,
               aiEnabled: true,
-              interactive: !httpMode,
+              interactive: false,
             });
 
-            // The model can't Write under HTTP — persist the returned notes here.
-            if (httpMode && notesResponse?.stdout?.trim()) {
+            if (notesResponse?.stdout?.trim()) {
               await fs.writeFile(notesFilePath, notesResponse.stdout.trim() + '\n');
             }
 

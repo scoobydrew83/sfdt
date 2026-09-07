@@ -39,6 +39,10 @@ vi.mock('fs-extra', () => ({
     pathExists: vi.fn().mockResolvedValue(true),
     readJson: vi.fn().mockResolvedValue({ latest: 'json' }),
     readdir: vi.fn().mockResolvedValue([]),
+    // Identity — this suite uses virtual paths like /project that do not exist on disk.
+    // The real symlink behaviour is covered by test/lib/mcp-launch-root-symlink.test.js,
+    // which uses no mocks precisely because a stubbed realpath cannot show it.
+    realpath: vi.fn().mockImplementation(async (p) => p),
   },
 }));
 
@@ -50,6 +54,10 @@ vi.mock('../../src/lib/config.js', () => ({
     defaultOrg: 'dev',
     logDir: '/project/logs',
   }),
+  // Discovery is deliberately separate from loading — see findProjectRoot in config.js and
+  // the startup-failure tests below. Default null: most tests start from a loadConfig that
+  // resolves, so discovery is never consulted.
+  findProjectRoot: vi.fn().mockReturnValue(null),
 }));
 
 vi.mock('../../src/lib/mcp-parking.js', () => ({
@@ -59,7 +67,7 @@ vi.mock('../../src/lib/mcp-parking.js', () => ({
 
 import { execa } from 'execa';
 import fs from 'fs-extra';
-import { loadConfig } from '../../src/lib/config.js';
+import { loadConfig, findProjectRoot } from '../../src/lib/config.js';
 import { SfdtMcpServer, TOOLS } from '../../src/lib/mcp-server.js';
 import { parkIfNeeded, getParkedResult } from '../../src/lib/mcp-parking.js';
 
@@ -82,6 +90,21 @@ describe('SfdtMcpServer', () => {
     mockRegisteredHandlers.clear();
     loadConfig.mockReset();
     loadConfig.mockRejectedValueOnce(new Error('no configured project in cwd'));
+    // Genuinely neutral: cwd is outside any project, so discovery finds nothing.
+    findProjectRoot.mockReturnValue(null);
+    const server = new SfdtMcpServer();
+    await server.start();
+    return server;
+  }
+
+  // A server launched INSIDE a project whose committed config fails to load. loadConfig
+  // throws exactly as it would for "no project here" — discovery is what tells the two
+  // apart. This is the shape that made the guard fail open (sfdt-private#23).
+  async function startWithUnloadableConfig(root = PROJECT_BOUND_ROOT) {
+    mockRegisteredHandlers.clear();
+    loadConfig.mockReset();
+    loadConfig.mockRejectedValueOnce(new Error('Failed to parse /project/.sfdt/config.json'));
+    findProjectRoot.mockReturnValue(root);
     const server = new SfdtMcpServer();
     await server.start();
     return server;
@@ -139,15 +162,12 @@ describe('SfdtMcpServer', () => {
   });
 
   describe('call-tool actions', () => {
-    let callHandler;
-
-    beforeEach(() => {
-      callHandler = mockRegisteredHandlers.get('call-tool');
-    });
-
-    const callTool = (name, args = {}) => {
-      return callHandler({ params: { name, arguments: args } });
-    };
+    // Resolve the handler at CALL time, not once in a beforeEach. A test that starts a
+    // different server (neutral, or one whose config failed to load) re-registers handlers,
+    // and a captured reference would silently keep driving the project-bound server from the
+    // outer beforeEach — so the test would pass or fail for reasons unrelated to its name.
+    const callTool = (name, args = {}) =>
+      mockRegisteredHandlers.get('call-tool')({ params: { name, arguments: args } });
 
     // Multi-project routing is what a NEUTRAL server is for, so these start one
     // rather than redirecting a project-bound server — which is now refused, and
@@ -246,13 +266,45 @@ describe('SfdtMcpServer', () => {
         execa.mockResolvedValueOnce({ exitCode: 0, stdout: 'ok', stderr: '' });
 
         const res = await callTool('sfdt_preflight', { projectRoot: PROJECT_BOUND_ROOT });
-        expect(res.content[0].text).not.toMatch(/outside this server's project/);
+        // Assert it actually RAN, not merely that it failed for some other reason: a bare
+        // `.not.toMatch(...)` passes on any unrelated error and proves nothing.
+        expect(res.isError).toBeFalsy();
+        expect(execa).toHaveBeenCalled();
       });
 
       it('still allows omitting projectRoot entirely', async () => {
         execa.mockResolvedValueOnce({ exitCode: 0, stdout: 'ok', stderr: '' });
         const res = await callTool('sfdt_preflight', {});
-        expect(res.content[0].text).not.toMatch(/outside this server's project/);
+        expect(res.isError).toBeFalsy();
+        expect(execa).toHaveBeenCalled();
+      });
+
+      // loadConfig() WALKS UP to the nearest ancestor holding sfdx-project.json + .sfdt/,
+      // so a subdirectory names the very same project. Identity comparison refused these,
+      // and the refusal text pointed the user at SFDT_MCP_PROJECT_ROOTS — i.e. at turning
+      // the guard off to fix what looks like a bug.
+      it('accepts a subdirectory of its own root — it names the same project', async () => {
+        const sub = path.join(PROJECT_BOUND_ROOT, 'force-app', 'main', 'default');
+        loadConfig.mockResolvedValueOnce({
+          _projectRoot: PROJECT_BOUND_ROOT,
+          _configDir: `${PROJECT_BOUND_ROOT}/.sfdt`,
+          logDir: `${PROJECT_BOUND_ROOT}/logs`,
+        });
+        execa.mockResolvedValueOnce({ exitCode: 0, stdout: 'ok', stderr: '' });
+
+        const res = await callTool('sfdt_preflight', { projectRoot: sub });
+        expect(res.isError).toBeFalsy();
+        expect(execa).toHaveBeenCalled();
+      });
+
+      it('still refuses a sibling that merely shares the root as a prefix', async () => {
+        execa.mockClear();
+        // `/project-evil` startsWith `/project` — the path.sep terminator is what stops it.
+        const res = await callTool('sfdt_preflight', { projectRoot: `${PROJECT_BOUND_ROOT}-evil` });
+
+        expect(res.isError).toBe(true);
+        expect(res.content[0].text).toMatch(/outside this server's project/);
+        expect(execa).not.toHaveBeenCalled();
       });
 
       it('SFDT_MCP_PROJECT_ROOTS widens it deliberately', async () => {
@@ -265,8 +317,42 @@ describe('SfdtMcpServer', () => {
         execa.mockResolvedValueOnce({ exitCode: 0, stdout: 'ok', stderr: '' });
 
         const res = await callTool('sfdt_preflight', { projectRoot: '/workspace/other-customer' });
-        expect(res.content[0].text).not.toMatch(/outside this server's project/);
+        expect(res.isError).toBeFalsy();
+        expect(execa).toHaveBeenCalled();
         delete process.env.SFDT_MCP_PROJECT_ROOTS;
+      });
+    });
+
+    // The guard decided project-bound vs neutral by whether loadConfig() THREW. It throws on
+    // the CONTENT of committed files — .sfdt/config.json, .sfdt/environments.json,
+    // sfdx-project.json — which arrive with whatever repo was cloned. So a hostile repo could
+    // ship one malformed committed file and silently downgrade the server to unrestricted
+    // routing: the fix failing open in exactly the case it exists to close. (sfdt-private#23)
+    describe('a project whose config will not load is still a project', () => {
+      it('stays bound and refuses a foreign root when loadConfig throws at startup', async () => {
+        const server = await startWithUnloadableConfig();
+        expect(server).toBeDefined();
+        execa.mockClear();
+
+        const res = await callTool('sfdt_preflight', { projectRoot: '/workspace/other-customer' });
+
+        expect(res.isError).toBe(true);
+        expect(res.content[0].text).toMatch(/outside this server's project/);
+        expect(execa).not.toHaveBeenCalled();
+      });
+
+      it('is neutral only when discovery finds no project at all', async () => {
+        await startNeutralServer();
+        loadConfig.mockResolvedValueOnce({
+          _projectRoot: '/workspace/other-customer',
+          _configDir: '/workspace/other-customer/.sfdt',
+          logDir: '/workspace/other-customer/logs',
+        });
+        execa.mockResolvedValueOnce({ exitCode: 0, stdout: 'ok', stderr: '' });
+
+        const res = await callTool('sfdt_preflight', { projectRoot: '/workspace/other-customer' });
+        expect(res.isError).toBeFalsy();
+        expect(execa).toHaveBeenCalled();
       });
     });
 
@@ -291,13 +377,18 @@ describe('SfdtMcpServer', () => {
         expect(res.content[0].text).not.toMatch(/not in SFDT_MCP_PROJECT_ROOTS/);
       });
 
+      // Must run against a NEUTRAL server. Against the project-bound one from beforeEach the
+      // call is refused by the launch-root guard instead, and an assertion that only checks
+      // for the *allowlist* message passes while the routing it names does not happen.
       it('is inert when unset — cross-project routing still works', async () => {
+        await startNeutralServer();
         loadConfig.mockImplementation(async (root) => ({
           _projectRoot: root || '/project', _configDir: `${root || '/project'}/.sfdt`, logDir: `${root || '/project'}/logs`,
         }));
         execa.mockResolvedValue({ exitCode: 0, stdout: 'ok', stderr: '' });
         const res = await callTool('sfdt_preflight', { projectRoot: '/workspace/anywhere' });
-        expect(res.content[0].text).not.toMatch(/not in SFDT_MCP_PROJECT_ROOTS/);
+        expect(res.isError).toBeFalsy();
+        expect(execa).toHaveBeenCalled();
       });
     });
 
