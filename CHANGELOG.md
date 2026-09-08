@@ -7,6 +7,58 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.26.1] - 2026-09-07
+
+A maintenance release: a week of dependency updates, a CI gap closed, and one security fix
+the pre-release gate turned up.
+
+The gate finding is the notable part, and it rhymes with 0.26.0's: the correct control
+already existed in this codebase, applied at one call site and never moved to its siblings.
+
+### Security
+
+- **The Compare page can no longer be made to read files outside your project.** The GUI
+  server's local-component read globbed the source tree and read the hit with a bare
+  `readFile`, relying on a `path.relative(...).startsWith('..')` filter. That is a *string*
+  check on the glob hit's own path, so a symlink sitting inside `force-app/` passed it and
+  the read followed the link anywhere on disk — the route-level guard on `member` is no help,
+  because the traversal lives in the filesystem, not the parameter.
+
+  Clone a hostile or compromised SFDX repo in which `AccountService.cls` is a symlink to
+  `~/.sfdx/<user>.json` (an org refresh token), `~/.ssh/id_rsa`, or `~/.aws/credentials`, run
+  `sfdt ui`, and open Compare: that file came back in the browser as `sourceXml`. The read now
+  goes through `readFileContained`, which adds `realpath` containment and `O_NOFOLLOW`. A
+  refusal returns "no local file", the same answer a missing file gives.
+
+  This was a missed site in a fix already made — `/api/manifests/content` moved onto the same
+  helper in 0.26.0. The regression test uses a real symlink on a real filesystem, because a
+  mocked `fs` cannot tell you whether `readFile` follows a link.
+
+### Changed
+
+- **Dependency maintenance.** Runtime: `nodemailer` 9 → 10 (the lazy-import contract in the
+  email notifier is unchanged — verified against the real package, not just the mocked test),
+  `express-rate-limit` 8.6.2 → 8.7.0, `inquirer` 14.2.0 → 14.2.1, `open` 11.0.1 → 11.0.2.
+  Tooling: `@oclif/core` 4 → 5 and `oclif` 4 → 5 for `@sfdt/plugin` (both require Node ≥ 22,
+  which `engines` already demanded), `next` 15 → 16 and `@types/node` 22 → 25 in the `web`
+  workspace, plus eight grouped dev-dependency updates.
+
+- **`@sfdt/plugin` bumped to 0.26.1** in lockstep with the CLI, as always.
+
+### Fixed
+
+- **CI now builds and typechecks the `web` workspace.** The suite ran `test:web` (vitest) but
+  never `next build` or web's `tsc`, so a Next major could land green on unit tests alone —
+  and did: both the Next 16 and `@types/node` 25 bumps in this release were verified by hand
+  during triage rather than by CI. Both now run in the `test` job.
+
+- **Dependabot no longer reopens an unmergeable `@vitest/coverage-v8` PR every Monday.** Every
+  `@vitest/*` package peer-depends on an exact `vitest` version, and `vitest` majors were
+  already ignored — so a lone coverage-v8 major could never install, failing `npm ci` with
+  ERESOLVE before a single test ran. The ignore list now covers `@vitest/*` alongside `vitest`.
+
+Note: `@sfdt/flow-core` is unchanged at 0.14.0 and its publish step will skip.
+
 ## [0.26.0] - 2026-09-06
 
 A security release, and a short one — four days after 0.25.0, because 0.25.0 shipped this

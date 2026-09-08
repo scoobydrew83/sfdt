@@ -1,6 +1,6 @@
 # Chrome Web Store Listing
 
-> **Store-sync status:** Updated for **v0.15.0** (49 features — the count is read from
+> **Store-sync status:** Updated for **v0.16.0** (49 features — the count is read from
 > `generated/chrome-features.json`, never counted by hand; re-derive it each release
 > instead of incrementing it). Three of those 49 ship **off by default**: Delete records
 > (`record-delete`), Bulk delete from SOQL results (`soql-bulk-delete`), and Generate
