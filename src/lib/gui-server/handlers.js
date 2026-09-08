@@ -1,6 +1,7 @@
 import fs from 'fs-extra';
 import path from 'path';
 import { execa } from 'execa';
+import { readFileContained } from '../safe-path.js';
 
 export function removeComponentFromXml(xml, type, member) {
   const blockPattern = /(<types>[\s\S]*?<\/types>)/g;
@@ -102,7 +103,6 @@ export async function batchRetrieveTypeMembers(orgAlias, type, members, tmpDir) 
 export async function readLocalComponentXml(config, _type, member) {
   if (member.includes('..') || member.includes('/')) return null;
   const { glob } = await import('glob');
-  const fsExtra = (await import('fs-extra')).default;
   const sourcePath = config.defaultSourcePath ?? 'force-app/main/default';
   const root = config._projectRoot ?? process.cwd();
   const absSource = path.join(root, sourcePath);
@@ -118,5 +118,19 @@ export async function readLocalComponentXml(config, _type, member) {
       (f.endsWith('.xml') || f.endsWith('.cls') || f.endsWith('.trigger'))
   );
   if (!xmlFile) return null;
-  return fsExtra.readFile(xmlFile, 'utf8');
+  // The `..` filter above is a string check on the glob hit's own path, so a symlink
+  // sitting inside absSource passes it and readFile would follow it anywhere on disk.
+  // readFileContained adds the realpath + O_NOFOLLOW layers. /api/manifests/content
+  // moved onto the same helper (index.js, sfdt-private#23 M-2); this sibling was missed.
+  try {
+    return await readFileContained(absSource, xmlFile, { label: 'component' });
+  } catch (err) {
+    // A containment/symlink refusal means there is no readable local component here —
+    // the same answer the `!xmlFile` branch above gives. Anything else (EACCES, a
+    // dangling link's ENOENT) propagates, as the bare readFile did before.
+    if (/resolves outside the project|symlinks are not allowed/.test(err?.message ?? '')) {
+      return null;
+    }
+    throw err;
+  }
 }

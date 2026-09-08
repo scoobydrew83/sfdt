@@ -3,6 +3,13 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 vi.mock('fs-extra', () => ({
   default: {
     readFile: vi.fn(),
+    // readLocalComponentXml reads through safe-path's readFileContained, which calls
+    // fs.realpath for symlink containment. These are unit tests over the glob/filter
+    // logic with synthetic paths, so realpath is identity here ("not a symlink").
+    // The containment property itself is tested against a real filesystem with a real
+    // symlink in gui-server-component-symlink.test.js — mocking it here would prove
+    // nothing about it either way.
+    realpath: vi.fn(async (p) => p),
   },
 }));
 
