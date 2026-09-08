@@ -39,6 +39,12 @@ jobs:
       - run: npm run lint
       - run: npm test
       - run: npm run test:web
+      # test:web only runs vitest. Neither the Next build nor web's tsc ran in CI
+      # until now, so a Next major could land green on unit tests alone.
+      - name: Typecheck @sfdt/web
+        run: npm run typecheck -w @sfdt/web
+      - name: Build @sfdt/web (Next build — flow-core is already built by pretest)
+        run: npm run build:web
       - name: Surface contracts (catalog drift + license/node/auth consistency)
         run: npm run check:all-contracts
       - name: Build @sfdt/plugin (codegen + tsc — catches CLI command-tree drift)
