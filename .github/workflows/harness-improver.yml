@@ -53,10 +53,16 @@ jobs:
 
       - name: Verify the agent definition is present
         run: |
-          DEF=.harness-skills/harness-improver.md
+          # Definitions live under agents/ in the skills repo — they were moved there
+          # on 2026-08-08 (scoobydrew83/skills b7bbba8, "collect agent definitions
+          # under agents/"). This path tracked the old root location and the job had
+          # failed every week since; the checkout is unpinned, so the move landed here
+          # the following Sunday.
+          DEF=.harness-skills/agents/harness-improver.md
           if [ ! -f "$DEF" ]; then
             echo "::error::$DEF not found in scoobydrew83/skills."
-            echo "The harness-improver agent definition has not been published to the skills repo yet (H-011)."
+            echo "Either the definition was moved again, or the skills checkout failed."
+            echo "Definitions live under agents/ — check that path before assuming it is unpublished."
             echo "This job runs the definition rather than a vendored copy, so it cannot proceed without it."
             exit 1
           fi
@@ -154,7 +160,7 @@ jobs:
           claude_args: >-
             --allowedTools 'Read,Glob,Grep,Edit,Write,Bash(sfdt history:*),Bash(sfdt notify:*),Bash(git status:*),Bash(git diff:*),Bash(git log:*),Bash(git branch:*),Bash(git switch:*),Bash(git checkout:*),Bash(git add:*),Bash(git commit:*),Bash(git push:*),Bash(gh pr create:*),Bash(gh pr list:*),Bash(gh pr view:*),Bash(npm run check:*),Bash(npm run generate:catalogs),Bash(npm test:*),Bash(node tools/:*)'
           prompt: |
-            Read `.harness-skills/harness-improver.md` and follow its procedure exactly — it is your agent definition, including your hard bounds.
+            Read `.harness-skills/agents/harness-improver.md` and follow its procedure exactly — it is your agent definition, including your hard bounds.
 
             Repository: ${{ github.repository }} (default branch: ${{ github.event.repository.default_branch }}). You are running unattended on a schedule.
 
