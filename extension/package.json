@@ -19,7 +19,7 @@
   },
   "dependencies": {
     "@sfdt/flow-core": "^0.14.0",
-    "zod": "^3.23.8"
+    "zod": "^4.5.4"
   },
   "devDependencies": {
     "@types/chrome": "^0.2.8",
