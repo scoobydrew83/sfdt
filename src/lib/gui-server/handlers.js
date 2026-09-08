@@ -1,7 +1,7 @@
 import fs from 'fs-extra';
 import path from 'path';
 import { execa } from 'execa';
-import { readFileContained } from '../safe-path.js';
+import { readFileContained, isContainmentRefusal } from '../safe-path.js';
 
 export function removeComponentFromXml(xml, type, member) {
   const blockPattern = /(<types>[\s\S]*?<\/types>)/g;
@@ -128,9 +128,7 @@ export async function readLocalComponentXml(config, _type, member) {
     // A containment/symlink refusal means there is no readable local component here —
     // the same answer the `!xmlFile` branch above gives. Anything else (EACCES, a
     // dangling link's ENOENT) propagates, as the bare readFile did before.
-    if (/resolves outside the project|symlinks are not allowed/.test(err?.message ?? '')) {
-      return null;
-    }
+    if (isContainmentRefusal(err)) return null;
     throw err;
   }
 }
