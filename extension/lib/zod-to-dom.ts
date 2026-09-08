@@ -10,9 +10,9 @@ export interface Field<T> {
 
 export function buildField<T>(schema: ZodTypeAny, initial: T): Field<T> {
   if (schema instanceof z.ZodOptional || schema instanceof z.ZodDefault) {
-    const inner = (schema._def as { innerType?: ZodTypeAny; schema?: ZodTypeAny }).innerType
-      ?? (schema._def as { schema?: ZodTypeAny }).schema;
-    if (inner) return buildField(inner, initial);
+    // unwrap() is typed against zod's core $ZodType; buildField wants the
+    // classic ZodType surface the instanceof checks below rely on.
+    return buildField(schema.unwrap() as ZodTypeAny, initial);
   }
   if (schema instanceof z.ZodBoolean) {
     const input = document.createElement('input');
@@ -49,7 +49,7 @@ export function buildField<T>(schema: ZodTypeAny, initial: T): Field<T> {
   if (schema instanceof z.ZodEnum) {
     const select = document.createElement('select');
     select.className = 'sfdt-field';
-    const values = (schema._def as { values: readonly string[] }).values;
+    const values = schema.options as readonly string[];
     for (const v of values) {
       const opt = document.createElement('option');
       opt.value = v;
@@ -65,7 +65,7 @@ export function buildField<T>(schema: ZodTypeAny, initial: T): Field<T> {
   if (schema instanceof z.ZodObject) {
     const fieldset = document.createElement('fieldset');
     fieldset.classList.add('sfdt-fieldset');
-    const shape = (schema._def as { shape: () => Record<string, ZodTypeAny> }).shape();
+    const shape = schema.shape as Record<string, ZodTypeAny>;
     const children: Record<string, Field<unknown>> = {};
     for (const [key, childSchema] of Object.entries(shape)) {
       const childInitial =
@@ -93,6 +93,6 @@ export function buildField<T>(schema: ZodTypeAny, initial: T): Field<T> {
       },
     };
   }
-  const typeName = (schema._def as { typeName?: string }).typeName ?? 'unknown';
+  const typeName = (schema._def as { type?: string }).type ?? 'unknown';
   throw new Error(`Unsupported zod type for DOM rendering: ${typeName}`);
 }

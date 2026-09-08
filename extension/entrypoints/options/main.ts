@@ -503,7 +503,7 @@ async function render(): Promise<void> {
     const initialBlock =
       (settings.featureSettings?.[manifest.id] as Record<string, unknown> | undefined) ??
       (schema.parse({}) as Record<string, unknown>);
-    const shape = schema._def.shape();
+    const shape = schema.shape;
     const fieldGetters: Record<string, () => unknown> = {};
     for (const [key, childSchema] of Object.entries(shape)) {
       const field = buildField<unknown>(childSchema as z.ZodTypeAny, initialBlock[key]);

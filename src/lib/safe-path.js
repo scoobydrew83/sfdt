@@ -241,6 +241,25 @@ export async function readFileContained(root, absPath, options = {}) {
 }
 
 /**
+ * Does this error mean a containment guard refused the path, as opposed to the file
+ * simply not being there or not being readable?
+ *
+ * `readFileContained` and friends signal a refusal through the message text, so every
+ * caller that wants to map a refusal differently from a real error has to recognise
+ * that wording. Two call sites were already doing it with their own copy of the same
+ * regex (`gui-server/index.js`, `gui-server/handlers.js`) — which is precisely the
+ * drift the containment helpers exist to stop, reintroduced one layer up. Keep the
+ * classification next to the code that throws it so a reworded message updates both.
+ *
+ * @param {unknown} err
+ * @returns {boolean}
+ */
+export function isContainmentRefusal(err) {
+  const message = err && typeof err === 'object' ? (err.message ?? '') : '';
+  return /resolves outside the project|symlinks are not allowed/.test(message);
+}
+
+/**
  * Salesforce API names — objects, fields, platform events. Same threat class as
  * SET_RE above: these are interpolated into REST paths and filesystem paths, and
  * on the MCP surface they are model-supplied.

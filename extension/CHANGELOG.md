@@ -4,6 +4,8 @@ All notable changes to `@sfdt/extension` are documented here. Format follows [Ke
 
 ## [Unreleased]
 
+## [0.16.0] - 2026-09-07
+
 ### Added
 
 - **Quality Results — the last `sfdt quality` run, in the Workspace (C-P5-1).** Salesforce Code
@@ -35,6 +37,24 @@ All notable changes to `@sfdt/extension` are documented here. Format follows [Ke
   bridge answers the new kind with `REQUEST_INVALID`, which the panel surfaces with its hint.
 - Chrome Web Store listing synced to the 49-feature catalog (bullet + counts for Quality
   Results). Permission set **unchanged** — verified against `wxt.config.ts`.
+
+### Changed
+
+- **Migrated to zod 4.** Settings validation moves from zod 3 to 4. Two things changed
+  upstream and both are handled: the schema internals the options page reads to render
+  fields moved to public accessors (`.shape`, `.options`, `.unwrap()`), and `.default()`
+  stopped re-parsing its argument.
+
+  That second one mattered. In zod 3, `.default({})` on a settings block filled in each
+  field's own default; in zod 4 it returns `{}` verbatim. Left unchanged, a profile with
+  nothing stored would have loaded `bridge`, `telemetry`, and `activityLog` as empty
+  objects — no SMTP port, no shortcut, no highlight colour. The seven affected containers
+  now use `.prefault({})`, which restores the zod 3 behaviour. Every `.default(` in the
+  settings schema was reviewed individually, because this failure mode is invisible to
+  both the compiler and any test that does not assert on a default.
+
+  Authoritative validation is unchanged; the accessor moves are confined to the rendering
+  helper.
 
 ## [0.15.0] - 2026-08-25
 

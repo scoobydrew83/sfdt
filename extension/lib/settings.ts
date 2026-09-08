@@ -24,7 +24,7 @@ export const SettingsSchema = z.object({
       automationHomeEnabled: z.boolean().default(false),
       groupingEnabled: z.boolean().default(false),
     })
-    .default({}),
+    .prefault({}),
 
   // @deprecated — superseded by registerSettingsShape('canvas-search', …).
   canvasSearch: z
@@ -32,27 +32,27 @@ export const SettingsSchema = z.object({
       shortcut: z.string().default('Ctrl+Shift+F'),
       highlightColour: z.string().default('#FFD700'),
     })
-    .default({}),
+    .prefault({}),
 
   // @deprecated — superseded by registerSettingsShape('api-name-generator', …).
   apiNameGenerator: z
     .object({
       namingPattern: z.enum(['Snake_Case', 'PascalCase', 'camelCase']).default('camelCase'),
     })
-    .default({}),
+    .prefault({}),
 
   // @deprecated — superseded by registerSettingsShape('scheduled-flow-explorer', …).
   scheduledFlowExplorer: z
     .object({
       defaultView: z.enum(['list', 'calendar']).default('list'),
     })
-    .default({}),
+    .prefault({}),
 
   telemetry: z
     .object({
       enabled: z.boolean().default(false),
     })
-    .default({}),
+    .prefault({}),
 
   // Local "Recent activity" log shown on the Workspace Overview (lib/activity-log.ts).
   // A global UI preference like telemetry/theme, not a kill-switchable content
@@ -65,7 +65,7 @@ export const SettingsSchema = z.object({
     .object({
       enabled: z.boolean().default(true),
     })
-    .default({}),
+    .prefault({}),
 
   // Global UI preference (P0-2 dark mode) — like telemetry/bridge, a top-level
   // app setting, not a per-feature/kill-switchable content feature. 'auto'
@@ -98,7 +98,7 @@ export const SettingsSchema = z.object({
       preferredTransport: z.enum(['auto', 'localhost', 'native']).default('auto'),
       localhostPort: z.number().int().positive().default(7654),
     })
-    .default({}),
+    .prefault({}),
 
   // User-defined command-palette shortcuts (P2-2). A global preference like
   // theme/bridge — NOT a per-feature/kill-switchable content feature. `url` is

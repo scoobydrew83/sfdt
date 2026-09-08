@@ -48,7 +48,7 @@ import {
   searchSObjects, describeSObject, discoverRelationships,
   validateQuery, explainQuery, runQuery, runSearch, toCsv,
 } from '../soql-runner.js';
-import { resolveInProject, readFileContained, writeFileContained, isPathWithinRoot, PROJECT_PATH_CONFIG_KEYS } from '../safe-path.js';
+import { resolveInProject, readFileContained, writeFileContained, isPathWithinRoot, isContainmentRefusal, PROJECT_PATH_CONFIG_KEYS } from '../safe-path.js';
 import { PRIVILEGE_CONFIG_KEYS } from '../config-trust.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -1876,7 +1876,7 @@ export function createGuiApp(config, version, port = DEFAULT_UI_PORT) {
         // Only a containment/symlink refusal is a 403. Everything else — a missing file, an
         // unreadable one (EACCES) — falls through to the outer catch's 404, which is what the
         // inline version did before this route moved onto the shared helper.
-        const refused = /resolves outside the project|symlinks are not allowed/.test(err?.message ?? '');
+        const refused = isContainmentRefusal(err);
         if (!refused) throw err;
         return res.status(403).json({ error: 'Forbidden' });
       }

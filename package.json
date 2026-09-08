@@ -1,6 +1,6 @@
 {
   "name": "@sfdt/cli",
-  "version": "0.26.0",
+  "version": "0.26.1",
   "description": "Salesforce DevTools — Production-grade CLI for Salesforce DX deployment, testing, quality analysis, and release management",
   "type": "module",
   "bin": {
@@ -112,7 +112,7 @@
     "semver": "^7.8.0"
   },
   "optionalDependencies": {
-    "nodemailer": "^9.0.1"
+    "nodemailer": "^10.0.0"
   },
   "devDependencies": {
     "@vitest/coverage-v8": "^4.1.4",
