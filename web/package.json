@@ -21,11 +21,11 @@
   },
   "devDependencies": {
     "@opennextjs/cloudflare": "^1.6.5",
-    "@types/node": "^25.9.5",
+    "@types/node": "^25.9.6",
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.7",
     "typescript": "^5.7.3",
     "vitest": "^4.1.4",
-    "wrangler": "^4.129.0"
+    "wrangler": "^4.131.0"
   }
 }
