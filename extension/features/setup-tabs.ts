@@ -1,3 +1,6 @@
+// Portions derived from SF Flow Utility Toolkit (c) 2026 Mark Jones,
+// MIT License. See THIRD_PARTY_NOTICES.md.
+
 import { setupHostname as toSetupHost } from '../lib/hostname.js';
 import { isFeatureEnabled, loadSettings, onSettingsChange, patchSettings, registerSettingsShape } from '../lib/settings.js';
 import type { Feature } from '../lib/feature-registry.js';

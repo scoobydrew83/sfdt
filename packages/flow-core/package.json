@@ -1,6 +1,6 @@
 {
   "name": "@sfdt/flow-core",
-  "version": "0.14.0",
+  "version": "0.15.0",
   "description": "Pure-TypeScript core for Salesforce Flow analysis: normalization, health rules, scoring, scheduled-flow math, AI prompt library, API name expansion. No DOM, no chrome.*, no Node-specific APIs.",
   "license": "Apache-2.0",
   "repository": {
@@ -28,7 +28,8 @@
   },
   "files": [
     "dist/",
-    "src/"
+    "src/",
+    "THIRD_PARTY_NOTICES.md"
   ],
   "scripts": {
     "build": "tsc -p tsconfig.json",

@@ -1,3 +1,6 @@
+// Portions derived from SF Flow Utility Toolkit (c) 2026 Mark Jones,
+// MIT License. See THIRD_PARTY_NOTICES.md.
+
 // Storage is injected via KeyValueStorage so this module stays free of
 // chrome.storage.*; the legacy-sync migration lives in the extension
 // wrapper where it has access to chrome.storage.sync.

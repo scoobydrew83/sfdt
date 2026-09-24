@@ -1,3 +1,6 @@
+// Portions derived from SF Flow Utility Toolkit (c) 2026 Mark Jones,
+// MIT License. See THIRD_PARTY_NOTICES.md.
+
 // Formula per family:
 //   deduction = min( appearancePenalty + weight * log2(instanceCount + 1), cap )
 //

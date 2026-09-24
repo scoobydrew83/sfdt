@@ -1,3 +1,6 @@
+// Portions derived from SF Flow Utility Toolkit (c) 2026 Mark Jones,
+// MIT License. See THIRD_PARTY_NOTICES.md.
+
 // Strips canvas coordinates, builder internals, nulls, and empty containers
 // from a Tooling API Flow.Metadata blob — smaller AI payload, cleaner CLI
 // serialisation.
@@ -114,7 +117,7 @@ export function summariseFlowMetadata(metadata: Record<string, unknown> | null |
 
 /**
  * Rough token estimate for a JSON string. The 4-char-per-token heuristic
- * matches v2.0.2 and is good enough for "raw vs clean savings" UI labels.
+ * matches the original upstream estimate and is good enough for "raw vs clean savings" UI labels.
  */
 export function estimateTokens(text: string | null | undefined): number {
   if (!text) return 0;

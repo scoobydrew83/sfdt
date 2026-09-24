@@ -4,6 +4,21 @@ All notable changes to `@sfdt/extension` are documented here. Format follows [Ke
 
 ## [Unreleased]
 
+## [0.16.1] - 2026-09-24
+
+### Added
+
+- Added THIRD_PARTY_NOTICES.md crediting SF Flow Utility Toolkit by Mark Jones (MIT). It is
+  bundled into the extension package from `public/`, and an Acknowledgements section in the
+  README points to it.
+
+### Changed
+
+- The context detector and the eleven Flow features derived from SF Flow Utility Toolkit carry
+  an attribution header, and comments that referenced upstream internals are reworded.
+  No behaviour change.
+- `@sfdt/flow-core` dependency widened to `^0.15.0`.
+
 ## [0.16.0] - 2026-09-07
 
 ### Added

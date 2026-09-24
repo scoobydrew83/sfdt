@@ -48,7 +48,7 @@ describe('flow-core/normalize', () => {
     });
 
     it('timing BeforeSave', () => {
-      // v2.0.2's detectTriggerTiming prefers recordTriggerType when set; only
+      // The original upstream detectTriggerTiming preferred recordTriggerType when set; only
       // falls back to triggerType when it is absent. So this fixture omits
       // recordTriggerType.
       const flow = normalize({ start: { triggerType: 'RecordBeforeSave' } });

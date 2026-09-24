@@ -526,6 +526,10 @@ Please ensure all tests pass and linting is clean before submitting.
 
 To report a vulnerability, use [GitHub's private security advisory feature](https://github.com/scoobydrew83/sfdt/security/advisories/new) rather than opening a public issue. See [SECURITY.md](SECURITY.md) for the full policy.
 
+## Acknowledgements
+
+Parts of SFDT's Flow tooling are derived from [SF Flow Utility Toolkit](https://github.com/ThisIsMarkJones/SF-Flow-Utility-Toolkit) by Mark Jones (MIT). The derived areas are the Flow Health rules, the flow metadata normalizer, the health scorer, the API name prefixes, the scheduled flow calculator, the metadata cleaner and the default AI prompts, in `@sfdt/flow-core` and the browser extension. The copyright and permission notice, with the full list of derived files, is in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+
 ## License
 
 [Apache-2.0](LICENSE)

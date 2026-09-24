@@ -1,3 +1,6 @@
+// Portions derived from SF Flow Utility Toolkit (c) 2026 Mark Jones,
+// MIT License. See THIRD_PARTY_NOTICES.md.
+
 // Pure logic. No DOM, no API, no chrome.*.
 // Salesforce stores startTime as `HH:MM:SS.SSSZ` but the Z suffix is
 // misleading — it is wall-clock time in the org's timezone, not UTC. We

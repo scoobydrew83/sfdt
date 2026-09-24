@@ -1,3 +1,6 @@
+// Portions derived from SF Flow Utility Toolkit (c) 2026 Mark Jones,
+// MIT License. See THIRD_PARTY_NOTICES.md.
+
 import { cleanFlowMetadata, estimateTokens, PromptLibrary, summariseFlowMetadata, type ResolvedPrompt } from '@sfdt/flow-core';
 import { detectContext, CONTEXTS } from '../lib/context-detector.js';
 import type { Feature } from '../lib/feature-registry.js';

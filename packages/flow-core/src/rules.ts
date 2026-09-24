@@ -1,3 +1,6 @@
+// Portions derived from SF Flow Utility Toolkit (c) 2026 Mark Jones,
+// MIT License. See THIRD_PARTY_NOTICES.md.
+
 // Produces raw Finding objects; scoring is downstream in scorer.ts.
 // Pure logic; no DOM, no API, no chrome.*.
 // Finding ids use a per-evaluation monotonic counter (not Math.random) so

@@ -1,3 +1,6 @@
+// Portions derived from SF Flow Utility Toolkit (c) 2026 Mark Jones,
+// MIT License. See THIRD_PARTY_NOTICES.md.
+
 // Embedded directly so flow-core has no I/O on first use.
 // PrefixEntry is defined here (the data-owning file) and re-exported from
 // api-name.ts to avoid a circular dependency.
@@ -90,8 +93,8 @@ export const DEFAULT_PREFIXES: readonly PrefixEntry[] = Object.freeze([
   { type: 'Step', Snake_Case: 'Step_', PascalCase: 'Step', camelCase: 'step' },
 ]);
 
-// Lightning icon → prefix-table type. Mirrors ICON_TO_TYPE from
-// config/api-name-prefixes.js:32-50.
+// Lightning icon → prefix-table type. Mirrors the icon-to-type map in the
+// original upstream API name prefix config.
 export const ICON_TO_TYPE: Readonly<Record<string, string>> = Object.freeze({
   'standard:record_lookup': 'get records',
   'standard:record_create': 'create records',

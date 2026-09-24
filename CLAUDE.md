@@ -56,6 +56,7 @@ docs/           The system of record — see pointer table below
 - One feature per session; clean tree at handoff. (#10)
 - FEATURES.json is ground truth — only `passes`/`evidence` flip, only with re-checkable evidence. (#11)
 - Checks exclude the artifacts that define them — a grep rule never flags its own checker, fixture, or docs. (#12)
+- Ported or adapted third-party code adds a `THIRD_PARTY_NOTICES.md` entry and a header comment in the same PR (CONTRIBUTING.md → Third-Party Code).
 
 ## Cross-repo duties
 

@@ -1,6 +1,6 @@
 {
   "name": "@sfdt/cli",
-  "version": "0.26.1",
+  "version": "0.26.2",
   "description": "Salesforce DevTools — Production-grade CLI for Salesforce DX deployment, testing, quality analysis, and release management",
   "type": "module",
   "bin": {
@@ -26,6 +26,7 @@
     "host/package.json",
     "README.md",
     "LICENSE",
+    "THIRD_PARTY_NOTICES.md",
     "SECURITY.md"
   ],
   "workspaces": [
@@ -51,7 +52,8 @@
     "check:auth-docs": "node tools/check-auth-docs.mjs",
     "check:features": "node tools/check-features-edits.mjs",
     "check:package-paths": "node tools/check-package-internal-paths.mjs",
-    "check:all-contracts": "npm run check:catalogs && npm run check:licenses && npm run check:node && npm run check:auth-docs && npm run check:features && npm run check:package-paths",
+    "check:notices": "node tools/check-third-party-notices.mjs",
+    "check:all-contracts": "npm run check:catalogs && npm run check:licenses && npm run check:node && npm run check:auth-docs && npm run check:features && npm run check:package-paths && npm run check:notices",
     "format": "prettier --write \"src/**/*.js\" \"bin/*.js\" \"test/**/*.js\" \"README.md\" \"package.json\"",
     "dev": "npm link",
     "build:gui": "npm run build:flow-core && npm run build -w gui",
@@ -96,7 +98,7 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "~1.30.0",
-    "@sfdt/flow-core": "^0.14.0",
+    "@sfdt/flow-core": "^0.15.0",
     "ajv": "^8.20.0",
     "ajv-formats": "^3.0.1",
     "chalk": "^6.0.0",

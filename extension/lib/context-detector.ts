@@ -1,3 +1,6 @@
+// Portions derived from SF Flow Utility Toolkit (c) 2026 Mark Jones,
+// MIT License. See THIRD_PARTY_NOTICES.md.
+
 export const CONTEXTS = {
   SETUP_FLOWS: 'setup_flows',
   FLOW_DETAILS: 'flow_details',
