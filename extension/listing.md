@@ -146,6 +146,7 @@ Privacy
 
 Full source code: https://github.com/scoobydrew83/sfdt
 Privacy policy: https://github.com/scoobydrew83/sfdt/blob/main/extension/PRIVACY.md
+Third-party open source notices: https://github.com/scoobydrew83/sfdt/blob/main/THIRD_PARTY_NOTICES.md
 
 ## Single purpose
 Enhance Salesforce for admins and developers with opt-in productivity features across Flow Builder, Setup, Object Manager, and record pages — including flow analysis, schema and data tooling, SOQL/REST/SOAP exploration, deploy/rollback via a local CLI bridge, and optional AI assistance.
