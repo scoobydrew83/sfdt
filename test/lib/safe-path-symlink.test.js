@@ -7,6 +7,7 @@ import {
   readFileInProject,
   readFileContained,
   writeFileContained,
+  openFileContainedForWrite,
   resolveForExternalRead,
   resolveInProject,
 } from '../../src/lib/safe-path.js';
@@ -108,6 +109,38 @@ describe('readFileInProject / readFileContained', () => {
     it('refuses a write whose parent directory is a symlink out of the project', async () => {
       await expect(
         writeFileContained(project, path.join(project, 'linkdir', 'new.txt'), 'x'),
+      ).rejects.toThrow(/outside the project/);
+    });
+  });
+
+  // The streaming counterpart (the `sfdt data load` mapped-CSV copy). Tested directly, not only
+  // through its one caller: a regression in the fd path would otherwise hide behind CSV details.
+  describe('openFileContainedForWrite', () => {
+    it('returns a writable fd for an ordinary in-project file', async () => {
+      const target = path.join(project, 'streamed.csv');
+      const fd = await openFileContainedForWrite(project, target);
+      try {
+        await fs.write(fd, 'Name\nAcme\n');
+      } finally {
+        await fs.close(fd);
+      }
+      await expect(fs.readFile(target, 'utf8')).resolves.toBe('Name\nAcme\n');
+    });
+
+    it('refuses a symlinked leaf and leaves the target untouched', async () => {
+      const target = path.join(tmp, 'victim-stream');
+      await fs.writeFile(target, 'ORIGINAL\n');
+      const link = path.join(project, 'hijack.csv');
+      await fs.remove(link);
+      await fs.symlink(target, link);
+
+      await expect(openFileContainedForWrite(project, link)).rejects.toThrow(/symlinks are not allowed/);
+      await expect(fs.readFile(target, 'utf8')).resolves.toBe('ORIGINAL\n');
+    });
+
+    it('refuses a parent directory that is a symlink out of the project', async () => {
+      await expect(
+        openFileContainedForWrite(project, path.join(project, 'linkdir', 'new.csv')),
       ).rejects.toThrow(/outside the project/);
     });
   });
