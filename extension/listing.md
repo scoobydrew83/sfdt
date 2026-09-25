@@ -235,7 +235,7 @@ All three are truthful for this item and must be ticked or the submission will n
 
 **Specs:** 1280×800, PNG, max 5 shown as the featured set, and **slot 1 is the hero**. The featured-5 order and the rationale for it live in `store-assets/README.md` — that file is the source of truth, not duplicated here.
 
-The featured-5 files in `store-assets/` (`final_01-workspace.png`, `final_02-field-impact.png`, `final_03-schema-browser.png`, `final_04-SOQL-Runner.png`, `final_05-cmd-pallet.png`) are the current set. Recapturing is a separate human task against a scratch org, never a production one.
+The featured-5 files in `store-assets/` (`final_01-workspace.png`, `final_02-field-impact.png`, `final_03-schema-browser.png`, `final_04-SOQL-Runner.png`, `final_05-side-panel.png`) are the current set. Recapturing is a separate human task against a scratch org, never a production one.
 
 The listing can be fully pre-positioned without touching these — the store keeps the existing screenshots if none are uploaded.
 
