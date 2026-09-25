@@ -495,7 +495,10 @@ export async function bulkLoadDataSet(config, setName, orgAlias, options = {}) {
       // Physical containment, not just lexical: `sf` (and the mapped copy below) open this
       // path and follow links, so a committed `data.csv -> ~/.sfdx/<user>.json` would be
       // uploaded to the org.
-      await resolveForExternalRead(spec.setDir, op.file, 'file').catch((err) => {
+      // Normalised first: resolveBulkOperation already proved `op.file` stays inside the set
+      // lexically, and has always accepted a path like `exports/../a.csv`. resolveInProject
+      // rejects any raw '..', so handing it the raw string would narrow what loads.
+      await resolveForExternalRead(spec.setDir, path.relative(spec.setDir, op.filePath), 'file').catch((err) => {
         throw err.code === 'ENOENT' ? new Error(`CSV not found: ${op.filePath}`) : err;
       });
 

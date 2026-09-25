@@ -215,6 +215,22 @@ describe('bulkLoadDataSet', () => {
     expect(result.operations[0].unmatchedFieldMapKeys).toEqual(['Nmae']);
   });
 
+  // resolveBulkOperation has always accepted a path that wanders but stays inside the set; the
+  // symlink check added on top must not narrow that.
+  it('still loads a file path with a ".." segment that stays inside the set', async () => {
+    const dir = await makeSet('seed', {
+      'bulk.json': JSON.stringify({ operations: [{ sobject: 'Account', file: 'exports/../a.csv' }] }),
+      'a.csv': 'Name\nAcme\n',
+      'exports/.keep': '',
+    });
+    execa.mockResolvedValue(okJson());
+
+    const result = await bulkLoadDataSet(config, 'seed', 'dev');
+
+    expect(result.operations[0].status).toBe('ok');
+    expect(execa.mock.calls[0][1]).toEqual(expect.arrayContaining(['--file', path.join(dir, 'a.csv')]));
+  });
+
   it('reports a missing CSV as an error without invoking sf', async () => {
     await makeSet('seed', {
       'bulk.json': JSON.stringify({ operations: [{ sobject: 'Account', file: 'missing.csv' }] }),
