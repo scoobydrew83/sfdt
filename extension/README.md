@@ -194,6 +194,10 @@ The extension is structured around a small **feature registry** ([`lib/feature-r
 
 Architecture overview lives in the root [docs/ARCHITECTURE.md](../docs/ARCHITECTURE.md).
 
+## Acknowledgements
+
+Several Flow features in this extension are derived from [SF Flow Utility Toolkit](https://github.com/ThisIsMarkJones/SF-Flow-Utility-Toolkit) by Mark Jones (MIT). See [../THIRD_PARTY_NOTICES.md](../THIRD_PARTY_NOTICES.md) for the notice and the list of derived files.
+
 ---
 
 ## License

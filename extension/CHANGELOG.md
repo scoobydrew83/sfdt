@@ -4,6 +4,28 @@ All notable changes to `@sfdt/extension` are documented here. Format follows [Ke
 
 ## [Unreleased]
 
+## [0.16.1] - 2026-09-25
+
+### Added
+
+- Added THIRD_PARTY_NOTICES.md crediting SF Flow Utility Toolkit by Mark Jones (MIT). It is
+  bundled into the extension package from `public/`, and an Acknowledgements section in the
+  README points to it.
+
+### Changed
+
+- The context detector and the eleven Flow features derived from SF Flow Utility Toolkit carry
+  an attribution header, and comments that referenced upstream internals are reworded.
+  No behaviour change.
+- `@sfdt/flow-core` dependency widened to `^0.15.0`.
+- The Chrome Web Store description links to the third-party notices, next to the source and
+  privacy links.
+- Store assets refreshed:
+  - Featured screenshots 1, 3 and 4 recaptured (Workspace home, Schema Browser, SOQL Runner
+    in SOSL mode).
+  - Slot 5 is now the side panel (`final_05-side-panel.png`).
+  - Both promo tiles regenerated for the 49-feature catalog.
+
 ## [0.16.0] - 2026-09-07
 
 ### Added

@@ -61,7 +61,7 @@ describe('extension/lib/context-detector', () => {
     it('detects Flow Details via the legacy table id alone', () => {
       // The legacy VF inner frame is detected purely by the presence of a
       // `table.list#view:lists:versions` element — the URL inside the iframe
-      // can be anything. Faithful to v2.0.2's `_isFlowDetails` semantics.
+      // can be anything. Faithful to the original upstream flow-details detection.
       const doc = emptyDoc();
       const table = doc.createElement('table');
       table.id = 'view:lists:versions';
@@ -184,7 +184,7 @@ describe('extension/lib/context-detector', () => {
     });
   });
 
-  describe('byte-for-byte parity with v2.0.2 routing', () => {
+  describe('byte-for-byte parity with the original upstream routing', () => {
     /**
      * This is the frozen snapshot of CONTEXT_TO_FEATURES as it existed before
      * the manifest migration. If a feature's contexts get refactored, this

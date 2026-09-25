@@ -1,3 +1,6 @@
+// Portions derived from SF Flow Utility Toolkit (c) 2026 Mark Jones,
+// MIT License. See THIRD_PARTY_NOTICES.md.
+
 // Pure logic; no DOM, no API. Turns Tooling API Flow.Metadata into the
 // stable shape that rules and scorer consume.
 
@@ -252,7 +255,7 @@ function isStandardLightningExtension(extensionName: string): boolean {
 function detectFlowType(metadata: RawFlowMetadata): FlowType {
   // recordTriggerType wins over processType — a record-triggered flow is
   // almost always saved with processType="AutoLaunchedFlow", so the original
-  // v2.0.2 normalizer (which checked processType first) never classified any
+  // upstream normalizer (which checked processType first) never classified any
   // flow as RecordTriggered. The record-trigger-specific rules in rules.ts
   // (broad_entry_criteria, trigger_timing_mismatch) consequently never fired.
   // Promoting this check fixes that latent bug.
@@ -270,7 +273,7 @@ function detectTriggerTiming(metadata: RawFlowMetadata): TriggerTiming {
   // Timing lives in triggerType (RecordBeforeSave / RecordAfterSave / Async).
   // recordTriggerType is the event (Create / Update / Delete / CreateAndUpdate)
   // and has no timing words, so reading it here would always return Unknown.
-  // The v2.0.2 normalizer had this bug too — it preferred recordTriggerType
+  // The original upstream normalizer had this bug too — it preferred recordTriggerType
   // and consequently classified every record-triggered flow as Unknown
   // timing, suppressing the trigger_timing_mismatch rule.
   const triggerType = metadata.start?.triggerType ?? metadata.start?.eventType ?? '';

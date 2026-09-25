@@ -1,3 +1,6 @@
+// Portions derived from SF Flow Utility Toolkit (c) 2026 Mark Jones,
+// MIT License. See THIRD_PARTY_NOTICES.md.
+
 // Storage is injected and defaults are embedded so this module stays free
 // of chrome.* and bundler-side JSON imports.
 

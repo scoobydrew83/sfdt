@@ -44,6 +44,13 @@ Thank you for your interest in contributing to the Salesforce DevTools CLI! This
 - Run `npm run lint` before committing.
 - Run `npm run format` to ensure consistent code style (Prettier).
 
+## Third-Party Code
+
+Any code ported or adapted from a third-party project must, in the same PR:
+
+- Add an entry to `THIRD_PARTY_NOTICES.md` (project, URL, author, derived files, and the upstream license text and copyright line copied verbatim), then copy the file over `packages/flow-core/THIRD_PARTY_NOTICES.md` and `extension/public/THIRD_PARTY_NOTICES.md`. `npm run check:notices` fails if the copies drift.
+- Add a header comment to each derived file naming the project, its copyright holder and license, and pointing to `THIRD_PARTY_NOTICES.md`.
+
 ## Submitting a Pull Request
 
 1.  Create a feature branch from `main`.

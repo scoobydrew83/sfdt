@@ -1,3 +1,6 @@
+// Portions derived from SF Flow Utility Toolkit (c) 2026 Mark Jones,
+// MIT License. See THIRD_PARTY_NOTICES.md.
+
 // Flow Trigger Explorer Enhancer — Salesforce's native Flow Trigger Explorer
 // (`/interaction_explorer/flowExplorer`) only shows one object at a time and
 // omits the active version number and a quick way into Flow Builder. This tool

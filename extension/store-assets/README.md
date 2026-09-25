@@ -35,6 +35,14 @@ The extension's **runtime** icons live in `../public/icon/{16,32,48,128}.png` �
 
 ### The featured 5 — recapture plan for 0.11.0
 
+> **Recaptured 2026-09-24 for 0.16.1** against the `wise-goat` Trailblaze dev org, by window ID
+> (`screencapture -l`, so overlapping windows cannot leak in) and cropped to exactly 1280×800:
+> slot 1 `final_01-workspace.png` (Workspace home), slot 3 `final_03-schema-browser.png`,
+> slot 4 `final_04-SOQL-Runner.png` (SOSL mode, grouped results), slot 5
+> `final_05-side-panel.png` (side panel beside Object Manager; replaces `final_05-cmd-pallet.png`).
+> Slot 2 `final_02-field-impact.png` is still the 2026-07-30 frame: this org has no active flows,
+> so Field Impact only returns an empty scan here.
+
 **The whole pool is 0.3.x-era and the current featured set now undersells the product.**
 Slot 1 (`final_06`) shows a Workspace nav from when there were 13 tools; there are now 47.
 Nothing that shipped after 0.3.x has a frame at all.

@@ -1,3 +1,6 @@
+// Portions derived from SF Flow Utility Toolkit (c) 2026 Mark Jones,
+// MIT License. See THIRD_PARTY_NOTICES.md.
+
 // Prompt bodies are tuned against real model behaviour — edit with care.
 // The draw-io template in particular needs its exact phrasing to keep
 // ChatGPT from wrapping the XML in commentary.

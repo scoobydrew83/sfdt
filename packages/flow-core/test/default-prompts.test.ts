@@ -7,7 +7,7 @@ import {
 } from '../src/default-prompts.js';
 
 describe('flow-core/default-prompts', () => {
-  it('ships the five v2.0.2 prompts', () => {
+  it('ships the five original upstream prompts', () => {
     expect(DEFAULT_PROMPT_TEMPLATES).toHaveLength(5);
     const ids = DEFAULT_PROMPT_TEMPLATES.map((t) => t.id).sort();
     expect(ids).toEqual([
