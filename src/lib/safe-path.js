@@ -103,27 +103,61 @@ export async function readFileInProject(root, input, options = {}) {
  */
 export async function writeFileContained(root, absPath, data, options = {}) {
   const { encoding = 'utf8', label = 'path' } = options;
-  const resolved = path.resolve(absPath);
+  const target = await containedWriteTarget(root, absPath, label);
+  try {
+    await fs.writeFile(target, data, { encoding, flag: WRITE_NOFOLLOW });
+  } catch (err) {
+    throw refuseSymlink(err, label);
+  }
+}
 
+/**
+ * Open a file for writing (create or truncate) that must genuinely live inside `root` on
+ * disk, and return the file descriptor.
+ *
+ * The guard behind `writeFileContained`, split out for writers that stream rather than hand
+ * over one string — `sfdt data load` rewrites a CSV that can be hundreds of MB, and a
+ * committed `.sfdt/data/<set>/.mapped -> ../../../.git` turned that copy into an overwrite of
+ * `.git/config`. Returning an fd (`fs.createWriteStream(null, { fd })`) keeps the check and
+ * the open one operation, so a streaming caller gets the same guarantee instead of a second
+ * copy of it.
+ *
+ * @param {string|string[]} root  Directory (or directories) the file must stay inside.
+ * @param {string} absPath        Already-resolved absolute path.
+ * @param {object} [options]      `label` (default 'path').
+ * @returns {Promise<number>} an fd opened O_WRONLY|O_CREAT|O_TRUNC|O_NOFOLLOW.
+ */
+export async function openFileContainedForWrite(root, absPath, options = {}) {
+  const { label = 'path' } = options;
+  const target = await containedWriteTarget(root, absPath, label);
+  try {
+    return await fs.open(target, WRITE_NOFOLLOW);
+  } catch (err) {
+    throw refuseSymlink(err, label);
+  }
+}
+
+const WRITE_NOFOLLOW = fsConstants.O_WRONLY | fsConstants.O_CREAT | fsConstants.O_TRUNC | fsConstants.O_NOFOLLOW;
+
+/**
+ * The containment half of a contained write, shared by the whole-string and streaming
+ * writers so there is one copy of it: lexical pre-check, then the PARENT realpath-checked
+ * (the leaf may not exist yet, so it has no realpath of its own). Returns the physical path
+ * to open with O_NOFOLLOW, which covers a symlinked leaf.
+ */
+async function containedWriteTarget(root, absPath, label) {
+  const resolved = path.resolve(absPath);
   if (!lexicallyInside(root, resolved)) {
     throw new Error(`Invalid ${label}: resolves outside the project`);
   }
-
-  // The PARENT, not the leaf: the file may not exist yet, so it has no realpath of its own.
   const realParent = await realpathOrSelf(path.dirname(resolved));
   await assertInsideRoot(root, realParent, label);
+  return path.join(realParent, path.basename(resolved));
+}
 
-  try {
-    await fs.writeFile(path.join(realParent, path.basename(resolved)), data, {
-      encoding,
-      flag: fsConstants.O_WRONLY | fsConstants.O_CREAT | fsConstants.O_TRUNC | fsConstants.O_NOFOLLOW,
-    });
-  } catch (err) {
-    if (err?.code === 'ELOOP') {
-      throw new Error(`Invalid ${label}: symlinks are not allowed`);
-    }
-    throw err;
-  }
+/** ELOOP is O_NOFOLLOW refusing a symlinked leaf — a refusal, reported as one. */
+function refuseSymlink(err, label) {
+  return err?.code === 'ELOOP' ? new Error(`Invalid ${label}: symlinks are not allowed`) : err;
 }
 
 /**

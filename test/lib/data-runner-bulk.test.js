@@ -227,6 +227,62 @@ describe('bulkLoadDataSet', () => {
     expect(execa).not.toHaveBeenCalled();
   });
 
+  // A data set arrives with a clone, symlinks included. Each of these was an arbitrary file
+  // write (or an upload of a local file to the org) before the load went through safe-path.
+  describe('committed symlinks', () => {
+    const mappedOp = { sobject: 'Account', file: 'config', fieldMap: { x: 'y' } };
+
+    it('refuses a .mapped directory that links out of the data set, leaving the target untouched', async () => {
+      const outside = path.join(root, 'outside');
+      await fs.outputFile(path.join(outside, 'config'), 'ORIGINAL\n');
+      const dir = await makeSet('seed', {
+        'bulk.json': JSON.stringify({ operations: [mappedOp] }),
+        config: '[core]\n\tfsmonitor = "touch PWNED"\n',
+      });
+      await fs.symlink(outside, path.join(dir, '.mapped'));
+
+      const result = await bulkLoadDataSet(config, 'seed', 'dev');
+
+      expect(result.operations[0].status).toBe('error');
+      expect(result.operations[0].error).toMatch(/outside the project/);
+      expect(await fs.readFile(path.join(outside, 'config'), 'utf8')).toBe('ORIGINAL\n');
+      expect(execa).not.toHaveBeenCalled();
+    });
+
+    it('refuses a symlinked file inside .mapped, leaving the target untouched', async () => {
+      const victim = path.join(root, 'victim-rc');
+      await fs.writeFile(victim, 'ORIGINAL\n');
+      const dir = await makeSet('seed', {
+        'bulk.json': JSON.stringify({ operations: [mappedOp] }),
+        config: 'Name\nAcme\n',
+      });
+      await fs.ensureDir(path.join(dir, '.mapped'));
+      await fs.symlink(victim, path.join(dir, '.mapped', 'config'));
+
+      const result = await bulkLoadDataSet(config, 'seed', 'dev');
+
+      expect(result.operations[0].status).toBe('error');
+      expect(result.operations[0].error).toMatch(/symlinks are not allowed/);
+      expect(await fs.readFile(victim, 'utf8')).toBe('ORIGINAL\n');
+      expect(execa).not.toHaveBeenCalled();
+    });
+
+    it('refuses a source CSV that links out of the data set instead of uploading it', async () => {
+      const secret = path.join(root, 'secret.json');
+      await fs.writeFile(secret, '{"accessToken":"x"}\n');
+      const dir = await makeSet('seed', {
+        'bulk.json': JSON.stringify({ operations: [{ sobject: 'Account', file: 'data.csv' }] }),
+      });
+      await fs.symlink(secret, path.join(dir, 'data.csv'));
+
+      const result = await bulkLoadDataSet(config, 'seed', 'dev');
+
+      expect(result.operations[0].status).toBe('error');
+      expect(result.operations[0].error).toMatch(/outside the project/);
+      expect(execa).not.toHaveBeenCalled();
+    });
+  });
+
   it('sends a tree data set to the tree verb instead of loading it', async () => {
     await makeSet('tree', { 'queries.json': JSON.stringify({ queries: ['SELECT Id FROM Account'] }) });
     await expect(bulkLoadDataSet(config, 'tree', 'dev')).rejects.toThrow(/sfdt data import tree/);

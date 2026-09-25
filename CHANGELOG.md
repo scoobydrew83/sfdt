@@ -7,11 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.26.2] - 2026-09-24
+## [0.26.2] - 2026-09-25
 
-A licensing release. Parts of `@sfdt/flow-core` and the browser extension are derived from
-SF Flow Utility Toolkit, and its MIT copyright and permission notice now ships with them.
-No behaviour changes.
+A licensing and security release. Parts of `@sfdt/flow-core` and the browser extension are
+derived from SF Flow Utility Toolkit, and its MIT copyright and permission notice now ships
+with them. `sfdt data load` no longer follows symlinks committed in a data set.
 
 > **Versions:** `@sfdt/cli` and `@sfdt/plugin` → **0.26.2**; `@sfdt/flow-core` → **0.15.0**;
 > extension → **0.16.1**. Under 0.x semver a minor bump leaves a `^0.14.0` range, so the
@@ -34,6 +34,22 @@ No behaviour changes.
 - The 21 derived source files carry an attribution header. Comments that pointed at upstream
   internals (`config/api-name-prefixes.js`, "v2.0.2") now describe the behaviour in our own
   terms. Comments and test names only; no logic, rule IDs or messages changed.
+
+### Security
+
+- **`sfdt data load` refuses symlinks committed in a data set.** A data set arrives with a
+  clone, and two links in one were honoured:
+  - A `.sfdt/data/<set>/.mapped` directory (or a file inside it) linking out of the set made
+    the field-mapped CSV copy an arbitrary file write. `.mapped -> ../../../.git` overwrote
+    `.git/config` with attacker content, which runs code on the next `git` command.
+  - A source CSV linking outside the set (`data.csv -> ~/.sfdx/<user>.json`) was uploaded to
+    the org by `sf data import bulk`.
+
+  The mapped copy is now opened through the new `openFileContainedForWrite` in `safe-path.js`
+  (realpath containment on the parent, `O_NOFOLLOW` on the file), and the source goes through
+  `resolveForExternalRead`. `writeFileContained` shares the same containment check.
+- The `next > sharp` override moves from `0.35.3` to `0.35.4` (GHSA-rgj7-g3m4-5g8c). The pin
+  was holding back the patched release and failing the CI production audit.
 
 ## [0.26.1] - 2026-09-07
 

@@ -3,7 +3,7 @@ import fs from 'fs-extra';
 import { glob } from 'glob';
 import { execa } from 'execa';
 import { safeParse } from './org-query.js';
-import { assertSetName } from './safe-path.js';
+import { assertSetName, openFileContainedForWrite, resolveForExternalRead } from './safe-path.js';
 
 /**
  * Data set import/export runner.
@@ -272,11 +272,20 @@ export function mapCsvHeader(line, fieldMap = {}) {
  * big to want in memory, and `fs.readFile` on a multi-hundred-MB CSV would
  * either balloon RSS or hit V8's max string length. Only the first line is ever
  * buffered.
+ *
+ * The destination is opened through `openFileContainedForWrite`, so it must physically sit
+ * inside `root` (default: its own directory) and may not be a symlink. A data set arrives
+ * with a clone, and a committed `.mapped -> ../../../.git` made this copy an overwrite of
+ * `.git/config`.
+ *
+ * @param {object} [options]
+ * @param {string} [options.root] Directory the destination must stay inside.
  */
-export function writeMappedCsv(srcPath, destPath, fieldMap) {
+export async function writeMappedCsv(srcPath, destPath, fieldMap, { root = path.dirname(destPath) } = {}) {
+  const fd = await openFileContainedForWrite(root, destPath, { label: 'mapped CSV' });
   return new Promise((resolve, reject) => {
     const src = fs.createReadStream(srcPath, { encoding: 'utf8' });
-    const out = fs.createWriteStream(destPath);
+    const out = fs.createWriteStream(null, { fd });
     let pending = '';
     let header = null;
     let settled = false;
@@ -483,16 +492,19 @@ export async function bulkLoadDataSet(config, setName, orgAlias, options = {}) {
   for (const op of spec.operations) {
     const entry = { sobject: op.sobject, operation: op.operation, file: op.file, status: 'ok' };
     try {
-      if (!(await fs.pathExists(op.filePath))) {
-        throw new Error(`CSV not found: ${op.filePath}`);
-      }
+      // Physical containment, not just lexical: `sf` (and the mapped copy below) open this
+      // path and follow links, so a committed `data.csv -> ~/.sfdx/<user>.json` would be
+      // uploaded to the org.
+      await resolveForExternalRead(spec.setDir, op.file, 'file').catch((err) => {
+        throw err.code === 'ENOENT' ? new Error(`CSV not found: ${op.filePath}`) : err;
+      });
 
       let loadPath = op.filePath;
       if (Object.keys(op.fieldMap).length > 0) {
         const mappedDir = path.join(spec.setDir, '.mapped');
         await fs.ensureDir(mappedDir);
         loadPath = path.join(mappedDir, path.basename(op.file));
-        const header = await writeMappedCsv(op.filePath, loadPath, op.fieldMap);
+        const header = await writeMappedCsv(op.filePath, loadPath, op.fieldMap, { root: spec.setDir });
         entry.mappedFile = loadPath;
         entry.renamedColumns = header.renamed;
         if (header.unmatched.length > 0) {
