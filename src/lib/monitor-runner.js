@@ -3,6 +3,7 @@ import fs from 'fs-extra';
 import { execa } from 'execa';
 import { ORG_HEALTH_THRESHOLDS } from '@sfdt/flow-core';
 import { query, safeParse, toSoqlDate } from './org-query.js';
+import { result, errored, degraded, oneLine, summarize } from './check-result.js';
 import { fetchOrgInventory } from './org-inventory.js';
 import { parallelRetrieve } from './parallel-retrieve.js';
 import { expectedGaApiVersion, detectOrgRelease } from './org-release.js';
@@ -51,8 +52,8 @@ export async function checkLimits(orgAlias, { warnThreshold = MONITOR_DEFAULTS.l
   const id = 'limits';
   const title = 'Org limits';
   try {
-    const result = await execa('sf', ['org', 'list', 'limits', '--target-org', orgAlias, '--json']);
-    const rows = safeParse(result.stdout)?.result ?? [];
+    const limitsRun = await execa('sf', ['org', 'list', 'limits', '--target-org', orgAlias, '--json']);
+    const rows = safeParse(limitsRun.stdout)?.result ?? [];
     const thresholdFindings = rows
       .map((r) => {
         const max = r.max ?? 0;
@@ -91,7 +92,7 @@ export async function checkLimits(orgAlias, { warnThreshold = MONITOR_DEFAULTS.l
     }
 
     const overflowNote = overflow ? '; async Apex is in the elastic overflow band (Beta)' : '';
-    return result_(id, title, thresholdFindings.length || overflow ? 'warn' : 'ok',
+    return result(id, title, thresholdFindings.length || overflow ? 'warn' : 'ok',
       (thresholdFindings.length
         ? `${thresholdFindings.length} limit(s) at or above ${Math.round(warnThreshold * 100)}% usage`
         : 'All org limits have headroom') + overflowNote,
@@ -122,7 +123,7 @@ export async function checkErrors(orgAlias, { lookbackDays = MONITOR_DEFAULTS.er
       status: r.ExtendedStatus,
       date: r.CompletedDate,
     }));
-    return result_(id, title, findings.length ? 'fail' : 'ok',
+    return result(id, title, findings.length ? 'fail' : 'ok',
       findings.length
         ? `${findings.length} failed Apex job(s) in the last ${lookbackDays} days`
         : `No failed Apex jobs in the last ${lookbackDays} days`,
@@ -144,10 +145,10 @@ export async function checkHealth(orgAlias, { minScore = MONITOR_DEFAULTS.health
     if (score == null) {
       // No rows means the check failed silently or the user lacks permission —
       // not a healthy org. Surface it as a warning rather than a false 'ok'.
-      return result_(id, title, 'warn', 'Security health-check score unavailable (no rows returned)', []);
+      return result(id, title, 'warn', 'Security health-check score unavailable (no rows returned)', []);
     }
     const rounded = Math.round(score);
-    return result_(id, title, rounded < minScore ? 'warn' : 'ok',
+    return result(id, title, rounded < minScore ? 'warn' : 'ok',
       `Security health-check score: ${rounded}% (floor ${minScore}%)`,
       [{ score: rounded, floor: minScore }]);
   } catch (err) {
@@ -169,7 +170,7 @@ export async function checkOrgInfo(orgAlias, { trialWarnDays = MONITOR_DEFAULTS.
       { timeoutMs },
     );
     const org = rows[0];
-    if (!org) return result_(id, title, 'warn', 'Organization record unavailable', []);
+    if (!org) return result(id, title, 'warn', 'Organization record unavailable', []);
     const releaseInfo = await detectOrgRelease(orgAlias, { timeoutMs });
     const finding = {
       name: org.Name,
@@ -194,7 +195,7 @@ export async function checkOrgInfo(orgAlias, { trialWarnDays = MONITOR_DEFAULTS.
         summary = `Trial/expiration in ${daysLeft} day(s) (${org.InstanceName})`;
       }
     }
-    return result_(id, title, status, summary, [finding]);
+    return result(id, title, status, summary, [finding]);
   } catch (err) {
     return errored(id, title, err);
   }
@@ -218,7 +219,7 @@ export async function checkDeployHistory(orgAlias, { lookback = MONITOR_DEFAULTS
         `ORDER BY CompletedDate DESC NULLS LAST LIMIT ${lim}`,
       { tooling: true },
     );
-    if (rows.length === 0) return result_(id, title, 'ok', 'No recent deployments found', []);
+    if (rows.length === 0) return result(id, title, 'ok', 'No recent deployments found', []);
     const failed = rows.filter((r) => r.Status === 'Failed' || (r.NumberComponentErrors ?? 0) > 0);
     const latestFailed = rows[0].Status === 'Failed';
     const findings = failed.map((r) => ({
@@ -228,7 +229,7 @@ export async function checkDeployHistory(orgAlias, { lookback = MONITOR_DEFAULTS
       date: r.CompletedDate ?? r.StartDate,
     }));
     const status = latestFailed ? 'fail' : failed.length ? 'warn' : 'ok';
-    return result_(id, title, status,
+    return result(id, title, status,
       latestFailed
         ? 'Most recent deployment failed'
         : failed.length
@@ -257,13 +258,13 @@ export async function checkDeprecatedApi(orgAlias, { lookbackDays = MONITOR_DEFA
         `WHERE EventType = 'ApiTotalUsage' AND LogDate >= ${since} ORDER BY LogDate DESC LIMIT 50`,
     );
     const findings = rows.map((r) => ({ date: r.LogDate, bytes: r.LogFileLength }));
-    return result_(id, title, findings.length ? 'warn' : 'ok',
+    return result(id, title, findings.length ? 'warn' : 'ok',
       findings.length
         ? `Legacy/deprecated API traffic logged on ${findings.length} day(s) in the last ${lookbackDays} days`
         : `No legacy API usage logs in the last ${lookbackDays} days`,
       findings);
   } catch (err) {
-    return result_(id, title, 'warn',
+    return result(id, title, 'warn',
       `Legacy API usage unavailable (EventLogFile not accessible — requires API/Event Monitoring): ${oneLine(err?.message)}`,
       []);
   }
@@ -283,7 +284,7 @@ export async function checkFlowErrors(orgAlias) {
         `WHERE InterviewStatus = 'Paused' ORDER BY CreatedDate ASC LIMIT 200`,
     );
     const findings = rows.map((r) => ({ name: r.InterviewLabel, element: r.CurrentElement, date: r.CreatedDate }));
-    return result_(id, title, findings.length ? 'warn' : 'ok',
+    return result(id, title, findings.length ? 'warn' : 'ok',
       findings.length
         ? `${findings.length} paused flow interview(s) (potentially stuck)`
         : 'No paused flow interviews',
@@ -368,58 +369,10 @@ export async function runMonitor(orgAlias, config, { checks = CHECK_IDS, backup 
   const results = await Promise.all(selected.map((cid) => CHECKS[cid](orgAlias, params[cid] ?? {})));
   if (backup) results.push(await runBackup(orgAlias, config, params.backup ?? {}));
 
-  const summary = {
-    total: results.length,
-    ok: results.filter((r) => r.status === 'ok').length,
-    warn: results.filter((r) => r.status === 'warn').length,
-    fail: results.filter((r) => r.status === 'fail').length,
-    error: results.filter((r) => r.status === 'error').length,
-  };
-  return { timestamp: new Date().toISOString(), org: orgAlias, checks: results, summary };
-}
-
-function result_(id, title, status, summary, findings) {
-  return { id, title, status, summary, findings };
-}
-
-function errored(id, title, err) {
-  // sf emits a JSON error envelope on stdout (e.g. auth failure, invalid org
-  // alias). Prefer its structured `message` over the opaque execa error so the
-  // friendly sf text surfaces. Checks that go through query()/rawQuery() already
-  // get this; this covers checks that call execa directly (e.g. checkLimits).
-  // sf usually writes its JSON error envelope to stdout, but some commands
-  // (auth/alias failures) route it to stderr — check both.
-  const structured = safeParse(err?.stdout)?.message ?? safeParse(err?.stderr)?.message;
-  return {
-    id,
-    title,
-    status: 'error',
-    summary: `Check failed: ${oneLine(structured || err?.message)}`,
-    findings: [],
-  };
-}
-
-/**
- * Soft failure for checks that query a Tooling/license-gated object whose
- * absence means "can't run here", not "org is unhealthy". Surfaces `warn` (not
- * `error`) so `monitor all` doesn't exit non-zero over a missing API. Mirrors
- * checkDeprecatedApi.
- */
-function degraded(id, title, err, what) {
-  const structured = safeParse(err?.stdout)?.message ?? safeParse(err?.stderr)?.message;
-  return {
-    id,
-    title,
-    status: 'warn',
-    summary: `${what} unavailable in this org: ${oneLine(structured || err?.message)}`,
-    findings: [],
-  };
+  return { timestamp: new Date().toISOString(), org: orgAlias, checks: results, summary: summarize(results) };
 }
 
 function sanitize(s) {
   return String(s).replace(/[^a-z0-9_-]/gi, '_');
 }
 
-function oneLine(s) {
-  return String(s ?? '').replace(/[\r\n]+/g, ' ').slice(0, 300);
-}
