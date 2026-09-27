@@ -74,6 +74,30 @@ export async function getOrgInstanceUrl(orgAlias) {
 }
 
 /**
+ * Is this org a sandbox? True only when `sf` reports `isSandbox: true` —
+ * callers that guard production must treat anything else (including a thrown
+ * lookup) as production; see `isProductionOrg` in org-facts.js.
+ *
+ * @param {string} orgAlias
+ * @returns {Promise<boolean>}
+ */
+export async function isSandboxOrg(orgAlias) {
+  const result = await displayOrg(orgAlias);
+  return result.isSandbox === true;
+}
+
+/**
+ * The username the alias is authenticated as.
+ *
+ * @param {string} orgAlias
+ * @returns {Promise<string|null>}
+ */
+export async function getOrgUsername(orgAlias) {
+  const result = await displayOrg(orgAlias);
+  return result.username ?? null;
+}
+
+/**
  * The org's access token, instance URL and API version — for the one caller
  * that genuinely needs a token in this process.
  *

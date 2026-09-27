@@ -45,8 +45,7 @@ describe('Flow Analyzer', () => {
 
       expect(execa).toHaveBeenCalledWith(
         'sf',
-        expect.arrayContaining(['data', 'query', '--use-tooling-api', '-q']),
-        expect.anything(),
+        expect.arrayContaining(['data', 'query', '--use-tooling-api', '--query']),
       );
       expect(records).toHaveLength(1);
       expect(records[0].DeveloperName).toBe('Flow_A');

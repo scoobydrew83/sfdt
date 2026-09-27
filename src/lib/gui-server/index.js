@@ -12,6 +12,7 @@ import fs from 'fs-extra';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { execa } from 'execa';
+import { query as orgQuery } from '../org-query.js';
 import { createInterface } from 'readline';
 import { createRequire } from 'module';
 import { fetchLatestVersion, isUpdateAvailable } from '../update-checker.js';
@@ -3663,15 +3664,10 @@ export function createGuiApp(config, version, port = DEFAULT_UI_PORT) {
   /** Run a Tooling SOQL query and return its records, or throw with an sf-extracted message. */
   async function runToolingQuery(soql, safeOrg) {
     try {
-      const result = await execa('sf', ['data', 'query', '--use-tooling-api', '--query', soql, '--json', '--target-org', safeOrg]);
-      return JSON.parse(result.stdout)?.result?.records ?? [];
+      return await orgQuery(safeOrg, soql, { tooling: true });
     } catch (execErr) {
-      let errMsg = execErr.message ?? 'sf command failed';
-      try {
-        const parsed = JSON.parse(execErr.stdout ?? execErr.stderr ?? '{}');
-        errMsg = parsed?.message ?? parsed?.result?.message ?? errMsg;
-      } catch { /* ignore */ }
-      const e = new Error(errMsg);
+      // orgQuery already surfaces sf's structured error message.
+      const e = new Error(execErr.message ?? 'sf command failed');
       e.isSfError = true;
       throw e;
     }
@@ -3844,21 +3840,9 @@ export function createGuiApp(config, version, port = DEFAULT_UI_PORT) {
 
       let records = [];
       try {
-        const result = await execa('sf', [
-          'data', 'query',
-          '--use-tooling-api',
-          '--query', soql,
-          '--json',
-          '--target-org', safeOrg,
-        ]);
-        const parsed = JSON.parse(result.stdout);
-        records = parsed?.result?.records ?? [];
+        records = await runToolingQuery(soql, safeOrg);
       } catch (execErr) {
-        let errMsg = execErr.message ?? 'sf command failed';
-        try {
-          const errParsed = JSON.parse(execErr.stdout ?? execErr.stderr ?? '{}');
-          errMsg = errParsed?.message ?? errParsed?.result?.message ?? errMsg;
-        } catch { /* ignore */ }
+        const errMsg = execErr.message;
         // MetadataComponentDependency is a capability-gated Tooling object: some
         // orgs (Dev Hub / Developer Edition) reject the query (INVALID_TYPE /
         // INVALID_FIELD "…is unknown"). A rejected query means "this org can't run
