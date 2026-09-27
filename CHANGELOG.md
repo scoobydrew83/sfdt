@@ -39,6 +39,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   sfdx-git-delta, Salesforce Inspector Reloaded, and SLDS for the extension palette values.
   No code is taken from any of them.
 
+### Fixed
+
+- The GUI dashboard, native host, VS Code extension and web workspace now use the workspace
+  `@sfdt/flow-core` (0.15). Their `^0.10` / `^0.13` ranges don't match 0.15 under 0.x caret
+  rules, so npm had been installing and bundling stale registry copies. Those surfaces were
+  banding and scoring findings with older rules than the CLI and Chrome. The new
+  `npm run check:workspace-deps` contract check (in `check:all-contracts`) fails on any range
+  that differs from the root's. It also fails when `@types/vscode` is newer than
+  `engines.vscode`, which is what had blocked `vsce package`.
+
 ### Removed
 
 - Unused `src/lib/child-process-exit.js`, `scripts/core/compare-preview-vs-pull.sh` and
