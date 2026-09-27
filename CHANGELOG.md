@@ -49,6 +49,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   that differs from the root's. It also fails when `@types/vscode` is newer than
   `engines.vscode`, which is what had blocked `vsce package`.
 
+- The `sf sfdt` plugin, run from a checkout (`sf plugins link`), now forwards to the
+  repository's own CLI. It had been resolving the published `@sfdt/cli` 0.22.1 that npm nests
+  under `packages/plugin`, while its commands are generated from the working tree, so every
+  command newer than 0.22 failed as unknown. Installed plugins are unchanged. The plugin's
+  `@sfdt/cli` range gains a `<1.0.0` ceiling, and `check:workspace-deps` fails if it stops
+  accepting the CLI's own version.
+
 ### Removed
 
 - Unused `src/lib/child-process-exit.js`, `scripts/core/compare-preview-vs-pull.sh` and

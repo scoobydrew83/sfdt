@@ -258,7 +258,7 @@ so merging to `master` is deploying.
 ### sf plugin (`@sfdt/plugin`)
 
 - Nothing to do — published by the same `ci.yml` job **after** the CLI.
-- Its oclif commands are code-generated from `createCli()`; never hand-edit them. Its `@sfdt/cli` dep is `>=` (not pinned) so the bump commit's `npm ci` never 404s; the coupled publish means installs resolve to the matching version.
+- Its oclif commands are code-generated from `createCli()`; never hand-edit them. Its `@sfdt/cli` dep is `>=0.14.1 <1.0.0`, not pinned, so the bump commit's `npm ci` never 404s. The coupled publish means installs resolve to the matching version, and the `<1.0.0` ceiling stops an old plugin from picking up a breaking 1.x CLI. `npm run check:workspace-deps` fails if the range stops accepting the CLI's own version. From a checkout, the plugin forwards to the repo's `bin/sfdt.js` (`monorepoEntrypoint` in `src/lib/forward.ts`), not the registry copy.
 
 ### flow-core / host
 

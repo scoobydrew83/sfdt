@@ -10,6 +10,9 @@
  *     ran older flow-core rules than the CLI and Chrome.
  *  2. vscode's @types/vscode floor is not newer than its engines.vscode floor.
  *     `vsce package` refuses to build otherwise.
+ *  3. The sf plugin's @sfdt/cli range accepts the root CLI version. The plugin
+ *     is published right after the CLI in the same release, so a range that
+ *     rejects it ships a plugin that can't install beside its own CLI.
  *
  * Exits 1 with a violation list on any mismatch. Never writes.
  */
@@ -73,11 +76,22 @@ if (engine && types) {
   }
 }
 
+// Rule 3 — the sf plugin must accept the CLI it is released with.
+const pluginPkg = await fs.readJson(path.join(ROOT, 'packages/plugin/package.json'));
+const cliRange = pluginPkg.dependencies?.['@sfdt/cli'];
+if (!cliRange) {
+  violations.push('packages/plugin/package.json: missing the @sfdt/cli dependency it forwards to');
+} else if (!semver.validRange(cliRange) || !semver.satisfies(rootPkg.version, cliRange)) {
+  violations.push(
+    `packages/plugin/package.json: @sfdt/cli "${cliRange}" does not accept the CLI's own version ${rootPkg.version}`,
+  );
+}
+
 if (violations.length) {
   console.error('Workspace dependency violations:');
   for (const v of violations) console.error(`  - ${v}`);
   process.exit(1);
 }
 console.log(
-  `Workspace deps OK (@sfdt/flow-core "${rootRange}" → ${flowCoreVersion} everywhere; @types/vscode within engines).`,
+  `Workspace deps OK (@sfdt/flow-core "${rootRange}" → ${flowCoreVersion} everywhere; @types/vscode within engines; plugin accepts @sfdt/cli ${rootPkg.version}).`,
 );
