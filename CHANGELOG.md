@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `sfdt audit --index` runs every audit and monitor check and groups the results under the
+  eight AI-Readiness Index dimensions (automation sprawl, dependency risk, documentation
+  coverage, permissions hygiene, dead metadata, data quality, change safety,
+  AI-groundability). It writes `logs/index-latest.json` and a paste-ready
+  `logs/index-latest.md`. The result is evidence for an assessor, not a score: each dimension
+  shows its worst check, its checks, and what the checks cannot see. The `sfdt_audit` MCP tool
+  takes `index: true` for the same output.
+- `@sfdt/flow-core` exports `READINESS_INDEX_DIMENSIONS`, `buildIndexEvidence` and
+  `renderIndexMarkdown`, so the CLI and the Chrome extension group checks identically. This is
+  new public API, so flow-core takes a minor bump at release (RELEASING.md §4).
+
+### Changed
+
+- `audit-runner` and `monitor-runner` share their result helpers from
+  `src/lib/check-result.js` instead of carrying identical copies.
+- Production detection in `sfdt deploy --smart`, the write commands' production guard, the
+  Apex username lookup, flow scanning and the GUI dependency routes now go through the shared
+  `org-session` / `org-query` helpers. Behaviour is unchanged: production detection still
+  fails safe to production.
+
+### Removed
+
+- Unused `src/lib/child-process-exit.js`, `scripts/core/compare-preview-vs-pull.sh` and
+  `scripts/core/update-test-config.sh`. Nothing in the CLI, CI or docs referenced them.
+
 ## [0.26.2] - 2026-09-25
 
 A licensing and security release. Parts of `@sfdt/flow-core` and the browser extension are

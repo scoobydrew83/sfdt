@@ -1,12 +1,12 @@
 import { detectContext, CONTEXTS } from '../lib/context-detector.js';
 import type { Feature } from '../lib/feature-registry.js';
 import { createBridgeClient } from '../lib/sfdt-bridge.js';
-import { buildLiveChecks, renderCheckRow } from './org-health-checks.js';
+import { buildLiveChecks, renderCheckRow, type CheckResult } from './org-health-checks.js';
 import { getSalesforceApi, type SalesforceApiClient } from '../lib/salesforce-api.js';
 import { loadSettings } from '../lib/settings.js';
 import { showToast } from '../ui/toast.js';
 import { presentView, type ViewHandle } from '../ui/present-view.js';
-import { describeFinding } from '@sfdt/flow-core';
+import { describeFinding, buildIndexEvidence, renderIndexMarkdown, type IndexEvidence } from '@sfdt/flow-core';
 import type { OrgHealthResponseData, SfdtResponse } from '@sfdt/flow-core/bridge-contract';
 import { button, toolbar } from '../lib/ui-controls.js';
 import { BAND_CLASS } from './org-limits.js';
@@ -59,6 +59,25 @@ export function shapeChecks(snapshot: Snapshot | null | undefined): Check[] {
     summary: String(c.summary ?? ''),
     findings: Array.isArray(c.findings) ? c.findings : [],
   }));
+}
+
+/** Everything one run of the panel gathered — enough to re-render either view. */
+export interface PanelState {
+  live: CheckResult[];
+  audit: Snapshot | null;
+  monitor: Snapshot | null;
+  /** Why the CLI checks are absent (bridge offline, unauthorised, …), or null. */
+  offlineReason: string | null;
+  /** The bridge payload, for "Copy JSON". */
+  raw: unknown;
+}
+
+/**
+ * Group this run's checks under the AI-Readiness Index dimensions — the same
+ * @sfdt/flow-core grouping `sfdt audit --index` uses. Evidence, not a score.
+ */
+export function indexEvidenceFor(state: PanelState): IndexEvidence {
+  return buildIndexEvidence({ audit: state.audit, monitor: state.monitor, live: state.live });
 }
 
 // ---------------------------------------------------------------------------
@@ -221,13 +240,7 @@ export function createOrgHealthFeature(options: OrgHealthOptions = {}): Feature 
     container.appendChild(section);
   }
 
-  async function fetchAndRender(body: HTMLElement, status: HTMLSpanElement): Promise<unknown> {
-    status.textContent = 'Running checks…';
-    while (body.firstChild) body.removeChild(body.firstChild);
-
-    // The five in-browser checks ALWAYS run and always render first. They need
-    // no setup, so the panel is never empty and never a dead end — which is what
-    // the separate "Org Health (Live)" feature existed to provide.
+  function renderLiveSection(body: HTMLElement, rows: CheckResult[]): HTMLElement {
     const liveSection = doc.createElement('div');
     liveSection.classList.add('sfdt-below');
     const liveHeading = doc.createElement('div');
@@ -235,12 +248,107 @@ export function createOrgHealthFeature(options: OrgHealthOptions = {}): Feature 
     liveHeading.textContent = 'In-browser checks';
     liveSection.appendChild(liveHeading);
     body.appendChild(liveSection);
+    for (const r of rows) renderCheckRow(doc, liveSection, r);
+    return liveSection;
+  }
 
+  /** The by-check view, rebuilt from a gathered state (no refetch). */
+  function renderChecksView(body: HTMLElement, state: PanelState): void {
+    while (body.firstChild) body.removeChild(body.firstChild);
+    renderLiveSection(body, state.live);
+    if (state.offlineReason !== null) {
+      body.appendChild(buildDeeperChecksNotice(state.offlineReason));
+      return;
+    }
+    renderSnapshot(body, 'Diagnostics & Audit', 'audit', state.audit);
+    renderSnapshot(body, 'Monitoring', 'monitor', state.monitor);
+  }
+
+  /**
+   * The by-dimension view: the same checks grouped under the eight AI-Readiness
+   * Index dimensions. Each dimension shows the worst check under it — a pointer
+   * for the person assessing the org, never a score.
+   */
+  function renderIndexView(body: HTMLElement, state: PanelState): void {
+    while (body.firstChild) body.removeChild(body.firstChild);
+    const evidence = indexEvidenceFor(state);
+
+    const intro = doc.createElement('div');
+    intro.classList.add('sfdt-prose', 'sfdt-muted', 'sfdt-below');
+    intro.textContent =
+      'Checks grouped by AI-Readiness Index dimension. A dimension shows its worst check — evidence to review, not a score.';
+    body.appendChild(intro);
+
+    for (const dim of evidence.dimensions) {
+      const section = doc.createElement('div');
+      section.classList.add('sfdt-panel', 'sfdt-below');
+      const head = doc.createElement('div');
+      head.classList.add('sfdt-row');
+      const dot = doc.createElement('span');
+      dot.className = `sfdt-dot ${BAND_CLASS[dim.status === 'none' ? 'none' : bandFor(dim.status)]}`;
+      const titleEl = doc.createElement('span');
+      titleEl.className = 'sfdt-subhead';
+      titleEl.textContent = dim.title;
+      const measures = doc.createElement('span');
+      measures.className = 'sfdt-muted sfdt-msg';
+      measures.textContent = dim.measures;
+      head.append(dot, titleEl, measures);
+      section.appendChild(head);
+
+      const list = doc.createElement('ul');
+      list.style.cssText = 'margin: 6px 0 0; padding-left: 18px; color: var(--sfdt-color-text); font-size: 11px;';
+      if (dim.checks.length === 0) {
+        const li = doc.createElement('li');
+        li.classList.add('sfdt-italic');
+        li.textContent = 'No automated evidence.';
+        list.appendChild(li);
+      }
+      for (const c of dim.checks) {
+        const li = doc.createElement('li');
+        const cDot = doc.createElement('span');
+        cDot.className = `sfdt-dot ${BAND_CLASS[bandFor(c.status)]}`;
+        const text = doc.createElement('span');
+        text.className = 'sfdt-msg';
+        text.textContent = ` ${c.title} — ${c.summary}`;
+        li.append(cDot, text);
+        list.appendChild(li);
+      }
+      section.appendChild(list);
+
+      if (dim.missing.some((m) => m.source !== 'live')) {
+        const missing = doc.createElement('div');
+        missing.classList.add('sfdt-muted', 'sfdt-msg');
+        missing.style.cssText = 'margin-top: 6px; font-size: 11px;';
+        const cli = dim.missing.filter((m) => m.source !== 'live').map((m) => `${m.source} ${m.id}`);
+        missing.textContent = `Needs the CLI: ${cli.join(', ')}`;
+        section.appendChild(missing);
+      }
+
+      const note = doc.createElement('div');
+      note.classList.add('sfdt-muted', 'sfdt-italic', 'sfdt-msg');
+      note.style.cssText = 'margin-top: 6px; font-size: 11px;';
+      note.textContent = `Assessor: ${dim.manualNote}`;
+      section.appendChild(note);
+
+      body.appendChild(section);
+    }
+
+    if (state.offlineReason !== null) body.appendChild(buildDeeperChecksNotice(state.offlineReason));
+  }
+
+  async function fetchAndRender(body: HTMLElement, status: HTMLSpanElement): Promise<PanelState> {
+    status.textContent = 'Running checks…';
+    while (body.firstChild) body.removeChild(body.firstChild);
+
+    // The five in-browser checks ALWAYS run and always render first. They need
+    // no setup, so the panel is never empty and never a dead end — which is what
+    // the separate "Org Health (Live)" feature existed to provide.
     const liveRows = await live.run();
-    for (const r of liveRows) renderCheckRow(doc, liveSection, r);
+    renderLiveSection(body, liveRows);
     const liveIssues = liveRows.filter((r) => r.status !== 'green').length;
     status.textContent = `${liveIssues} issue${liveIssues === 1 ? '' : 's'}`;
 
+    const state: PanelState = { live: liveRows, audit: null, monitor: null, offlineReason: null, raw: null };
     try {
       const bridge = await bridgeFactory();
       const response = await bridge.call({ kind: 'org-health' });
@@ -254,16 +362,18 @@ export function createOrgHealthFeature(options: OrgHealthOptions = {}): Feature 
         // NOT an error state: the in-browser checks above already ran. This
         // says what the CLI would ADD, so the depth difference is discoverable
         // rather than being two tools the user has to know to compare.
-        body.appendChild(buildDeeperChecksNotice(`${response.error}${hint}`));
-        return null;
+        state.offlineReason = `${response.error}${hint}`;
+        body.appendChild(buildDeeperChecksNotice(state.offlineReason));
+        return state;
       }
       const data = (response.data ?? {}) as OrgHealthResponseData;
-      const audit = (data.audit?.data ?? null) as Snapshot | null;
-      const monitor = (data.monitor?.data ?? null) as Snapshot | null;
-      renderSnapshot(body, 'Diagnostics & Audit', 'audit', audit);
-      renderSnapshot(body, 'Monitoring', 'monitor', monitor);
-      const auditChecks = shapeChecks(audit);
-      const monChecks = shapeChecks(monitor);
+      state.audit = (data.audit?.data ?? null) as Snapshot | null;
+      state.monitor = (data.monitor?.data ?? null) as Snapshot | null;
+      state.raw = data;
+      renderSnapshot(body, 'Diagnostics & Audit', 'audit', state.audit);
+      renderSnapshot(body, 'Monitoring', 'monitor', state.monitor);
+      const auditChecks = shapeChecks(state.audit);
+      const monChecks = shapeChecks(state.monitor);
       if (auditChecks.length === 0 && monChecks.length === 0) {
         // No snapshots yet — don't imply a healthy org with "0 issue(s)".
         status.textContent = 'No data';
@@ -271,12 +381,11 @@ export function createOrgHealthFeature(options: OrgHealthOptions = {}): Feature 
         const issues = [...auditChecks, ...monChecks].filter((c) => c.status !== 'ok').length;
         status.textContent = `${issues} issue(s)`;
       }
-      return data;
+      return state;
     } catch (err) {
-      body.appendChild(
-        buildDeeperChecksNotice(err instanceof Error ? err.message : String(err)),
-      );
-      return null;
+      state.offlineReason = err instanceof Error ? err.message : String(err);
+      body.appendChild(buildDeeperChecksNotice(state.offlineReason));
+      return state;
     }
   }
 
@@ -295,8 +404,10 @@ export function createOrgHealthFeature(options: OrgHealthOptions = {}): Feature 
     const actions = doc.createElement('div');
     actions.className = 'sfdt-row sfdt-snug sfdt-toolbar-end';
     const refreshBtn = button({ label: 'Refresh', iconName: 'refresh', small: true, doc });
+    const viewBtn = button({ label: 'Index view', iconName: 'compass', small: true, doc });
     const copyBtn = button({ label: 'Copy JSON', iconName: 'clipboard', small: true, doc });
-    actions.append(refreshBtn, copyBtn);
+    const packBtn = button({ label: 'Copy evidence pack', iconName: 'clipboard', small: true, doc });
+    actions.append(refreshBtn, viewBtn, copyBtn, packBtn);
     bar.append(status, actions);
     body.appendChild(bar);
 
@@ -315,14 +426,37 @@ export function createOrgHealthFeature(options: OrgHealthOptions = {}): Feature 
       },
     });
 
-    let raw: unknown = await fetchAndRender(content, status);
+    // 'checks' = grouped by source (in-browser, audit, monitor); 'index' = the
+    // same checks grouped by AI-Readiness Index dimension.
+    let mode: 'checks' | 'index' = 'checks';
+    const viewLabel = viewBtn.querySelector('.sfdt-btn-label');
+    const renderMode = (state: PanelState): void => {
+      if (mode === 'index') renderIndexView(content, state);
+      else renderChecksView(content, state);
+      if (viewLabel) viewLabel.textContent = mode === 'index' ? 'Check view' : 'Index view';
+    };
+
+    let state = await fetchAndRender(content, status);
     refreshBtn.addEventListener('click', async () => {
       refreshBtn.disabled = true;
-      raw = await fetchAndRender(content, status);
+      state = await fetchAndRender(content, status);
+      if (mode === 'index') renderMode(state);
       refreshBtn.disabled = false;
     });
+    viewBtn.addEventListener('click', () => {
+      mode = mode === 'index' ? 'checks' : 'index';
+      renderMode(state);
+    });
     copyBtn.addEventListener('click', async () => {
-      await copyToClipboard(JSON.stringify(raw, null, 2), { doc, win: win, label: 'Org health copied as JSON' });
+      await copyToClipboard(JSON.stringify(state.raw, null, 2), { doc, win: win, label: 'Org health copied as JSON' });
+    });
+    // Local clipboard only — the evidence never leaves the browser.
+    packBtn.addEventListener('click', async () => {
+      await copyToClipboard(renderIndexMarkdown(indexEvidenceFor(state)), {
+        doc,
+        win: win,
+        label: 'Index evidence pack copied as Markdown',
+      });
     });
   }
 

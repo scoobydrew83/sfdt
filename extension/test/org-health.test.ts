@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { createOrgHealthFeature, bandFor, shapeChecks } from '../features/org-health.js';
+import { createOrgHealthFeature, bandFor, shapeChecks, indexEvidenceFor } from '../features/org-health.js';
 import { describeFinding } from '@sfdt/flow-core';
 import type { SfdtResponse } from '@sfdt/flow-core/bridge-contract';
 import type { SalesforceApiClient } from '../lib/salesforce-api.js';
@@ -164,5 +164,69 @@ describe('org-health — modal', () => {
     await vi.waitFor(() => expect(document.body.textContent).toContain('Run `sfdt'));
 
     expect(document.body.textContent).toContain('Run `sfdt');
+  });
+});
+
+describe('org-health — AI-Readiness Index view', () => {
+  function buttonNamed(label: string): HTMLButtonElement {
+    const btn = [...document.querySelectorAll('button')].find((b) => b.textContent?.trim() === label);
+    if (!btn) throw new Error(`no button "${label}"`);
+    return btn as HTMLButtonElement;
+  }
+
+  it('indexEvidenceFor groups live-only results when the bridge is offline', () => {
+    const ev = indexEvidenceFor({
+      live: [{ id: 'inactive-users', title: 'Inactive users', status: 'amber', summary: '4 inactive', findings: [] }],
+      audit: null,
+      monitor: null,
+      offlineReason: 'bridge offline',
+      raw: null,
+    });
+    const perms = ev.dimensions.find((d) => d.id === 'permissions-hygiene')!;
+    expect(perms.status).toBe('warn');
+    expect(perms.checks[0]).toMatchObject({ source: 'live', id: 'inactive-users' });
+  });
+
+  it('toggles to the Index view and back, grouping bridge checks by dimension', async () => {
+    setSalesforceUrl();
+    const bridge = fakeBridge({
+      ok: true,
+      requestId: 'r1',
+      data: {
+        audit: {
+          timestamp: 't',
+          data: { org: 'dev', checks: [{ id: 'mfa', title: 'MFA coverage', status: 'fail', summary: '2 users', findings: [] }] },
+        },
+        monitor: { timestamp: 't', data: { org: 'dev', checks: [] } },
+      },
+    });
+    const feature = createOrgHealthFeature({ bridgeFactory: async () => bridge, api: fakeLiveApi() });
+    await feature.onActivate?.();
+    await vi.waitFor(() => expect(document.body.textContent).toContain('Diagnostics & Audit'));
+
+    buttonNamed('Index view').click();
+    const body = document.body.textContent ?? '';
+    expect(body).toContain('Permissions hygiene');
+    expect(body).toContain('Data quality');
+    expect(body).toContain('MFA coverage — 2 users');
+    expect(body).toContain('not a score');
+    expect(body).not.toContain('Diagnostics & Audit');
+    expect(bridge.call).toHaveBeenCalledTimes(1); // toggling never refetches
+
+    buttonNamed('Check view').click();
+    expect(document.body.textContent).toContain('Diagnostics & Audit');
+  });
+
+  it('Index view with the bridge offline still says what the CLI would add', async () => {
+    setSalesforceUrl();
+    const bridge = fakeBridge({ ok: false, requestId: 'r1', error: 'bridge offline', code: 'BRIDGE_OFFLINE' });
+    const feature = createOrgHealthFeature({ bridgeFactory: async () => bridge, api: fakeLiveApi() });
+    await feature.onActivate?.();
+    await vi.waitFor(() => expect(document.body.textContent).toContain('bridge offline'));
+
+    buttonNamed('Index view').click();
+    const body = document.body.textContent ?? '';
+    expect(body).toContain('Needs the CLI: audit');
+    expect(body).toContain('deeper checks need the sfdt CLI');
   });
 });

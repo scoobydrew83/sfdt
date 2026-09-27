@@ -4,6 +4,15 @@ All notable changes to `@sfdt/extension` are documented here. Format follows [Ke
 
 ## [Unreleased]
 
+### Added
+
+- Org Health has an **Index view** that groups the same checks under the eight AI-Readiness
+  Index dimensions, using the `@sfdt/flow-core` mapping that `sfdt audit --index` uses. With the
+  bridge offline it groups the five in-browser checks and names the CLI checks each dimension
+  is missing. **Copy evidence pack** copies the grouping as Markdown for an assessment
+  write-up. It is local clipboard only, and nothing leaves the browser. Dimensions show their
+  worst check, not a score.
+
 ## [0.16.1] - 2026-09-25
 
 ### Added

@@ -32,6 +32,29 @@ _Empty._ The four items previously listed here — ApexGuru in `sfdt quality`, `
 the `sfdt soql` family, and the GUI SOQL Console — all shipped in **v0.22.0** (2026-08-03) and
 have moved to "Recently shipped" above. See [CHANGELOG.md](CHANGELOG.md) for each.
 
+## Direction: org health & AI-readiness (2026-09-27)
+
+Positioning moves from "ship changes faster" to **understanding and de-risking the org you
+already have**. Deploy, test and release stay, framed as *change safety*. The first code step is
+the **AI-Readiness Index evidence pack**: `sfdt audit --index` and the Chrome Org Health **Index
+view**, both grouping existing checks under the Index's eight dimensions through one
+`@sfdt/flow-core` mapping. It is **deliberately not a score**. The Index is scored by a person,
+and an automated score would turn it into a free scanner competing on feature count.
+
+Follow-ups, each **Planned** unless noted:
+
+- **VS Code Org Health sidebar Index view.** Reuse `buildIndexEvidence` from flow-core.
+- **In-page Setup signals tagged with an Index dimension.** For example,
+  `missing-description-flags` maps to Documentation coverage. Only where it is cheap.
+- **One health registry.** Merge the audit and monitor runners, which share helpers since
+  `src/lib/check-result.js`. Retire the audit `inactive-*` checks that the automation grid
+  replaces.
+- **One drift engine.** `drift` still shells to `scripts/ops/drift.sh`, `compare` is native,
+  and `packages` and `permissions` each diff separately.
+- **Split `src/lib/gui-server/index.js`** (4k lines) along its route groups.
+- **Research: an automated Index score.** Revisit only once the manual assessment has been
+  sold and delivered twice.
+
 ## Planned
 
 Cross-workstream dispatch and status (including Chrome-extension items tracked outside this repo) lives on the internal Notion board "SFDT Master Backlog — Agent Dispatch Board"; this file remains the source of truth for the CLI items below.

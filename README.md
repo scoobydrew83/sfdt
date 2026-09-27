@@ -4,11 +4,12 @@
 
 # SFDT — Salesforce DevTools
 
-**Deploy, test, and ship Salesforce changes with confidence.**
+**Org health and tech debt for Salesforce — see the org you actually have, then change it safely.**
 
-`@sfdt/cli` is the command-line core of the SFDT suite — a production-grade CLI for Salesforce DX
-deployment, testing, quality analysis, and release management. Pairs with the SFDT Chrome
-extension and the [VS Code extension](https://marketplace.visualstudio.com/items?itemName=sfdt.sfdt-devtools).
+`@sfdt/cli` is the command-line core of the SFDT suite. It diagnoses org health and technical
+debt (audit, monitoring, drift, dependencies, permissions, coverage), groups that evidence
+under the AI-Readiness Index, and ships changes with preflight, testing and rollback. Pairs with
+the SFDT Chrome extension and the [VS Code extension](https://marketplace.visualstudio.com/items?itemName=sfdt.sfdt-devtools).
 
 📖 **[Read the docs at sfdt.dev →](https://sfdt.dev/)**  ·  [npm](https://www.npmjs.com/package/@sfdt/cli)  ·  [Usage guide](docs/USAGE.md)
 
@@ -25,6 +26,8 @@ extension and the [VS Code extension](https://marketplace.visualstudio.com/items
 
 ## Features
 
+- **Org health & tech-debt diagnosis** — `sfdt audit` (17 checks: access sprawl, MFA, unused and unreferenced Apex, inactive automation, deprecated API versions, connected apps, missing field descriptions, setup audit-trail anomalies), `sfdt monitor` (limits, errors, Security Health Check, deploy history, legacy API use), plus `dependencies`, `permissions`, `packages`, `field` and `coverage`
+- **AI-Readiness Index evidence pack** — `sfdt audit --index` groups every check under the eight Index dimensions (automation sprawl, dependency risk, documentation, permissions, dead metadata, data quality, change safety, AI-groundability) and writes a Markdown pack for an assessment. The same grouping appears in the Chrome extension's Org Health panel. It is evidence for a person scoring the org, not a score.
 - Interactive deployment workflows with preflight validation, tagging, and PR creation
 - Automated release manifest generation from git diffs
 - Parallel Apex test execution with configurable coverage enforcement
@@ -41,7 +44,7 @@ extension and the [VS Code extension](https://marketplace.visualstudio.com/items
 - **Org metadata comparison** — diff two orgs or local source vs org with optional package.xml export (`sfdt compare`)
 - **Local web dashboard** for test results, preflight, drift monitoring, and org comparison (`sfdt ui`)
 - **Smart delta deployments** — minimal git-delta package with overwrite protection, automatic test-level selection, optional AI / coding-agent auto-fix (`sfdt deploy --smart`)
-- **Native org health & operations suite** — diagnose (`sfdt audit`), monitor/backup (`sfdt monitor`), dependency analysis (`sfdt dependencies`), and Apex coverage gating (`sfdt coverage`)
+- **Scheduled org monitoring & backup** — `sfdt monitor --backup`, notification digests, and CI monitor templates
 - **CI/CD pipeline templates** for GitHub, GitLab, Azure, and Bitbucket (`sfdt ci init` — monitor, PR validation, approval-gated release, scratch-org CI), plus a published **GitHub Action** (`uses: scoobydrew83/sfdt@v0`); PR decoration (`sfdt pr comment`) and cross-org retrofit (`sfdt retrofit`)
 - **Multi-channel notifications** — Slack, MS Teams, Google Chat, email, webhook, and Grafana Loki, with optional AI executive-summary digests (`sfdt notify`)
 - **Plugin architecture** — extend sfdt with `sfdt-plugin-*` npm packages or local `.sfdt/plugins/` scripts, plus a **Salesforce CLI plugin** exposing every command as `sf sfdt <command>` (`sf plugins install @sfdt/plugin`)

@@ -39,6 +39,27 @@ export type {
   RawLimits,
 } from './org-health-checks.js';
 
+export {
+  READINESS_INDEX_DIMENSIONS,
+  READINESS_INDEX_CONTEXT_CHECKS,
+  bandToStatus,
+  worstIndexStatus,
+  buildIndexEvidence,
+  renderIndexMarkdown,
+} from './readiness-index.js';
+export type {
+  IndexCheckStatus,
+  IndexDimensionStatus,
+  IndexSource,
+  IndexCheckRef,
+  IndexDimension,
+  IndexCheckInput,
+  IndexSnapshotInput,
+  IndexEvidenceCheck,
+  IndexEvidenceDimension,
+  IndexEvidence,
+} from './readiness-index.js';
+
 export { shapeClassCoverage, classCoverageBand } from './coverage.js';
 export type { ClassCoverageBand, RawClassCoverageRow, ClassCoverageRow } from './coverage.js';
 

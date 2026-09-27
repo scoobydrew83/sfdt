@@ -20,7 +20,7 @@ const STATUS_COLOR = {
   error: chalk.red,
 };
 
-function buildParams(config) {
+export function buildMonitorParams(config) {
   const m = config.monitoring ?? {};
   return {
     limits: { warnThreshold: m.limitWarnThreshold ?? MONITOR_DEFAULTS.limitWarnThreshold },
@@ -49,7 +49,7 @@ async function executeMonitor(checks, options, { backup = false } = {}) {
       snapshot = await runMonitor(orgAlias, config, {
         checks,
         backup: backup || !!options.backup,
-        params: buildParams(config),
+        params: buildMonitorParams(config),
       });
       spinner?.succeed(`Monitoring complete (${orgAlias})`);
     } catch (err) {

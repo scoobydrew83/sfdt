@@ -2,7 +2,7 @@ import path from 'path';
 import fs from 'fs-extra';
 import ora from 'ora';
 import chalk from 'chalk';
-import { describeFinding } from '@sfdt/flow-core';
+import { describeFinding, renderIndexMarkdown } from '@sfdt/flow-core';
 import { loadConfig } from '../lib/config.js';
 import { runAudit, CHECK_IDS, AUDIT_DEFAULTS } from '../lib/audit-runner.js';
 import { resolveExitCode } from '../lib/exit-codes.js';
@@ -11,6 +11,8 @@ import { emitJson, emitJsonError } from '../lib/output.js';
 import { archiveSnapshot } from '../lib/log-writer.js';
 import { recordRun } from '../lib/run-history.js';
 import { maxStatus } from '../lib/check-status.js';
+import { runIndexEvidence } from '../lib/readiness-index.js';
+import { buildMonitorParams } from './monitor.js';
 
 const STATUS_COLOR = {
   ok: chalk.green,
@@ -52,6 +54,8 @@ async function executeAudit(checks, options) {
     const logDir = config.logDir ?? path.join(config._projectRoot, 'logs');
     const outPath = path.join(logDir, 'audit-latest.json');
 
+    if (options.index) return await executeIndex(orgAlias, config, logDir, options);
+
     const spinner = jsonMode ? null : ora(`Running org audit against ${orgAlias}…`).start();
     let snapshot;
     try {
@@ -66,12 +70,7 @@ async function executeAudit(checks, options) {
     // handler read this file, so --json runs (CI/automation) must update it too.
     // A write failure must not fail the (successful) audit or emit a second JSON
     // envelope to stdout — warn on stderr and carry on.
-    try {
-      await fs.ensureDir(logDir);
-      await fs.writeJson(outPath, snapshot, { spaces: 2 });
-    } catch (writeErr) {
-      process.stderr.write(`Warning: could not write snapshot to ${outPath}: ${writeErr.message}\n`);
-    }
+    await writeSnapshot(outPath, snapshot);
 
     // History: a timestamped snapshot archive + a compact run-index row so the
     // org's audit posture can be trended over time. Best-effort — never fails
@@ -121,6 +120,76 @@ async function executeAudit(checks, options) {
   }
 }
 
+/**
+ * Best-effort snapshot write: the GUI, bridge and Chrome read these files, but
+ * a write failure must not fail a successful run or emit a second JSON envelope.
+ */
+async function writeSnapshot(outPath, data, { text = false } = {}) {
+  try {
+    await fs.ensureDir(path.dirname(outPath));
+    if (text) await fs.writeFile(outPath, data);
+    else await fs.writeJson(outPath, data, { spaces: 2 });
+  } catch (writeErr) {
+    process.stderr.write(`Warning: could not write snapshot to ${outPath}: ${writeErr.message}\n`);
+  }
+}
+
+/**
+ * `sfdt audit --index`: run audit + monitor and group the results under the
+ * AI-Readiness Index dimensions. Refreshes audit-latest.json and
+ * monitor-latest.json (so the GUI and Chrome panel see the same run) and writes
+ * the evidence as index-latest.json plus a paste-ready index-latest.md.
+ */
+async function executeIndex(orgAlias, config, logDir, options) {
+  const jsonMode = !!options.json;
+  const spinner = jsonMode ? null : ora(`Gathering AI-Readiness Index evidence for ${orgAlias}…`).start();
+  let run;
+  try {
+    run = await runIndexEvidence(orgAlias, config, {
+      auditParams: buildParams(config),
+      monitorParams: buildMonitorParams(config),
+    });
+    spinner?.succeed(`Evidence gathered (${orgAlias})`);
+  } catch (err) {
+    spinner?.fail('Evidence gathering failed');
+    throw err;
+  }
+  const { audit, monitor, evidence } = run;
+  const mdPath = path.join(logDir, 'index-latest.md');
+  await writeSnapshot(path.join(logDir, 'audit-latest.json'), audit);
+  await writeSnapshot(path.join(logDir, 'monitor-latest.json'), monitor);
+  await writeSnapshot(path.join(logDir, 'index-latest.json'), evidence);
+  await writeSnapshot(mdPath, renderIndexMarkdown(evidence), { text: true });
+
+  if (jsonMode) {
+    emitJson(evidence);
+  } else {
+    printIndexReport(evidence);
+    console.log(chalk.dim(`\nEvidence pack written to ${mdPath}`));
+  }
+  // Same CI contract as a plain audit: a failed or errored check is non-zero.
+  const failing = [audit, monitor].some((s) => s.summary.fail > 0 || s.summary.error > 0);
+  if (failing) process.exitCode = 1;
+}
+
+const DIMENSION_COLOR = { ...STATUS_COLOR, none: chalk.dim };
+
+function printIndexReport(evidence) {
+  console.log('');
+  for (const dim of evidence.dimensions) {
+    const color = DIMENSION_COLOR[dim.status] ?? chalk.white;
+    const label = dim.status === 'none' ? 'NODATA' : dim.status.toUpperCase();
+    console.log(`${color(label.padEnd(6))} ${chalk.bold(dim.title)}`);
+    for (const c of dim.checks) {
+      const cColor = STATUS_COLOR[c.status] ?? chalk.white;
+      console.log(`         ${cColor('•')} ${c.title} — ${c.summary}`);
+    }
+    console.log(chalk.dim(`         Assessor: ${dim.manualNote}`));
+  }
+  console.log('');
+  console.log(chalk.dim('Per-dimension status is the worst check under it — evidence for an assessor, not a score.'));
+}
+
 function printReport(snapshot) {
   console.log('');
   for (const c of snapshot.checks) {
@@ -150,6 +219,7 @@ export function registerAuditCommand(program) {
     .option('--org <alias>', 'Org alias (defaults to config.defaultOrg)')
     .option('--json', 'Emit structured JSON to stdout')
     .option('--notify', 'Send the snapshot to configured notification channels')
+    .option('--index', 'Also run monitor checks and group all results under the AI-Readiness Index dimensions (evidence, not a score); writes logs/index-latest.md')
     .action((options) => executeAudit(CHECK_IDS, options));
 
   for (const id of CHECK_IDS) {
