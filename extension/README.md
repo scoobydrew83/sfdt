@@ -198,6 +198,8 @@ Architecture overview lives in the root [docs/ARCHITECTURE.md](../docs/ARCHITECT
 
 Several Flow features in this extension are derived from [SF Flow Utility Toolkit](https://github.com/ThisIsMarkJones/SF-Flow-Utility-Toolkit) by Mark Jones (MIT). See [../THIRD_PARTY_NOTICES.md](../THIRD_PARTY_NOTICES.md) for the notice and the list of derived files.
 
+The colour palette takes values from the [Salesforce Lightning Design System](https://github.com/salesforce-ux/design-system). It uses values only, no SLDS code or assets. The extension is designed to sit beside [Salesforce Inspector Reloaded](https://github.com/tprouvot/Salesforce-Inspector-reloaded), not replace it. [Org Check](https://github.com/SalesforceLabs/OrgCheck) is the free in-org benchmark for the Org Health panel. No code from either project is used.
+
 ---
 
 ## License

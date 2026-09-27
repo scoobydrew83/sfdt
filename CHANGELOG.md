@@ -29,6 +29,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `org-session` / `org-query` helpers. Behaviour is unchanged: production detection still
   fails safe to production.
 
+- The VS Code extension now ships `THIRD_PARTY_NOTICES.md`. Its bundle inlines
+  `@sfdt/flow-core` files derived from SF Flow Utility Toolkit (the API name prefixes and the
+  default prompts), and `npm run check:notices` now checks that copy too.
+- `npm run build:gui` writes `gui/dist/THIRD_PARTY_LICENSES.md` (Vite `build.license`) listing
+  the licenses of every npm package bundled into the dashboard. The file ships in the npm
+  tarball with the rest of `gui/dist`.
+- The README credits related open-source projects: Org Check, Lightning Flow Scanner,
+  sfdx-git-delta, Salesforce Inspector Reloaded, and SLDS for the extension palette values.
+  No code is taken from any of them.
+
 ### Removed
 
 - Unused `src/lib/child-process-exit.js`, `scripts/core/compare-preview-vs-pull.sh` and

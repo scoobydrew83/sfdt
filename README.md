@@ -533,6 +533,18 @@ To report a vulnerability, use [GitHub's private security advisory feature](http
 
 Parts of SFDT's Flow tooling are derived from [SF Flow Utility Toolkit](https://github.com/ThisIsMarkJones/SF-Flow-Utility-Toolkit) by Mark Jones (MIT). The derived areas are the Flow Health rules, the flow metadata normalizer, the health scorer, the API name prefixes, the scheduled flow calculator, the metadata cleaner and the default AI prompts, in `@sfdt/flow-core` and the browser extension. The copyright and permission notice, with the full list of derived files, is in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
+The web dashboard bundles third-party npm packages. `npm run build:gui` writes their licenses to `gui/dist/THIRD_PARTY_LICENSES.md`, which ships in the npm package.
+
+### Related open-source projects
+
+SFDT copies no code from the projects below. They cover overlapping ground, and several are worth running alongside it:
+
+- [Org Check](https://github.com/SalesforceLabs/OrgCheck) (Salesforce Labs): an in-org technical-debt and org-health analyzer. It is the free benchmark for what `sfdt audit` and the AI-Readiness Index evidence pack cover.
+- [Lightning Flow Scanner](https://github.com/Lightning-Flow-Scanner): Flow best-practice rules. `@sfdt/flow-core` checks overlapping concepts (DML/SOQL in loops, missing fault paths, hardcoded IDs), but its rule set and scorer come from SF Flow Utility Toolkit, credited above.
+- [sfdx-git-delta](https://github.com/scolladon/sfdx-git-delta): git-diff → `package.xml` / `destructiveChanges.xml`, the same job as `sfdt manifest` and `sfdt deploy --smart`. SFDT's mapper is an independent implementation.
+- [Salesforce Inspector Reloaded](https://github.com/tprouvot/Salesforce-Inspector-reloaded): the browser power tool the SFDT Chrome extension is designed to sit beside, not replace.
+- [Salesforce Lightning Design System](https://github.com/salesforce-ux/design-system): the SFDT extension's colour palette takes SLDS values (`extension/lib/tokens.ts`). Values only, no SLDS code or assets.
+
 ## License
 
 [Apache-2.0](LICENSE)
