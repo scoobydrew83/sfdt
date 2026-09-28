@@ -613,6 +613,14 @@ describe('SfdtMcpServer', () => {
       expect(execa).toHaveBeenCalledWith('node', expect.arrayContaining(['audit', 'all', '--json']), expect.anything());
     });
 
+    it('sfdt_audit index:true runs audit all --index even when a single check is named', async () => {
+      execa.mockResolvedValueOnce({ exitCode: 0, stdout: '{}', stderr: '' });
+      await callTool('sfdt_audit', { org: 'prod', check: 'mfa', index: true });
+      const args = execa.mock.calls.at(-1)[1];
+      expect(args).toEqual(expect.arrayContaining(['audit', 'all', '--json', '--index', '--org', 'prod']));
+      expect(args).not.toContain('mfa');
+    });
+
     it('executes sfdt_monitor with --backup when requested', async () => {
       execa.mockResolvedValueOnce({ exitCode: 0, stdout: '{}', stderr: '' });
       await callTool('sfdt_monitor', { check: 'all', backup: true });

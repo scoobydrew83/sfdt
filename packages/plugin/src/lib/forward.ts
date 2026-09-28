@@ -1,22 +1,51 @@
+import { existsSync, readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
+import { fileURLToPath } from 'node:url';
 import { execa } from 'execa';
 
 const require = createRequire(import.meta.url);
 
 /**
- * Resolve the bundled `@sfdt/cli` binary.
+ * The monorepo's own CLI, when the plugin is running from a checkout.
  *
- * In an installed plugin (`sf plugins install @sfdt/plugin`), `@sfdt/cli` is a
- * pinned runtime dependency laid down alongside the plugin, so the deep import
- * resolves inside sf's plugin directory (`@sfdt/cli` has no `exports` map, so
- * deep imports are permitted).
+ * From `dist/lib/forward.js` (or `src/lib/forward.ts` under test) four levels
+ * up is the repository root. That is only the CLI when its package.json says
+ * `@sfdt/cli` — in an installed plugin the same path is sf's plugin directory,
+ * so this returns null and the installed dependency is used.
  *
- * `SFDT_CLI_ENTRYPOINT` overrides the resolved path — used by tests and for
- * pointing the plugin at a local CLI checkout during development (the monorepo
- * does not symlink the root `@sfdt/cli` package into `node_modules`).
+ * Without this, a checkout forwarded to the registry `@sfdt/cli` npm nests
+ * under packages/plugin (the root package can't be a workspace dependency),
+ * while the plugin's commands are generated from the working tree — so every
+ * command newer than that published version failed as unknown.
  */
-function entrypoint(): string {
-  return process.env.SFDT_CLI_ENTRYPOINT || require.resolve('@sfdt/cli/bin/sfdt.js');
+export function monorepoEntrypoint(root: URL = new URL('../../../../', import.meta.url)): string | null {
+  try {
+    const pkg = JSON.parse(readFileSync(new URL('package.json', root), 'utf8')) as { name?: string };
+    if (pkg.name !== '@sfdt/cli') return null;
+    const bin = fileURLToPath(new URL('bin/sfdt.js', root));
+    return existsSync(bin) ? bin : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Resolve the `sfdt` CLI to forward to, in order:
+ *
+ *  1. `SFDT_CLI_ENTRYPOINT` — explicit override (tests, a CLI checkout elsewhere).
+ *  2. The monorepo CLI, when running from this repository (see above).
+ *  3. The `@sfdt/cli` runtime dependency laid down beside an installed plugin
+ *     (`sf plugins install @sfdt/plugin`). `@sfdt/cli` has no `exports` map, so
+ *     the deep import is permitted.
+ *
+ * @param root - where to probe for the monorepo; injectable for tests.
+ */
+export function entrypoint(root?: URL): string {
+  return (
+    process.env.SFDT_CLI_ENTRYPOINT ||
+    monorepoEntrypoint(root) ||
+    require.resolve('@sfdt/cli/bin/sfdt.js')
+  );
 }
 
 /**

@@ -3,6 +3,7 @@ import path from 'path';
 import fs from 'fs-extra';
 import { execa } from 'execa';
 import { query, safeParse } from './org-query.js';
+import { getOrgUsername } from './org-session.js';
 
 /**
  * Apex observability runner — trace flags, debug log retrieve/watch, and
@@ -85,8 +86,12 @@ async function sfJson(args) {
 
 /** Resolve the username the org alias is authenticated as. */
 export async function getDefaultUsername(orgAlias) {
-  const result = await sfJson(['org', 'display', '--target-org', orgAlias, '--json']);
-  const username = result?.username;
+  let username;
+  try {
+    username = await getOrgUsername(orgAlias);
+  } catch (err) {
+    throw sfError(err);
+  }
   if (!username) throw new Error(`Could not resolve the username for org "${orgAlias}".`);
   return username;
 }

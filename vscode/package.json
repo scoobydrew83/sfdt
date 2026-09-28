@@ -474,11 +474,11 @@
     }
   },
   "dependencies": {
-    "@sfdt/flow-core": "^0.13.0"
+    "@sfdt/flow-core": "^0.15.0"
   },
   "devDependencies": {
     "@types/node": "^25.9.8",
-    "@types/vscode": "^1.138.0",
+    "@types/vscode": "~1.80.0",
     "@vscode/vsce": "^3.2.1",
     "esbuild": "^0.28.2",
     "typescript": "^5.6.3",

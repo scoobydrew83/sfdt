@@ -59,7 +59,7 @@ beforeEach(() => {
 describe('sfdt flow scan', () => {
   it('queries FlowDefinitions, then fetches each active version and writes a report', async () => {
     executor = (_cmd, args) => {
-      const soql = args[args.indexOf('-q') + 1] ?? '';
+      const soql = args[args.indexOf('--query') + 1] ?? '';
       if (soql.startsWith('SELECT Id, DeveloperName, ActiveVersionId FROM FlowDefinition')) {
         return {
           stdout: JSON.stringify({
@@ -139,7 +139,7 @@ describe('sfdt flow scan', () => {
 describe('sfdt flow conflicts', () => {
   it('detects record-triggered flows sharing the same object + timing + event', async () => {
     executor = (_cmd, args) => {
-      const soql = args[args.indexOf('-q') + 1] ?? '';
+      const soql = args[args.indexOf('--query') + 1] ?? '';
       if (soql.startsWith('SELECT Id, DeveloperName, ActiveVersionId FROM FlowDefinition')) {
         return {
           stdout: JSON.stringify({
@@ -212,7 +212,7 @@ describe('sfdt flow conflicts', () => {
 
   it('emits zero groups when no flows share object + timing + event', async () => {
     executor = (_cmd, args) => {
-      const soql = args[args.indexOf('-q') + 1] ?? '';
+      const soql = args[args.indexOf('--query') + 1] ?? '';
       if (soql.startsWith('SELECT Id, DeveloperName')) {
         return {
           stdout: JSON.stringify({

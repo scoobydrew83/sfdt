@@ -74,6 +74,47 @@ export async function getOrgInstanceUrl(orgAlias) {
 }
 
 /**
+ * Is this org a sandbox? True only when `sf` reports `isSandbox: true` —
+ * callers that guard production must treat anything else (including a thrown
+ * lookup) as production; see `isProductionOrg` in org-facts.js.
+ *
+ * @param {string} orgAlias
+ * @returns {Promise<boolean>}
+ */
+export async function isSandboxOrg(orgAlias) {
+  const result = await displayOrg(orgAlias);
+  return result.isSandbox === true;
+}
+
+/**
+ * The org's ID (18 chars), or null when it can't be read. Never throws: it
+ * labels snapshots so surfaces can refuse to merge two orgs' results, and a
+ * failed lookup must not fail the audit/monitor run that asked for it.
+ *
+ * @param {string} orgAlias
+ * @returns {Promise<string|null>}
+ */
+export async function getOrgId(orgAlias) {
+  try {
+    const result = await displayOrg(orgAlias);
+    return typeof result.id === 'string' && result.id ? result.id : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The username the alias is authenticated as.
+ *
+ * @param {string} orgAlias
+ * @returns {Promise<string|null>}
+ */
+export async function getOrgUsername(orgAlias) {
+  const result = await displayOrg(orgAlias);
+  return result.username ?? null;
+}
+
+/**
  * The org's access token, instance URL and API version — for the one caller
  * that genuinely needs a token in this process.
  *

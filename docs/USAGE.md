@@ -1048,10 +1048,44 @@ sfdt audit licenses --json
 |---|---|
 | `--org <alias>` | Target org (defaults to `config.defaultOrg`) |
 | `--json` | Emit the normalised snapshot as JSON |
+| `--notify` | Send the snapshot to configured notification channels |
+| `--index` | Also run the `monitor` checks and group every result under the eight AI-Readiness Index dimensions (see below) |
 
 `audit` now runs ~15 checks — in addition to the originals it covers inactive flows, inactive validation rules, inactive workflow rules, unused permission sets, connected apps, missing field descriptions, unreferenced Apex, and object- and field-level access lint. Pass `--notify` to dispatch the resulting snapshot through the notifier. Beta/license-gated checks degrade to `warn` (never `error`) when the org can't run them, so a missing API never fails CI.
 
 Exits non-zero when any check reports `fail` **or** `error` status, so an unreachable org or a missing permission can't read as healthy in CI. Check thresholds are configured under the `audit` block in `.sfdt/config.json`.
+
+#### AI-Readiness Index evidence (`--index`)
+
+```bash
+sfdt audit --index --org production          # grouped report + logs/index-latest.md
+sfdt audit --index --json                    # the same evidence as a JSON envelope
+```
+
+Runs every `audit` and `monitor` check, then groups the results under the eight dimensions of
+the AI-Readiness Index: automation sprawl, dependency risk, documentation coverage,
+permissions hygiene, dead metadata, data quality, change safety and AI-groundability.
+
+The pack is **evidence for a person scoring the org, not a score**. Each dimension shows the
+worst check under it, the checks themselves, any mapped check that did not run, and a note on
+what the checks cannot see (data quality has no automated checks at all). The run refreshes
+`logs/audit-latest.json` and `logs/monitor-latest.json`, so the GUI and the Chrome Org Health
+panel see the same data, and writes the grouped result to `logs/index-latest.json` plus a
+paste-ready `logs/index-latest.md`. The Chrome Org Health panel has the same grouping under
+**Index view**, with a **Copy evidence pack** button that produces the same Markdown.
+
+The dimension mapping lives in `@sfdt/flow-core` (`readiness-index.ts`), so every surface groups
+identically. The exit code follows the plain audit rule: non-zero when any audit or monitor
+check reports `fail` or `error`.
+
+An `--index` run has the same lifecycle as running `audit` and `monitor` separately. Both
+snapshots are archived and indexed for `sfdt history`, and `--notify` dispatches both.
+
+**One org per pack.** Every `audit` and `monitor` snapshot now records the org ID it ran against.
+The Chrome Index view leaves out any snapshot whose org doesn't match the org open in the browser,
+including snapshots from older CLIs that carry no org ID. It says so at the top of the view and
+at the top of the copied pack, so one org's findings are never presented as another's. Run
+`sfdt audit --index` against the org you are assessing to refresh both snapshots together.
 
 #### The `audittrail` check
 

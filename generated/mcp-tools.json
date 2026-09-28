@@ -129,7 +129,8 @@
       "inputProperties": [
         "projectRoot",
         "org",
-        "check"
+        "check",
+        "index"
       ]
     },
     {

@@ -2106,6 +2106,13 @@
               "required": false,
               "default": null,
               "description": "Send the snapshot to configured notification channels"
+            },
+            {
+              "flags": "--index",
+              "name": "index",
+              "required": false,
+              "default": null,
+              "description": "Also run monitor checks and group all results under the AI-Readiness Index dimensions (evidence, not a score); writes logs/index-latest.md"
             }
           ],
           "subcommands": []

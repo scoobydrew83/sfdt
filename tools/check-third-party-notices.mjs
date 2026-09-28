@@ -1,7 +1,8 @@
 /**
  * Third-party notices sync check. Canonical source: THIRD_PARTY_NOTICES.md at
- * the repo root. The published flow-core package and the extension build each
- * ship their own copy; both must match the root byte-for-byte.
+ * the repo root. The published flow-core package, the Chrome extension build and
+ * the VS Code extension (whose bundle inlines derived flow-core files) each ship
+ * their own copy; all must match the root byte-for-byte.
  *
  * Exits 1 naming each copy that differs or is missing. Never writes.
  */
@@ -12,7 +13,11 @@ import fs from 'fs-extra';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const CANONICAL = 'THIRD_PARTY_NOTICES.md';
-const COPIES = ['packages/flow-core/THIRD_PARTY_NOTICES.md', 'extension/public/THIRD_PARTY_NOTICES.md'];
+const COPIES = [
+  'packages/flow-core/THIRD_PARTY_NOTICES.md',
+  'extension/public/THIRD_PARTY_NOTICES.md',
+  'vscode/THIRD_PARTY_NOTICES.md',
+];
 
 const source = await fs.readFile(path.join(ROOT, CANONICAL), 'utf-8');
 const violations = [];

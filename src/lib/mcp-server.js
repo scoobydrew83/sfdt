@@ -193,12 +193,17 @@ export const TOOLS = [
           // exposed here automatically (drift guarded by command-policy.test.js).
           enum: ['all', ...AUDIT_CHECK_IDS],
           description: 'Run a single named check, or "all" (default).'
+        },
+        index: {
+          type: 'boolean',
+          description: 'Also run the monitor checks and return the results grouped under the eight AI-Readiness Index dimensions (evidence per dimension, not a score). Implies check "all".'
         }
       }
     },
     examples: [
       { description: 'Run all read-only org-health checks on production', input: { org: 'prod', check: 'all' } },
-      { description: 'Check only MFA coverage', input: { org: 'prod', check: 'mfa' } }
+      { description: 'Check only MFA coverage', input: { org: 'prod', check: 'mfa' } },
+      { description: 'Gather AI-Readiness Index evidence for an org assessment', input: { org: 'prod', index: true } }
     ]
   },
   {
@@ -1885,8 +1890,10 @@ export class SfdtMcpServer {
       }
 
       case 'sfdt_audit': {
-        const check = args.check && args.check !== 'all' ? args.check : 'all';
+        // --index lives on `audit all`, so it overrides a single-check request.
+        const check = !args.index && args.check && args.check !== 'all' ? args.check : 'all';
         const cmdArgs = ['audit', check, '--json'];
+        if (args.index === true) cmdArgs.push('--index');
         if (args.org) cmdArgs.push('--org', args.org);
         const { stdout } = await this.#runCliCommand(cmdArgs);
         return this.#parseCliJson(stdout);

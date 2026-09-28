@@ -1,5 +1,6 @@
 import { ORG_HEALTH_THRESHOLDS } from '@sfdt/flow-core';
-import { query, safeParse, toSoqlDate } from './org-query.js';
+import { query, toSoqlDate } from './org-query.js';
+import { result, errored, degraded, summarize } from './check-result.js';
 
 /**
  * Org diagnose & audit runner.
@@ -1007,55 +1008,6 @@ export async function runAudit(orgAlias, { checks = CHECK_IDS, params = {} } = {
   // (returning an 'error'-status result), so run them concurrently rather than
   // serialising ~18 round-trips.
   const results = await Promise.all(selected.map((id) => CHECKS[id](orgAlias, params[id] ?? {})));
-  const summary = {
-    total: results.length,
-    ok: results.filter((r) => r.status === 'ok').length,
-    warn: results.filter((r) => r.status === 'warn').length,
-    fail: results.filter((r) => r.status === 'fail').length,
-    error: results.filter((r) => r.status === 'error').length,
-  };
-  return { timestamp: new Date().toISOString(), org: orgAlias, checks: results, summary };
+  return { timestamp: new Date().toISOString(), org: orgAlias, checks: results, summary: summarize(results) };
 }
 
-function result(id, title, status, summary, findings) {
-  return { id, title, status, summary, findings };
-}
-
-function errored(id, title, err) {
-  // Mirror monitor-runner: prefer sf's structured JSON error message (from
-  // stdout or stderr) over the opaque execa string. Today all audit checks go
-  // through query() (which already rethrows with the structured message), but
-  // keeping the two errored() helpers symmetric guards against a future check
-  // that calls execa directly.
-  const structured = safeParse(err?.stdout)?.message ?? safeParse(err?.stderr)?.message;
-  return {
-    id,
-    title,
-    status: 'error',
-    summary: `Check failed: ${oneLine(structured || err?.message)}`,
-    findings: [],
-  };
-}
-
-/**
- * Soft failure for checks that query a Beta / license-gated / permission-gated
- * object (e.g. MetadataComponentDependency, ConnectedApplication): a query
- * failure there usually means "this org can't run the check", not "the org is
- * broken". Surface a `warn` so `audit all` doesn't exit non-zero (red CI) over a
- * missing API, while never reading as a clean `ok`. Mirrors checkDeprecatedApi
- * in monitor-runner.
- */
-function degraded(id, title, err, what) {
-  const structured = safeParse(err?.stdout)?.message ?? safeParse(err?.stderr)?.message;
-  return {
-    id,
-    title,
-    status: 'warn',
-    summary: `${what} unavailable in this org: ${oneLine(structured || err?.message)}`,
-    findings: [],
-  };
-}
-
-function oneLine(s) {
-  return String(s ?? '').replace(/[\r\n]+/g, ' ').slice(0, 300);
-}

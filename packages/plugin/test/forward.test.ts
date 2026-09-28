@@ -1,4 +1,8 @@
+import path from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
+const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
 
 const execaMock = vi.fn();
 vi.mock('execa', () => ({ execa: (...args: unknown[]) => execaMock(...args) }));
@@ -47,9 +51,9 @@ describe('forward', () => {
     exitSpy.mockRestore();
   });
 
-  it('falls back to require.resolve(@sfdt/cli) when SFDT_CLI_ENTRYPOINT is unset', async () => {
-    // With no override, entrypoint() takes the right-hand branch of the `||` and
-    // resolves the bundled @sfdt/cli bin (a runtime dep present in node_modules).
+  it('uses the monorepo CLI when running from a checkout and no override is set', async () => {
+    // Four levels up from src/lib/forward.ts is the repo root, whose package is
+    // @sfdt/cli — the working tree the plugin's commands were generated from.
     delete process.env.SFDT_CLI_ENTRYPOINT;
     execaMock.mockResolvedValue({ exitCode: 0 });
     const exitSpy = vi.spyOn(process, 'exit').mockImplementation((() => {
@@ -60,9 +64,22 @@ describe('forward', () => {
     await expect(forward(['version'])).rejects.toThrow('__exit__');
 
     const [, args] = execaMock.mock.calls[0] as [string, string[]];
-    expect(args[0]).toMatch(/@sfdt[/\\]cli[/\\]bin[/\\]sfdt\.js$/);
-    expect(exitSpy).toHaveBeenCalledWith(0);
-
+    expect(args[0]).toBe(path.join(REPO_ROOT, 'bin', 'sfdt.js'));
+    expect(args[0]).not.toMatch(/node_modules/);
     exitSpy.mockRestore();
+  });
+
+  it('falls back to require.resolve(@sfdt/cli) outside the monorepo (installed plugin)', async () => {
+    delete process.env.SFDT_CLI_ENTRYPOINT;
+    const { entrypoint, monorepoEntrypoint } = await import('../src/lib/forward');
+    const notTheCli = pathToFileURL(path.join(REPO_ROOT, 'packages', 'plugin') + path.sep);
+    expect(monorepoEntrypoint(notTheCli)).toBeNull();
+    expect(monorepoEntrypoint(new URL('file:///nonexistent-sfdt-root/'))).toBeNull();
+    expect(entrypoint(notTheCli)).toMatch(/@sfdt[/\\]cli[/\\]bin[/\\]sfdt\.js$/);
+  });
+
+  it('SFDT_CLI_ENTRYPOINT wins over the monorepo CLI', async () => {
+    const { entrypoint } = await import('../src/lib/forward');
+    expect(entrypoint()).toBe(FAKE_BIN);
   });
 });

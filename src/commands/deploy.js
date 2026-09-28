@@ -12,6 +12,7 @@ import { getPrompt } from '../lib/prompts.js';
 import { runFixLoop } from '../lib/agent-loop.js';
 import { postPrComment } from '../lib/github-pr.js';
 import { dispatch, notificationsConfigured } from '../lib/notifier.js';
+import { isProductionOrg } from '../lib/org-facts.js';
 
 async function runPreflight(config, { dryRun } = {}) {
   print.info('Running preflight checks...');
@@ -32,16 +33,9 @@ async function runPreflight(config, { dryRun } = {}) {
 async function detectIsProd(org, config, options) {
   if (options.prod) return true;
   if (config.deployment?.smart?.assumeProd) return true;
-  try {
-    const { stdout } = await execa('sf', ['org', 'display', '--target-org', org, '--json']);
-    const isSandbox = JSON.parse(stdout)?.result?.isSandbox;
-    // Fail safe to production for any non-`true` value: some org shapes (Dev Hubs,
-    // certain scratch orgs, older `sf` versions) omit `isSandbox`, and `undefined`
-    // must not be read as "non-prod" or we'd silently skip tests on a real org.
-    return isSandbox !== true;
-  } catch {
-    return true;
-  }
+  // Fails safe to production for any non-`true` isSandbox (and for a failed
+  // lookup) — see isProductionOrg in org-facts.js.
+  return isProductionOrg(org);
 }
 
 async function runSmartDeploy(config, options) {

@@ -197,6 +197,7 @@ Runs native org-health diagnostics (audit trail, license usage, MFA coverage, un
 * **Arguments:**
   * `check` (string, optional): A specific check id, or `all` (default) to run every check.
   * `org` (string, optional): Target org.
+  * `index` (boolean, optional): Also run the monitor checks and return every result grouped under the eight AI-Readiness Index dimensions (`sfdt audit --index`). The result is evidence per dimension, not a score. Implies `check: "all"`.
 
 #### `sfdt_monitor`
 Runs native org monitoring (limits, Apex job failures, Security Health Check score) and optionally a full metadata backup.

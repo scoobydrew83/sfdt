@@ -78,3 +78,7 @@ these keep working regardless of the manifest `name`.
 
 Press **F5** in VS Code to launch an Extension Development Host. Package a
 `.vsix` with `npm run package:vscode`.
+
+## Acknowledgements
+
+This extension bundles parts of `@sfdt/flow-core`. Some of them (the API name prefixes and the default AI prompts) are derived from [SF Flow Utility Toolkit](https://github.com/ThisIsMarkJones/SF-Flow-Utility-Toolkit) by Mark Jones (MIT). The notice and the full list of derived files are in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md), which ships in the extension package.

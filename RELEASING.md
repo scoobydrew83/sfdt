@@ -172,7 +172,7 @@ All on the release ref, before the release PR merges:
 - [ ] **API-version registry current** — when Salesforce has shipped a new GA release since the last sfdt release, curate it in `src/lib/data/api-version-registry.json` (facts only from the official release notes; empty change lists are fine, wrong facts are not). `test/lib/api-version-registry.test.js` fails automatically when the registry falls behind the GA version.
 - [ ] `npm run build:gui`, `npm run build:ext`, `npm run build:plugin` succeed.
 - [ ] Version-bump commit includes a synced lockfile: `npm install --package-lock-only`, stage `package-lock.json` — or CI's `npm ci` fails on the release commit.
-- [ ] **`@sfdt/flow-core` bumped at its OWN semver level, not the CLI's.** flow-core has no standalone trigger (§1) — it rides the CLI's release commit — so a patch-level CLI release will silently republish it as a patch even when it gained public API. Diff `packages/flow-core/src/index.ts` against the last released tag: any **new export** is a MINOR bump for flow-core (independently of what the CLI is doing), a **changed or removed** export is MAJOR. Move consumer ranges (`extension/`, `vscode/`, `packages/plugin/`, root) to the new `^` range in the same commit.
+- [ ] **`@sfdt/flow-core` bumped at its OWN semver level, not the CLI's.** flow-core has no standalone trigger (§1) — it rides the CLI's release commit — so a patch-level CLI release will silently republish it as a patch even when it gained public API. Diff `packages/flow-core/src/index.ts` against the last released tag: any **new export** is a MINOR bump for flow-core (independently of what the CLI is doing), a **changed or removed** export is MAJOR. Move every consumer range (root, `extension/`, `gui/`, `host/`, `vscode/`, `web/`, and any other workspace that declares it) to the new `^` range in the same commit. On 0.x a caret does not cross minors, so a missed consumer silently installs a stale registry copy. `npm run check:workspace-deps` (part of `check:all-contracts`) fails if any range differs from the root's.
 - [ ] `/pre-release-cli-test` run — smoke-tests `--help` for every registered command, derived from the Commander tree (never a hardcoded list or count).
 - [ ] `/pre-release-security` run if anything outside docs/tests changed.
 - [ ] `/pre-release-ui-test` run if anything in `gui/` changed.
@@ -258,7 +258,7 @@ so merging to `master` is deploying.
 ### sf plugin (`@sfdt/plugin`)
 
 - Nothing to do — published by the same `ci.yml` job **after** the CLI.
-- Its oclif commands are code-generated from `createCli()`; never hand-edit them. Its `@sfdt/cli` dep is `>=` (not pinned) so the bump commit's `npm ci` never 404s; the coupled publish means installs resolve to the matching version.
+- Its oclif commands are code-generated from `createCli()`; never hand-edit them. Its `@sfdt/cli` dep is `>=0.14.1 <1.0.0`, not pinned, so the bump commit's `npm ci` never 404s. The coupled publish means installs resolve to the matching version, and the `<1.0.0` ceiling stops an old plugin from picking up a breaking 1.x CLI. `npm run check:workspace-deps` fails if the range stops accepting the CLI's own version. From a checkout, the plugin forwards to the repo's `bin/sfdt.js` (`monorepoEntrypoint` in `src/lib/forward.ts`), not the registry copy.
 
 ### flow-core / host
 
