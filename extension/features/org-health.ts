@@ -70,6 +70,12 @@ export interface PanelState {
   offlineReason: string | null;
   /** The bridge payload, for "Copy JSON". */
   raw: unknown;
+  /**
+   * The org this browser is on (Organization.Id), so snapshots the CLI wrote
+   * for a different org are never merged into this org's evidence. null when
+   * it couldn't be read.
+   */
+  liveOrgId?: string | null;
 }
 
 /**
@@ -77,7 +83,12 @@ export interface PanelState {
  * @sfdt/flow-core grouping `sfdt audit --index` uses. Evidence, not a score.
  */
 export function indexEvidenceFor(state: PanelState): IndexEvidence {
-  return buildIndexEvidence({ audit: state.audit, monitor: state.monitor, live: state.live });
+  return buildIndexEvidence({
+    audit: state.audit,
+    monitor: state.monitor,
+    live: state.live,
+    liveOrgId: state.liveOrgId ?? null,
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -134,7 +145,19 @@ export function createOrgHealthFeature(options: OrgHealthOptions = {}): Feature 
       });
     });
 
-  const live = buildLiveChecks({ doc, win, api: options.api ?? getSalesforceApi() });
+  const api = options.api ?? getSalesforceApi();
+  const live = buildLiveChecks({ doc, win, api });
+
+  /** This browser's org ID — best-effort; null means "couldn't tell". */
+  async function readOrgId(): Promise<string | null> {
+    try {
+      const res = await api.query<{ Id?: string }>('SELECT Id FROM Organization LIMIT 1');
+      const id = res.records?.[0]?.Id;
+      return typeof id === 'string' && id ? id : null;
+    } catch {
+      return null;
+    }
+  }
 
   let view: ViewHandle | null = null;
 
@@ -279,6 +302,23 @@ export function createOrgHealthFeature(options: OrgHealthOptions = {}): Feature 
       'Checks grouped by AI-Readiness Index dimension. A dimension shows its worst check — evidence to review, not a score.';
     body.appendChild(intro);
 
+    if (evidence.warnings.length) {
+      // Before any dimension: a pack that mixed two orgs would be worse than
+      // no pack, so what was left out — and why — comes first.
+      const callout = doc.createElement('div');
+      callout.classList.add('sfdt-callout', 'sfdt-warn', 'sfdt-stack', 'sfdt-tight', 'sfdt-below');
+      const list = doc.createElement('ul');
+      list.classList.add('sfdt-list', 'sfdt-flush-x');
+      for (const w of evidence.warnings) {
+        const li = doc.createElement('li');
+        li.classList.add('sfdt-msg');
+        li.textContent = w;
+        list.appendChild(li);
+      }
+      callout.appendChild(list);
+      body.appendChild(callout);
+    }
+
     for (const dim of evidence.dimensions) {
       const section = doc.createElement('div');
       section.classList.add('sfdt-panel', 'sfdt-below');
@@ -343,12 +383,12 @@ export function createOrgHealthFeature(options: OrgHealthOptions = {}): Feature 
     // The five in-browser checks ALWAYS run and always render first. They need
     // no setup, so the panel is never empty and never a dead end — which is what
     // the separate "Org Health (Live)" feature existed to provide.
-    const liveRows = await live.run();
+    const [liveRows, liveOrgId] = await Promise.all([live.run(), readOrgId()]);
     renderLiveSection(body, liveRows);
     const liveIssues = liveRows.filter((r) => r.status !== 'green').length;
     status.textContent = `${liveIssues} issue${liveIssues === 1 ? '' : 's'}`;
 
-    const state: PanelState = { live: liveRows, audit: null, monitor: null, offlineReason: null, raw: null };
+    const state: PanelState = { live: liveRows, audit: null, monitor: null, offlineReason: null, raw: null, liveOrgId };
     try {
       const bridge = await bridgeFactory();
       const response = await bridge.call({ kind: 'org-health' });

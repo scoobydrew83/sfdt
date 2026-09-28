@@ -4,6 +4,7 @@ import { CHECK_IDS as AUDIT_IDS } from '../../src/lib/audit-runner.js';
 import { CHECK_IDS as MONITOR_IDS } from '../../src/lib/monitor-runner.js';
 import { maxStatus } from '../../src/lib/check-status.js';
 
+vi.mock('../../src/lib/org-session.js', () => ({ getOrgId: vi.fn(async () => null) }));
 vi.mock('../../src/lib/audit-runner.js', async (importOriginal) => {
   const actual = await importOriginal();
   return { ...actual, runAudit: vi.fn() };
@@ -16,6 +17,7 @@ vi.mock('../../src/lib/monitor-runner.js', async (importOriginal) => {
 import { runAudit } from '../../src/lib/audit-runner.js';
 import { runMonitor } from '../../src/lib/monitor-runner.js';
 import { runIndexEvidence } from '../../src/lib/readiness-index.js';
+import { getOrgId } from '../../src/lib/org-session.js';
 
 const claimed = new Set([
   ...READINESS_INDEX_DIMENSIONS.flatMap((d) => d.checks.map((c) => `${c.source}:${c.id}`)),
@@ -54,5 +56,16 @@ describe('AI-Readiness Index ↔ CLI runners', () => {
     expect(runAudit).toHaveBeenCalledWith('o', { params: { a: 1 } });
     expect(runMonitor).toHaveBeenCalledWith('o', cfg, { params: { m: 1 } });
     expect(evidence.dimensions.find((d) => d.id === 'permissions-hygiene').status).toBe('fail');
+  });
+
+  it('runIndexEvidence stamps the org ID on both snapshots and the evidence', async () => {
+    getOrgId.mockResolvedValue('00D000000000001AAA');
+    runAudit.mockResolvedValue({ org: 'o', checks: [], summary: {} });
+    runMonitor.mockResolvedValue({ org: 'o', checks: [], summary: {} });
+    const { audit, monitor, evidence } = await runIndexEvidence('o', {});
+    expect(audit.orgId).toBe('00D000000000001AAA');
+    expect(monitor.orgId).toBe('00D000000000001AAA');
+    expect(evidence.orgId).toBe('00D000000000001');
+    expect(evidence.excluded).toEqual([]);
   });
 });

@@ -2,6 +2,10 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { Command } from 'commander';
 
 vi.mock('../../src/lib/config.js', () => ({ loadConfig: vi.fn() }));
+vi.mock('../../src/lib/org-session.js', () => ({ getOrgId: vi.fn(async () => null) }));
+vi.mock('../../src/lib/notifier.js', () => ({ dispatchSnapshot: vi.fn() }));
+vi.mock('../../src/lib/log-writer.js', () => ({ archiveSnapshot: vi.fn() }));
+vi.mock('../../src/lib/run-history.js', () => ({ recordRun: vi.fn() }));
 vi.mock('../../src/lib/readiness-index.js', () => ({ runIndexEvidence: vi.fn() }));
 vi.mock('../../src/lib/audit-runner.js', async (importOriginal) => {
   const actual = await importOriginal();
@@ -22,6 +26,9 @@ import { loadConfig } from '../../src/lib/config.js';
 import { runAudit } from '../../src/lib/audit-runner.js';
 import { runIndexEvidence } from '../../src/lib/readiness-index.js';
 import fs from 'fs-extra';
+import { dispatchSnapshot } from '../../src/lib/notifier.js';
+import { archiveSnapshot } from '../../src/lib/log-writer.js';
+import { recordRun } from '../../src/lib/run-history.js';
 import { registerAuditCommand } from '../../src/commands/audit.js';
 
 function createProgram() {
@@ -84,6 +91,33 @@ describe('audit --index', () => {
     expect(env.status).toBe(0);
     expect(env.result.dimensions).toHaveLength(8);
     expect(env.result.dimensions.find((d) => d.id === 'permissions-hygiene').status).toBe('warn');
+  });
+
+  it('archives and indexes both runs so sfdt history sees them', async () => {
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+    await createProgram().parseAsync(['node', 'sfdt', 'audit', '--index']);
+    expect(archiveSnapshot.mock.calls.map(([dir, name, snap]) => [dir, name, snap])).toEqual([
+      ['/project/logs', 'audit-results', audit],
+      ['/project/logs', 'monitor-results', monitor],
+    ]);
+    expect(recordRun.mock.calls.map(([, row]) => [row.type, row.org])).toEqual([
+      ['audit', 'dev-org'],
+      ['monitor', 'dev-org'],
+    ]);
+  });
+
+  it('--notify dispatches both snapshots; without it nothing is sent', async () => {
+    dispatchSnapshot.mockResolvedValue({ results: [{ ok: true, channel: 'slack' }] });
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+    await createProgram().parseAsync(['node', 'sfdt', 'audit', '--index']);
+    expect(dispatchSnapshot).not.toHaveBeenCalled();
+
+    await createProgram().parseAsync(['node', 'sfdt', 'audit', '--index', '--notify']);
+    expect(dispatchSnapshot.mock.calls.map(([snap, cfg, opts]) => [snap, cfg, opts.type])).toEqual([
+      [audit, mockConfig, 'audit'],
+      [monitor, mockConfig, 'monitor'],
+    ]);
+    expect(log.mock.calls.flat().join('\n')).toContain('Notified (monitor): slack');
   });
 
   it('exits non-zero when any audit or monitor check failed or errored', async () => {

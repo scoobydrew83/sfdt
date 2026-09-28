@@ -197,7 +197,11 @@ describe('org-health-live feature', () => {
     await flush();
 
     expect(toolingQuery).toHaveBeenCalledTimes(2);
-    expect(query).toHaveBeenCalledTimes(2);
+    // Two queries for the live checks, plus the panel's one Organization lookup
+    // (it stops CLI snapshots for another org merging into the Index view).
+    const soqls = query.mock.calls.map(([soql]) => soql);
+    expect(soqls.filter((s) => !s.includes('FROM Organization'))).toHaveLength(2);
+    expect(soqls.filter((s) => s.includes('FROM Organization'))).toHaveLength(1);
     expect(limits).toHaveBeenCalledTimes(1);
     const text = document.body.textContent ?? '';
     expect(text).toContain('Apex coverage');

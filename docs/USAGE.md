@@ -1078,6 +1078,15 @@ The dimension mapping lives in `@sfdt/flow-core` (`readiness-index.ts`), so ever
 identically. The exit code follows the plain audit rule: non-zero when any audit or monitor
 check reports `fail` or `error`.
 
+An `--index` run has the same lifecycle as running `audit` and `monitor` separately. Both
+snapshots are archived and indexed for `sfdt history`, and `--notify` dispatches both.
+
+**One org per pack.** Every `audit` and `monitor` snapshot now records the org ID it ran against.
+The Chrome Index view leaves out any snapshot whose org doesn't match the org open in the browser,
+including snapshots from older CLIs that carry no org ID. It says so at the top of the view and
+at the top of the copied pack, so one org's findings are never presented as another's. Run
+`sfdt audit --index` against the org you are assessing to refresh both snapshots together.
+
 #### The `audittrail` check
 
 Reads `SetupAuditTrail` over `audit.auditTrailLookbackDays` (default 30) and reports two

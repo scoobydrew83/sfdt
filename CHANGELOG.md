@@ -15,7 +15,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   AI-groundability). It writes `logs/index-latest.json` and a paste-ready
   `logs/index-latest.md`. The result is evidence for an assessor, not a score: each dimension
   shows its worst check, its checks, and what the checks cannot see. The `sfdt_audit` MCP tool
-  takes `index: true` for the same output.
+  takes `index: true` for the same output. `--index` runs are archived and indexed for
+  `sfdt history`, and `--notify` sends both snapshots.
+- `sfdt audit` and `sfdt monitor` snapshots record the org ID (`orgId`) they ran against, so the
+  Index evidence pack can refuse to merge two orgs' results.
 - `@sfdt/flow-core` exports `READINESS_INDEX_DIMENSIONS`, `buildIndexEvidence` and
   `renderIndexMarkdown`, so the CLI and the Chrome extension group checks identically. This is
   new public API, so flow-core takes a minor bump at release (RELEASING.md §4).

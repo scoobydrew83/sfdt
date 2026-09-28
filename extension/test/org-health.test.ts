@@ -217,6 +217,60 @@ describe('org-health — AI-Readiness Index view', () => {
     expect(document.body.textContent).toContain('Diagnostics & Audit');
   });
 
+  function apiOnOrg(orgId: string): SalesforceApiClient {
+    const api = fakeLiveApi();
+    (api.query as ReturnType<typeof vi.fn>).mockImplementation(async (soql: string) =>
+      soql.includes('FROM Organization')
+        ? { records: [{ Id: orgId }], totalSize: 1, done: true }
+        : { records: [], totalSize: 0, done: true },
+    );
+    return api;
+  }
+
+  function bridgeFor(orgId: string) {
+    return fakeBridge({
+      ok: true,
+      requestId: 'r1',
+      data: {
+        audit: {
+          timestamp: 't',
+          data: { org: 'other', orgId, checks: [{ id: 'mfa', title: 'MFA coverage', status: 'fail', summary: '2 users', findings: [] }] },
+        },
+        monitor: { timestamp: 't', data: { org: 'other', orgId, checks: [] } },
+      },
+    });
+  }
+
+  it('refuses CLI snapshots taken against a different org than the browser', async () => {
+    setSalesforceUrl();
+    const feature = createOrgHealthFeature({
+      bridgeFactory: async () => bridgeFor('00D000000000002BBB'),
+      api: apiOnOrg('00D000000000001AAA'),
+    });
+    await feature.onActivate?.();
+    await vi.waitFor(() => expect(document.body.textContent).toContain('Diagnostics & Audit'));
+
+    buttonNamed('Index view').click();
+    const body = document.body.textContent ?? '';
+    expect(body).toContain('audit snapshot is for org 00D000000000002BBB');
+    expect(body).not.toContain('MFA coverage — 2 users');
+  });
+
+  it('merges CLI snapshots taken against the same org as the browser', async () => {
+    setSalesforceUrl();
+    const feature = createOrgHealthFeature({
+      bridgeFactory: async () => bridgeFor('00D000000000001AAA'),
+      api: apiOnOrg('00D000000000001AAA'),
+    });
+    await feature.onActivate?.();
+    await vi.waitFor(() => expect(document.body.textContent).toContain('Diagnostics & Audit'));
+
+    buttonNamed('Index view').click();
+    const body = document.body.textContent ?? '';
+    expect(body).toContain('MFA coverage — 2 users');
+    expect(body).not.toContain('Excluded:');
+  });
+
   it('Index view with the bridge offline still says what the CLI would add', async () => {
     setSalesforceUrl();
     const bridge = fakeBridge({ ok: false, requestId: 'r1', error: 'bridge offline', code: 'BRIDGE_OFFLINE' });

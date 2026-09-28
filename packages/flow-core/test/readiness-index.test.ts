@@ -148,3 +148,77 @@ describe('renderIndexMarkdown', () => {
     expect(md).toContain('Assessor: Not measured by sfdt.');
   });
 });
+
+describe('buildIndexEvidence — org guard', () => {
+  const ORG_A = '00D000000000001AAA';
+  const ORG_B = '00D000000000002BBB';
+  const snapFor = (orgId: string | undefined, org: string, ...ids: string[]) => ({
+    org,
+    orgId,
+    checks: ids.map((id) => check(id, 'warn')),
+  });
+
+  it('merges snapshots and live checks when every org ID matches (15 vs 18 chars)', () => {
+    const ev = buildIndexEvidence({
+      audit: snapFor(ORG_A, 'prod', 'mfa'),
+      monitor: snapFor(ORG_A.slice(0, 15), 'prod', 'health'),
+      live: [check('apex-coverage', 'green')],
+      liveOrgId: ORG_A,
+    });
+    expect(ev.excluded).toEqual([]);
+    expect(ev.warnings).toEqual([]);
+    expect(ev.orgId).toBe(ORG_A.slice(0, 15));
+    const perms = ev.dimensions.find((d) => d.id === 'permissions-hygiene')!;
+    expect(perms.checks.map((c) => c.id).sort()).toEqual(['health', 'mfa']);
+  });
+
+  it('excludes a snapshot for a different org than the browser, and says so', () => {
+    const ev = buildIndexEvidence({
+      audit: snapFor(ORG_B, 'other-org', 'mfa'),
+      monitor: snapFor(ORG_A, 'prod', 'health'),
+      live: [check('apex-coverage', 'green')],
+      liveOrgId: ORG_A,
+    });
+    expect(ev.excluded).toEqual([
+      expect.objectContaining({ source: 'audit', org: 'other-org', orgId: ORG_B }),
+    ]);
+    const perms = ev.dimensions.find((d) => d.id === 'permissions-hygiene')!;
+    expect(perms.checks.map((c) => c.id)).toEqual(['health']);
+    expect(ev.warnings.join(' ')).toMatch(/audit snapshot is for org 00D000000000002BBB/);
+  });
+
+  it('excludes an unverifiable snapshot (no org ID) only when the browser org is known', () => {
+    const noId = { audit: snapFor(undefined, 'prod', 'mfa') };
+    const withLive = buildIndexEvidence({ ...noId, live: [check('apex-coverage', 'green')], liveOrgId: ORG_A });
+    expect(withLive.excluded.map((e) => e.source)).toEqual(['audit']);
+    const cli = buildIndexEvidence(noId);
+    expect(cli.excluded).toEqual([]);
+  });
+
+  it('with no org IDs, rejects a monitor snapshot whose alias differs from the audit one', () => {
+    const ev = buildIndexEvidence({
+      audit: snapFor(undefined, 'prod', 'mfa'),
+      monitor: snapFor(undefined, 'sandbox', 'health'),
+    });
+    expect(ev.excluded.map((e) => e.source)).toEqual(['monitor']);
+  });
+
+  it('warns when the browser org could not be read', () => {
+    const ev = buildIndexEvidence({
+      audit: snapFor(ORG_A, 'prod', 'mfa'),
+      live: [check('apex-coverage', 'green')],
+      liveOrgId: null,
+    });
+    expect(ev.excluded).toEqual([]);
+    expect(ev.warnings[0]).toMatch(/couldn't be read/);
+  });
+
+  it('puts the warnings at the top of the Markdown pack', () => {
+    const md = renderIndexMarkdown(
+      buildIndexEvidence({ audit: snapFor(ORG_B, 'other', 'mfa'), live: [], liveOrgId: ORG_A }),
+    );
+    const firstSection = md.indexOf('## ');
+    expect(md.indexOf('**Warning:** Excluded:')).toBeGreaterThan(-1);
+    expect(md.indexOf('**Warning:**')).toBeLessThan(firstSection);
+  });
+});

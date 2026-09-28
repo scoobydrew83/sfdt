@@ -87,6 +87,23 @@ export async function isSandboxOrg(orgAlias) {
 }
 
 /**
+ * The org's ID (18 chars), or null when it can't be read. Never throws: it
+ * labels snapshots so surfaces can refuse to merge two orgs' results, and a
+ * failed lookup must not fail the audit/monitor run that asked for it.
+ *
+ * @param {string} orgAlias
+ * @returns {Promise<string|null>}
+ */
+export async function getOrgId(orgAlias) {
+  try {
+    const result = await displayOrg(orgAlias);
+    return typeof result.id === 'string' && result.id ? result.id : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * The username the alias is authenticated as.
  *
  * @param {string} orgAlias

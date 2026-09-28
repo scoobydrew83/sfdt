@@ -162,6 +162,8 @@ export interface IndexCheckInput {
 
 export interface IndexSnapshotInput {
   org?: string;
+  /** Salesforce org ID (15 or 18 chars) the snapshot was taken against. */
+  orgId?: string | null;
   timestamp?: string;
   checks?: IndexCheckInput[];
 }
@@ -186,14 +188,28 @@ export interface IndexEvidenceDimension {
   manualNote: string;
 }
 
+/** A snapshot left out because it can't be shown to belong to the assessed org. */
+export interface IndexExcludedSnapshot {
+  source: Exclude<IndexSource, 'live'>;
+  org: string | null;
+  orgId: string | null;
+  reason: string;
+}
+
 export interface IndexEvidence {
   org: string | null;
+  /** The org ID every included check was verified against, when known. */
+  orgId: string | null;
   /** Newest snapshot timestamp among the inputs, if any carried one. */
   timestamp: string | null;
   dimensions: IndexEvidenceDimension[];
   context: IndexEvidenceCheck[];
   /** Checks present in the input that no dimension or context entry claims. */
   unmapped: IndexEvidenceCheck[];
+  /** Snapshots dropped because they belong to — or can't be tied to — another org. */
+  excluded: IndexExcludedSnapshot[];
+  /** Things the reader must know before trusting the pack. */
+  warnings: string[];
 }
 
 const RANK: Record<IndexCheckStatus, number> = { ok: 0, warn: 1, error: 2, fail: 3 };
@@ -239,11 +255,80 @@ const key = (source: IndexSource, id: string): string => `${source}:${id}`;
  * Any input may be null/absent — the Chrome panel always has `live`, and has
  * `audit`/`monitor` only when the bridge answers; the CLI has the reverse.
  */
+/** Salesforce org IDs compare on their case-sensitive 15-char form. */
+const normOrgId = (id: string | null | undefined): string | null =>
+  typeof id === 'string' && id.length >= 15 ? id.slice(0, 15) : null;
+
+/**
+ * Decide which CLI snapshots may be merged. Snapshots are written by separate
+ * `sfdt audit` / `sfdt monitor` runs, possibly against different orgs, and the
+ * Chrome live checks run against whatever org the browser is on — merging them
+ * blindly would attribute one org's findings to another.
+ *
+ * - `liveOrgId` string: the browser's org. Every snapshot must carry the same
+ *   org ID; one without an ID (older CLI) can't be verified and is excluded.
+ * - `liveOrgId` null: a live run whose org couldn't be read — snapshots are
+ *   checked against each other and a warning says the live half is unverified.
+ * - `liveOrgId` undefined: no live half (the CLI) — snapshots are checked
+ *   against each other only.
+ */
+function selectSnapshots(input: {
+  audit?: IndexSnapshotInput | null;
+  monitor?: IndexSnapshotInput | null;
+  live?: IndexCheckInput[] | null;
+  liveOrgId?: string | null;
+}): {
+  audit: IndexSnapshotInput | null;
+  monitor: IndexSnapshotInput | null;
+  orgId: string | null;
+  excluded: IndexExcludedSnapshot[];
+  warnings: string[];
+} {
+  const excluded: IndexExcludedSnapshot[] = [];
+  const warnings: string[] = [];
+  const snaps = { audit: input.audit ?? null, monitor: input.monitor ?? null };
+  const liveId = normOrgId(input.liveOrgId);
+  const ref = liveId ?? normOrgId(snaps.audit?.orgId) ?? normOrgId(snaps.monitor?.orgId);
+  const refLabel = liveId ? 'this browser' : 'the audit snapshot';
+
+  const drop = (source: 'audit' | 'monitor', reason: string): void => {
+    const s = snaps[source]!;
+    excluded.push({ source, org: s.org ?? null, orgId: s.orgId ?? null, reason });
+    snaps[source] = null;
+  };
+
+  for (const source of ['audit', 'monitor'] as const) {
+    const s = snaps[source];
+    if (!s) continue;
+    const id = normOrgId(s.orgId);
+    if (ref && id && id !== ref) {
+      drop(source, `The ${source} snapshot is for org ${s.orgId}${s.org ? ` (${s.org})` : ''}, not ${refLabel} (${ref}). Run \`sfdt ${source}\` against this org.`);
+    } else if (liveId && !id) {
+      drop(source, `The ${source} snapshot${s.org ? ` (${s.org})` : ''} has no org ID, so it can't be matched to this browser. Re-run \`sfdt ${source}\` with a current sfdt.`);
+    }
+  }
+  // No IDs anywhere: the aliases are the only evidence the two runs agree.
+  if (!ref && snaps.audit?.org && snaps.monitor?.org && snaps.audit.org !== snaps.monitor.org) {
+    drop('monitor', `The monitor snapshot is for "${snaps.monitor.org}" but the audit snapshot is for "${snaps.audit.org}".`);
+  }
+  if (input.liveOrgId === null && Array.isArray(input.live) && input.live.length && (snaps.audit || snaps.monitor)) {
+    warnings.push(
+      "This browser's org ID couldn't be read, so the in-browser checks can't be confirmed to be the same org as the CLI snapshots.",
+    );
+  }
+  for (const e of excluded) warnings.push(`Excluded: ${e.reason}`);
+  return { ...snaps, orgId: ref, excluded, warnings };
+}
+
 export function buildIndexEvidence(input: {
   audit?: IndexSnapshotInput | null;
   monitor?: IndexSnapshotInput | null;
   live?: IndexCheckInput[] | null;
+  /** The org the live checks ran against — string, null (unreadable), or omitted (no live half). */
+  liveOrgId?: string | null;
 }): IndexEvidence {
+  const selected = selectSnapshots(input);
+  input = { ...input, audit: selected.audit, monitor: selected.monitor };
   const byKey = new Map<string, IndexEvidenceCheck>();
   const add = (source: IndexSource, checks: IndexCheckInput[] | undefined | null): void => {
     if (!Array.isArray(checks)) return;
@@ -296,7 +381,16 @@ export function buildIndexEvidence(input: {
   );
   const timestamp = stamps.length ? stamps.sort().at(-1) ?? null : null;
 
-  return { org, timestamp, dimensions, context, unmapped };
+  return {
+    org,
+    orgId: selected.orgId,
+    timestamp,
+    dimensions,
+    context,
+    unmapped,
+    excluded: selected.excluded,
+    warnings: selected.warnings,
+  };
 }
 
 const STATUS_LABEL: Record<IndexDimensionStatus, string> = {
@@ -321,7 +415,9 @@ export function renderIndexMarkdown(evidence: IndexEvidence, { maxFindings = 10 
   lines.push('# AI-Readiness Index — evidence pack');
   lines.push('');
   if (evidence.org) lines.push(`- Org: ${evidence.org}`);
+  if (evidence.orgId) lines.push(`- Org ID: ${evidence.orgId}`);
   if (evidence.timestamp) lines.push(`- Snapshot: ${evidence.timestamp}`);
+  for (const w of evidence.warnings) lines.push(`- **Warning:** ${w}`);
   lines.push('- Status per dimension is the worst check under it. It is evidence for the assessor, not a score.');
   lines.push('');
   for (const dim of evidence.dimensions) {

@@ -58,6 +58,7 @@ export type {
   IndexEvidenceCheck,
   IndexEvidenceDimension,
   IndexEvidence,
+  IndexExcludedSnapshot,
 } from './readiness-index.js';
 
 export { shapeClassCoverage, classCoverageBand } from './coverage.js';

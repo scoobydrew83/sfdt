@@ -11,7 +11,9 @@ All notable changes to `@sfdt/extension` are documented here. Format follows [Ke
   bridge offline it groups the five in-browser checks and names the CLI checks each dimension
   is missing. **Copy evidence pack** copies the grouping as Markdown for an assessment
   write-up. It is local clipboard only, and nothing leaves the browser. Dimensions show their
-  worst check, not a score.
+  worst check, not a score. CLI snapshots taken against a different org than the one in the
+  browser, or with no org ID to check, are left out. A warning at the top of the view and of
+  the copied pack says so.
 
 ## [0.16.1] - 2026-09-25
 
