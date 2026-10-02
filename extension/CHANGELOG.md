@@ -4,6 +4,11 @@ All notable changes to `@sfdt/extension` are documented here. Format follows [Ke
 
 ## [Unreleased]
 
+## [0.17.0] - 2026-10-02
+
+Requires `@sfdt/cli` 0.27.0 or later for CLI snapshots that record an org ID; without one, CLI
+snapshots are left out of the Index view.
+
 ### Added
 
 - Org Health has an **Index view** that groups the same checks under the eight AI-Readiness

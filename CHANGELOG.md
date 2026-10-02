@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.27.0] - 2026-10-02
+
+Adds the AI-Readiness Index: `sfdt audit --index` groups every audit and monitor check under
+eight readiness dimensions and writes an evidence pack for an assessor. The Chrome extension's
+Org Health panel gets the same view. Also fixes the GUI, VS Code extension, native host and web
+workspace bundling stale `@sfdt/flow-core` copies, and curates API v68 (Winter '27).
+
+> **Versions:** `@sfdt/cli` and `@sfdt/plugin` → **0.27.0**; `@sfdt/flow-core` → **0.16.0**
+> (new exports, so a minor bump on its own semver); Chrome extension → **0.17.0**; VS Code
+> extension → **0.7.1**. Every workspace that depends on flow-core moved to `^0.16.0`.
+
 ### Added
 
 - `sfdt audit --index` runs every audit and monitor check and groups the results under the
@@ -45,7 +56,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - The GUI dashboard, native host, VS Code extension and web workspace now use the workspace
-  `@sfdt/flow-core` (0.15). Their `^0.10` / `^0.13` ranges don't match 0.15 under 0.x caret
+  `@sfdt/flow-core` (0.16). Their `^0.10` / `^0.13` ranges don't match 0.15 under 0.x caret
   rules, so npm had been installing and bundling stale registry copies. Those surfaces were
   banding and scoring findings with older rules than the CLI and Chrome. The new
   `npm run check:workspace-deps` contract check (in `check:all-contracts`) fails on any range
@@ -58,6 +69,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   command newer than 0.22 failed as unknown. Installed plugins are unchanged. The plugin's
   `@sfdt/cli` range gains a `<1.0.0` ceiling, and `check:workspace-deps` fails if it stops
   accepting the CLI's own version.
+
+- `sfdt data load` rejects a `bulk.json` `"file"` that is the data set directory itself
+  (`"file": "."`). It passed the containment check and then failed later with a generic
+  "expected a non-empty string"; it now fails at spec validation with a clear message, like
+  every other bad `"file"`.
+- The API-version registry includes API v68 (Winter '27), from the official Apex Developer
+  Guide's versioned behavior changes. Flow and LWC entries stay empty until verified.
+  `sfdt versions --advise` can now ground advice for v68, and the registry test no longer fails
+  now that Winter '27 is GA.
+
+### Security
+
+- Runtime dependency advisories fixed via `npm audit fix`: `brace-expansion` 5.0.12
+  (GHSA-q2hr-2g5m-vwhr, GHSA-qhr7-859c-m2p7, GHSA-6j4f-fj2g-mc7p), `fast-uri` 3.1.8,
+  `hono` 4.13.12 and `ip-address` 10.7.3. `next` 16.3.6 (GHSA-vcvr-r3jv-pc5j) and
+  `nodemailer` 10.0.10 arrive with the production dependency bump.
+
+### Dependencies
+
+- oclif 6 builds the `sf sfdt` plugin. The generated manifest is identical to oclif 5's: same
+  commands, same flags.
+- React and React DOM 19.3 in the GUI dashboard and web workspace. The root-hoisted
+  `react-dom` is refreshed to match, which had failed the GUI tests with "Incompatible React
+  versions".
+- Minor and patch bumps across the production and development dependency groups, including
+  `@modelcontextprotocol/sdk` 1.30.1.
 
 ### Removed
 
