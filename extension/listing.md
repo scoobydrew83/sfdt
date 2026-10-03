@@ -1,11 +1,12 @@
 # Chrome Web Store Listing
 
-> **Store-sync status:** Updated for **v0.16.1** (49 features — the count is read from
+> **Store-sync status:** Updated for **v0.17.0** (49 features — the count is read from
 > `generated/chrome-features.json`, never counted by hand; re-derive it each release
 > instead of incrementing it). Three of those 49 ship **off by default**: Delete records
 > (`record-delete`), Bulk delete from SOQL results (`soql-bulk-delete`), and Generate
 > SOQL from a description (`soql-nl-generate`). Since the last listing rewrite this
-> adds **Quality Results** (the last `sfdt quality` Code Analyzer run, per file, over the
+> adds the Org Health **Index view** (checks grouped under the eight AI-Readiness Index
+> dimensions, with a copyable evidence pack), **Quality Results** (the last `sfdt quality` Code Analyzer run, per file, over the
 > local CLI bridge) and **Deployment Status** (recent deploys, their component errors,
 > read-only),
 > and before it Inspect Record typed edit and clone plus the off-by-default record delete,

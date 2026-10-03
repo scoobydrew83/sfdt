@@ -6,6 +6,18 @@ All notable changes to the **SFDT for Salesforce** VS Code extension (`sfdt.sfdt
 
 ## [Unreleased]
 
+## [0.7.1] - 2026-10-02
+
+### Fixed
+- **Packaging works again.** A development-dependency bump had raised `@types/vscode` to
+  `^1.138.0` while `engines.vscode` stays `^1.80.0`, and `vsce package` refuses to build when the
+  typings are newer than the engine. The typings are pinned to `~1.80.0`, and the extension still
+  compiles against them, so VS Code 1.80+ support is unchanged. Dependabot no longer bumps
+  `@types/vscode` minors.
+- The extension now bundles the current `@sfdt/flow-core` (0.16) instead of a stale 0.13 copy.
+  Coverage bands and finding text match the CLI again.
+
+
 ## [0.7.0] - 2026-08-24
 
 ### Added

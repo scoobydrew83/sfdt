@@ -3,7 +3,7 @@ import fs from 'fs-extra';
 import os from 'os';
 import path from 'path';
 
-vi.mock('../../src/lib/org-query.js', () => ({ query: vi.fn() }));
+vi.mock('../../src/lib/org-query.js', async (importOriginal) => ({ ...(await importOriginal()), query: vi.fn() }));
 vi.mock('execa', () => ({ execa: vi.fn() }));
 
 import { execa } from 'execa';

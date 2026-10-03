@@ -40,6 +40,13 @@ updates:
         update-types: ["version-update:semver-major"]
       - dependency-name: "eslint"
         update-types: ["version-update:semver-major"]
+      # @types/vscode must never exceed vscode/package.json `engines.vscode`:
+      # `vsce package` refuses to build when it does, and every VS Code API
+      # release is a *minor* on the 1.x line, so the minor group bump alone
+      # broke packaging once (1.80 → 1.138). Move it together with engines,
+      # deliberately. tools/check-workspace-deps.mjs enforces the pairing.
+      - dependency-name: "@types/vscode"
+        update-types: ["version-update:semver-minor", "version-update:semver-major"]
 
   # GitHub Actions workflows
   - package-ecosystem: "github-actions"

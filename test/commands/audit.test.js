@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { Command } from 'commander';
 
+vi.mock('../../src/lib/org-session.js', () => ({ getOrgId: vi.fn(async () => null) }));
 vi.mock('../../src/lib/config.js', () => ({ loadConfig: vi.fn() }));
 vi.mock('../../src/lib/audit-runner.js', async (importOriginal) => {
   const actual = await importOriginal();
@@ -17,6 +18,7 @@ vi.mock('ora', () => ({
 }));
 
 import { loadConfig } from '../../src/lib/config.js';
+import { getOrgId } from '../../src/lib/org-session.js';
 import { runAudit } from '../../src/lib/audit-runner.js';
 import fs from 'fs-extra';
 import { registerAuditCommand } from '../../src/commands/audit.js';
@@ -51,6 +53,18 @@ describe('audit command', () => {
     await createProgram().parseAsync(['node', 'sfdt', 'audit', 'all']);
     expect(runAudit).toHaveBeenCalledWith('dev-org', expect.objectContaining({ checks: expect.any(Array) }));
     expect(fs.writeJson).toHaveBeenCalledWith('/project/logs/audit-latest.json', okSnapshot, { spaces: 2 });
+  });
+
+  it('stamps the org ID on the snapshot so other surfaces can refuse a different org', async () => {
+    getOrgId.mockResolvedValue('00D000000000001AAA');
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+    await createProgram().parseAsync(['node', 'sfdt', 'audit', 'all']);
+    expect(getOrgId).toHaveBeenCalledWith('dev-org');
+    expect(fs.writeJson).toHaveBeenCalledWith(
+      '/project/logs/audit-latest.json',
+      { ...okSnapshot, orgId: '00D000000000001AAA' },
+      { spaces: 2 },
+    );
   });
 
   it('runs a single named check', async () => {

@@ -375,6 +375,9 @@ export function resolveBulkOperation(op, setDir, setName, index) {
   if (rel.startsWith('..') || path.isAbsolute(rel)) {
     throw new Error(`${where}: "file" must stay inside the data set directory (got "${op.file}").`);
   }
+  if (rel === '') {
+    throw new Error(`${where}: "file" must name a CSV, not the data set directory itself (got "${op.file}").`);
+  }
   const fieldMap = op?.fieldMap ?? {};
   if (typeof fieldMap !== 'object' || Array.isArray(fieldMap)) {
     throw new Error(`${where}: "fieldMap" must be an object of { csvColumn: FieldApiName }.`);

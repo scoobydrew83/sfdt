@@ -3,7 +3,7 @@
 // pill. We exercise the pure aggregation/description helpers and the feature's
 // onActivate → present-view flow against happy-dom with a mocked Salesforce API.
 
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { ORG_HEALTH_THRESHOLDS } from '@sfdt/flow-core';
 import {
   createApiVersionAuditFeature,
@@ -61,6 +61,16 @@ function fakeApi(
       }),
   } as unknown as SalesforceApiClient;
 }
+
+// Pin the clock to mid-Summer '26 (GA = v67) so v68 reads as a preview release
+// regardless of the real date — preview status comes from expectedGaApiVersion(now).
+beforeEach(() => {
+  vi.useFakeTimers({ toFake: ['Date'] });
+  vi.setSystemTime(new Date('2026-07-15T00:00:00Z'));
+});
+afterEach(() => {
+  vi.useRealTimers();
+});
 
 beforeEach(() => {
   resetDom();

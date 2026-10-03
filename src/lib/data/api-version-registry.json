@@ -1,7 +1,7 @@
 {
   "$comment": "Curated per-API-version facts that GROUND the api-upgrade-advisor prompt — the AI may only cite version facts from this file and must answer 'unknown — not in registry' for gaps. Facts are audited against official Salesforce sources (URLs in each entry's sources; audit 2026-07-14). Two kinds of fact appear and the text says which: VERSIONED changes gate on the component's own apiVersion ('at api >= N'); RELEASE-WIDE changes arrived with that release for everyone and are marked '(release-wide — not gated on component apiVersion)'. Apex language syntax (?., ??, triple-quoted strings) is release-tied compiler grammar, NOT gated on the class's apiVersion. Entries are conservative: gaps are intentional and safe; wrong facts are not — a documented 'no versioned change at this version' is itself recorded where verified. Update cadence: every Salesforce release, as part of the release checklist — test/lib/api-version-registry.test.js fails when maxVersion falls behind the current GA version (the failing test IS the reminder).",
-  "updated": "2026-07",
-  "maxVersion": 67,
+  "updated": "2026-10",
+  "maxVersion": 68,
   "versions": {
     "45": { "release": "Spring '19", "apex": { "changes": [], "breaking": [] }, "flow": { "changes": [], "breaking": [] }, "lwc": { "changes": ["Lightning Web Components GA — v45 is the minimum LWC api version"], "breaking": [] }, "featuresUnlocked": ["LWC components require apiVersion >= 45"], "sources": ["https://developer.salesforce.com/docs/platform/lwc/guide/get-started-api-versioning.html"] },
     "46": { "release": "Summer '19", "apex": { "changes": [], "breaking": [] }, "flow": { "changes": [], "breaking": [] }, "lwc": { "changes": [], "breaking": [] }, "featuresUnlocked": [], "sources": ["Salesforce Release Notes — Summer '19"] },
@@ -257,6 +257,26 @@
         "https://help.salesforce.com/s/articleView?id=release-notes.rn_apex_multiline_string.htm&release=262&type=5",
         "https://help.salesforce.com/s/articleView?id=release-notes.rn_lwc_versioning.htm&release=262&type=5",
         "https://developer.salesforce.com/blogs/2026/06/the-salesforce-developers-guide-to-the-summer-26-release"
+      ]
+    },
+    "68": {
+      "release": "Winter '27",
+      "apex": {
+        "changes": [
+          "At api >= 68 (Tooling API): Test Discovery results take a testLevel parameter, replacing showAllMethods (showAllMethods remains only at 67.0 and earlier)",
+          "At api >= 68 (Tooling API): apexCompileResults returns compilation results for classes/triggers with validation errors instead of recompiling the entire org",
+          "At api >= 68: the DebugLevel metadata type represents a set of log category levels assigned to a TraceFlag",
+          "Symbol Table API (beta) — Tooling API REST resource returning metadata for built-in, custom, and dynamic Apex types",
+          "Release-wide: the Apex compiler warns when compiling or deploying classes/triggers saved at API 9.0–19.0, which will be retired in a future release"
+        ],
+        "breaking": []
+      },
+      "flow": { "changes": [], "breaking": [] },
+      "lwc": { "changes": [], "breaking": [] },
+      "featuresUnlocked": [],
+      "sources": [
+        "https://developer.salesforce.com/docs/atlas.en-us.apexcode.meta/apexcode/versioned_behavior_changes.htm",
+        "https://resources.docs.salesforce.com/latest/latest/en-us/sfdc/pdf/salesforce_apex_developer_guide.pdf (Version 68.0, Winter '27 — Apex Versioned Behavior Changes)"
       ]
     }
   }

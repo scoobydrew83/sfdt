@@ -1,4 +1,4 @@
-import { execa } from 'execa';
+import { isSandboxOrg } from './org-session.js';
 
 /**
  * Facts about a target org that a command needs before it is allowed to change
@@ -24,8 +24,7 @@ import { execa } from 'execa';
  */
 export async function isProductionOrg(orgAlias) {
   try {
-    const { stdout } = await execa('sf', ['org', 'display', '--target-org', orgAlias, '--json']);
-    return JSON.parse(stdout)?.result?.isSandbox !== true;
+    return !(await isSandboxOrg(orgAlias));
   } catch {
     return true;
   }

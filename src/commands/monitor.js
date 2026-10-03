@@ -12,6 +12,7 @@ import { emitJson, emitJsonError } from '../lib/output.js';
 import { archiveSnapshot } from '../lib/log-writer.js';
 import { recordRun } from '../lib/run-history.js';
 import { maxStatus } from '../lib/check-status.js';
+import { getOrgId } from '../lib/org-session.js';
 
 const STATUS_COLOR = {
   ok: chalk.green,
@@ -20,7 +21,7 @@ const STATUS_COLOR = {
   error: chalk.red,
 };
 
-function buildParams(config) {
+export function buildMonitorParams(config) {
   const m = config.monitoring ?? {};
   return {
     limits: { warnThreshold: m.limitWarnThreshold ?? MONITOR_DEFAULTS.limitWarnThreshold },
@@ -46,11 +47,16 @@ async function executeMonitor(checks, options, { backup = false } = {}) {
     const spinner = jsonMode ? null : ora(`Monitoring ${orgAlias}…`).start();
     let snapshot;
     try {
-      snapshot = await runMonitor(orgAlias, config, {
-        checks,
-        backup: backup || !!options.backup,
-        params: buildParams(config),
-      });
+      const [snap, orgId] = await Promise.all([
+        runMonitor(orgAlias, config, {
+          checks,
+          backup: backup || !!options.backup,
+          params: buildMonitorParams(config),
+        }),
+        getOrgId(orgAlias),
+      ]);
+      // The org ID lets the bridge / Chrome refuse to merge two orgs' snapshots.
+      snapshot = orgId ? { ...snap, orgId } : snap;
       spinner?.succeed(`Monitoring complete (${orgAlias})`);
     } catch (err) {
       spinner?.fail('Monitoring failed');

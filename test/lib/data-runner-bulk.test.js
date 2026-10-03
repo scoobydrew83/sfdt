@@ -231,6 +231,14 @@ describe('bulkLoadDataSet', () => {
     expect(execa.mock.calls[0][1]).toEqual(expect.arrayContaining(['--file', path.join(dir, 'a.csv')]));
   });
 
+  it('rejects a "file" that is the data set directory itself, with a clear message', async () => {
+    await makeSet('seed', {
+      'bulk.json': JSON.stringify({ operations: [{ sobject: 'Account', file: '.' }] }),
+    });
+    await expect(bulkLoadDataSet(config, 'seed', 'dev')).rejects.toThrow(/must name a CSV, not the data set directory/);
+    expect(execa).not.toHaveBeenCalled();
+  });
+
   it('reports a missing CSV as an error without invoking sf', async () => {
     await makeSet('seed', {
       'bulk.json': JSON.stringify({ operations: [{ sobject: 'Account', file: 'missing.csv' }] }),

@@ -7,6 +7,100 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.27.0] - 2026-10-02
+
+Adds the AI-Readiness Index: `sfdt audit --index` groups every audit and monitor check under
+eight readiness dimensions and writes an evidence pack for an assessor. The Chrome extension's
+Org Health panel gets the same view. Also fixes the GUI, VS Code extension, native host and web
+workspace bundling stale `@sfdt/flow-core` copies, and curates API v68 (Winter '27).
+
+> **Versions:** `@sfdt/cli` and `@sfdt/plugin` → **0.27.0**; `@sfdt/flow-core` → **0.16.0**
+> (new exports, so a minor bump on its own semver); Chrome extension → **0.17.0**; VS Code
+> extension → **0.7.1**. Every workspace that depends on flow-core moved to `^0.16.0`.
+
+### Added
+
+- `sfdt audit --index` runs every audit and monitor check and groups the results under the
+  eight AI-Readiness Index dimensions (automation sprawl, dependency risk, documentation
+  coverage, permissions hygiene, dead metadata, data quality, change safety,
+  AI-groundability). It writes `logs/index-latest.json` and a paste-ready
+  `logs/index-latest.md`. The result is evidence for an assessor, not a score: each dimension
+  shows its worst check, its checks, and what the checks cannot see. The `sfdt_audit` MCP tool
+  takes `index: true` for the same output. `--index` runs are archived and indexed for
+  `sfdt history`, and `--notify` sends both snapshots.
+- `sfdt audit` and `sfdt monitor` snapshots record the org ID (`orgId`) they ran against, so the
+  Index evidence pack can refuse to merge two orgs' results.
+- `@sfdt/flow-core` exports `READINESS_INDEX_DIMENSIONS`, `buildIndexEvidence` and
+  `renderIndexMarkdown`, so the CLI and the Chrome extension group checks identically. This is
+  new public API, so flow-core takes a minor bump at release (RELEASING.md §4).
+
+### Changed
+
+- `audit-runner` and `monitor-runner` share their result helpers from
+  `src/lib/check-result.js` instead of carrying identical copies.
+- Production detection in `sfdt deploy --smart`, the write commands' production guard, the
+  Apex username lookup, flow scanning and the GUI dependency routes now go through the shared
+  `org-session` / `org-query` helpers. Behaviour is unchanged: production detection still
+  fails safe to production.
+
+- The VS Code extension now ships `THIRD_PARTY_NOTICES.md`. Its bundle inlines
+  `@sfdt/flow-core` files derived from SF Flow Utility Toolkit (the API name prefixes and the
+  default prompts), and `npm run check:notices` now checks that copy too.
+- `npm run build:gui` writes `gui/dist/THIRD_PARTY_LICENSES.md` (Vite `build.license`) listing
+  the licenses of every npm package bundled into the dashboard. The file ships in the npm
+  tarball with the rest of `gui/dist`.
+- The README credits related open-source projects: Org Check, Lightning Flow Scanner,
+  sfdx-git-delta, Salesforce Inspector Reloaded, and SLDS for the extension palette values.
+  No code is taken from any of them.
+
+### Fixed
+
+- The GUI dashboard, native host, VS Code extension and web workspace now use the workspace
+  `@sfdt/flow-core` (0.16). Their `^0.10` / `^0.13` ranges don't match 0.15 under 0.x caret
+  rules, so npm had been installing and bundling stale registry copies. Those surfaces were
+  banding and scoring findings with older rules than the CLI and Chrome. The new
+  `npm run check:workspace-deps` contract check (in `check:all-contracts`) fails on any range
+  that differs from the root's. It also fails when `@types/vscode` is newer than
+  `engines.vscode`, which is what had blocked `vsce package`.
+
+- The `sf sfdt` plugin, run from a checkout (`sf plugins link`), now forwards to the
+  repository's own CLI. It had been resolving the published `@sfdt/cli` 0.22.1 that npm nests
+  under `packages/plugin`, while its commands are generated from the working tree, so every
+  command newer than 0.22 failed as unknown. Installed plugins are unchanged. The plugin's
+  `@sfdt/cli` range gains a `<1.0.0` ceiling, and `check:workspace-deps` fails if it stops
+  accepting the CLI's own version.
+
+- `sfdt data load` rejects a `bulk.json` `"file"` that is the data set directory itself
+  (`"file": "."`). It passed the containment check and then failed later with a generic
+  "expected a non-empty string"; it now fails at spec validation with a clear message, like
+  every other bad `"file"`.
+- The API-version registry includes API v68 (Winter '27), from the official Apex Developer
+  Guide's versioned behavior changes. Flow and LWC entries stay empty until verified.
+  `sfdt versions --advise` can now ground advice for v68, and the registry test no longer fails
+  now that Winter '27 is GA.
+
+### Security
+
+- Runtime dependency advisories fixed via `npm audit fix`: `brace-expansion` 5.0.12
+  (GHSA-q2hr-2g5m-vwhr, GHSA-qhr7-859c-m2p7, GHSA-6j4f-fj2g-mc7p), `fast-uri` 3.1.8,
+  `hono` 4.13.12 and `ip-address` 10.7.3. `next` 16.3.6 (GHSA-vcvr-r3jv-pc5j) and
+  `nodemailer` 10.0.10 arrive with the production dependency bump.
+
+### Dependencies
+
+- oclif 6 builds the `sf sfdt` plugin. The generated manifest is identical to oclif 5's: same
+  commands, same flags.
+- React and React DOM 19.3 in the GUI dashboard and web workspace. The root-hoisted
+  `react-dom` is refreshed to match, which had failed the GUI tests with "Incompatible React
+  versions".
+- Minor and patch bumps across the production and development dependency groups, including
+  `@modelcontextprotocol/sdk` 1.30.1.
+
+### Removed
+
+- Unused `src/lib/child-process-exit.js`, `scripts/core/compare-preview-vs-pull.sh` and
+  `scripts/core/update-test-config.sh`. Nothing in the CLI, CI or docs referenced them.
+
 ## [0.26.2] - 2026-09-25
 
 A licensing and security release. Parts of `@sfdt/flow-core` and the browser extension are

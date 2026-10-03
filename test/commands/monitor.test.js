@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { Command } from 'commander';
 
+vi.mock('../../src/lib/org-session.js', () => ({ getOrgId: vi.fn(async () => null) }));
 vi.mock('../../src/lib/config.js', () => ({ loadConfig: vi.fn() }));
 vi.mock('../../src/lib/monitor-runner.js', async (importOriginal) => {
   const actual = await importOriginal();

@@ -1,4 +1,4 @@
-import { execa } from 'execa';
+import { query } from './org-query.js';
 import { detectTriggerConflicts, buildSubflowGraph } from '@sfdt/flow-core';
 import { runFlowQuality } from './flow-quality.js';
 
@@ -19,12 +19,7 @@ function assertValidOrgAlias(orgAlias) {
 
 async function toolingQuery(orgAlias, soql) {
   assertValidOrgAlias(orgAlias);
-  const result = await execa(
-    'sf',
-    ['data', 'query', '--use-tooling-api', '-q', soql, '--json', '--target-org', orgAlias],
-    { reject: true },
-  );
-  return JSON.parse(result.stdout);
+  return query(orgAlias, soql, { tooling: true });
 }
 
 function escapeSoqlString(value) {
@@ -35,16 +30,15 @@ export async function listFlowDefinitions(orgAlias) {
   const soql =
     'SELECT Id, DeveloperName, ActiveVersionId FROM FlowDefinition ' +
     'WHERE ActiveVersionId != null ORDER BY DeveloperName ASC';
-  const result = await toolingQuery(orgAlias, soql);
-  return result.result?.records ?? [];
+  return toolingQuery(orgAlias, soql);
 }
 
 export async function fetchActiveVersion(orgAlias, activeVersionId) {
   const soql =
     'SELECT Id, MasterLabel, Description, Status, VersionNumber, LastModifiedDate, Metadata ' +
     `FROM Flow WHERE Id = '${escapeSoqlString(activeVersionId)}'`;
-  const result = await toolingQuery(orgAlias, soql);
-  return result.result?.records?.[0] ?? null;
+  const records = await toolingQuery(orgAlias, soql);
+  return records[0] ?? null;
 }
 
 async function inParallel(items, concurrency, worker) {

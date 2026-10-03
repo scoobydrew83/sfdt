@@ -343,8 +343,10 @@ export interface QualityResponseData {
 
 /**
  * A single org-health snapshot as written by `sfdt audit` / `sfdt monitor`.
- * `data` is the `{ timestamp, org, checks, summary }` payload; it is left as an
- * open record so the contract doesn't have to track every check field.
+ * `data` is the `{ timestamp, org, orgId?, checks, summary }` payload; it is left
+ * as an open record so the contract doesn't have to track every check field.
+ * `orgId` (added with the AI-Readiness Index) lets a consumer refuse a snapshot
+ * taken against a different org; older CLIs omit it.
  */
 export interface OrgHealthSnapshot {
   timestamp: string;

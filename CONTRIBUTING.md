@@ -48,7 +48,7 @@ Thank you for your interest in contributing to the Salesforce DevTools CLI! This
 
 Any code ported or adapted from a third-party project must, in the same PR:
 
-- Add an entry to `THIRD_PARTY_NOTICES.md` (project, URL, author, derived files, and the upstream license text and copyright line copied verbatim), then copy the file over `packages/flow-core/THIRD_PARTY_NOTICES.md` and `extension/public/THIRD_PARTY_NOTICES.md`. `npm run check:notices` fails if the copies drift.
+- Add an entry to `THIRD_PARTY_NOTICES.md` (project, URL, author, derived files, and the upstream license text and copyright line copied verbatim), then copy the file over `packages/flow-core/THIRD_PARTY_NOTICES.md`, `extension/public/THIRD_PARTY_NOTICES.md` and `vscode/THIRD_PARTY_NOTICES.md` (the VS Code bundle inlines flow-core). `npm run check:notices` fails if the copies drift.
 - Add a header comment to each derived file naming the project, its copyright holder and license, and pointing to `THIRD_PARTY_NOTICES.md`.
 
 ## Submitting a Pull Request

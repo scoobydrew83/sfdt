@@ -3,7 +3,7 @@
 // pure text composer and the feature against a happy-dom tab bar with a mocked
 // Salesforce API client.
 
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import {
   createOrgReleaseBadgeFeature,
   describeBadge,
@@ -19,7 +19,7 @@ function resetDom(): void {
   document.body.appendChild(tabBar);
 }
 
-// A version list where 68 is the newest; GA at the pinned date is 67, so 68 = preview.
+// A version list where 68 is the newest; GA at the pinned date (see the clock hook below) is 67, so 68 = preview.
 const PREVIEW_VERSIONS = [
   { version: '67.0', label: "Summer '26" },
   { version: '68.0', label: "Winter '27" },
@@ -41,6 +41,16 @@ function fakeApi(over: Partial<Record<'apiGet' | 'query', unknown>> = {}): Sales
       })),
   } as unknown as SalesforceApiClient;
 }
+
+// Pin the clock to mid-Summer '26 (GA = v67) so v68 reads as a preview release
+// regardless of the real date — preview status comes from expectedGaApiVersion(now).
+beforeEach(() => {
+  vi.useFakeTimers({ toFake: ['Date'] });
+  vi.setSystemTime(new Date('2026-07-15T00:00:00Z'));
+});
+afterEach(() => {
+  vi.useRealTimers();
+});
 
 beforeEach(() => {
   _clearSettingsCacheForTests();

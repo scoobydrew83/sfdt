@@ -4,6 +4,22 @@ All notable changes to `@sfdt/extension` are documented here. Format follows [Ke
 
 ## [Unreleased]
 
+## [0.17.0] - 2026-10-02
+
+Requires `@sfdt/cli` 0.27.0 or later for CLI snapshots that record an org ID; without one, CLI
+snapshots are left out of the Index view.
+
+### Added
+
+- Org Health has an **Index view** that groups the same checks under the eight AI-Readiness
+  Index dimensions, using the `@sfdt/flow-core` mapping that `sfdt audit --index` uses. With the
+  bridge offline it groups the five in-browser checks and names the CLI checks each dimension
+  is missing. **Copy evidence pack** copies the grouping as Markdown for an assessment
+  write-up. It is local clipboard only, and nothing leaves the browser. Dimensions show their
+  worst check, not a score. CLI snapshots taken against a different org than the one in the
+  browser, or with no org ID to check, are left out. A warning at the top of the view and of
+  the copied pack says so.
+
 ## [0.16.1] - 2026-09-25
 
 ### Added

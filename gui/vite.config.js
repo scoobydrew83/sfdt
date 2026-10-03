@@ -12,6 +12,11 @@ export default defineConfig({
     outDir: 'dist',
     emptyOutDir: true,
     target: 'es2020',
+    // The dashboard bundle inlines react, react-dom, d3, react-markdown and
+    // their dependencies; MIT/ISC/BSD require their notices to travel with the
+    // copy. Vite collects every bundled package's license into this file, which
+    // ships inside the npm tarball with the rest of gui/dist.
+    license: { fileName: 'THIRD_PARTY_LICENSES.md' },
     rollupOptions: {
       input: resolve(__dirname, 'index.html'),
     },
