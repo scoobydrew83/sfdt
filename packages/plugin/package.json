@@ -21,7 +21,8 @@
   "types": "./dist/index.d.ts",
   "files": [
     "dist/",
-    "oclif.manifest.json"
+    "oclif.manifest.json",
+    "LICENSE"
   ],
   "keywords": [
     "salesforce",
