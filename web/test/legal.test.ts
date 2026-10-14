@@ -118,14 +118,30 @@ describe("the privacy policy covers every surface", () => {
     }
   });
 
+  // These assertions look for a hostname *inside a page's prose*, which is a
+  // substring search, not URL validation — so they use `toContain` rather than
+  // an unanchored regex. CodeQL's js/regex/missing-regexp-anchor rightly reads
+  // `/registry\.npmjs\.org/` as a host check that `evil-registry.npmjs.org.bad`
+  // would satisfy; there is no host to check here, and a plain string says so.
   it("discloses the npm registry version check on both CLI surfaces", () => {
-    expect(md).toMatch(/npm view @sfdt\/cli version/);
-    expect(md).toMatch(/registry\.npmjs\.org/);
+    expect(md).toContain("npm view @sfdt/cli version");
+    expect(md).toContain("registry.npmjs.org");
   });
 
-  it("discloses the site's one third-party request", () => {
-    expect(md).toMatch(/fonts\.googleapis\.com/);
-    expect(md).toMatch(/Cloudflare/);
+  it("names the host, and no third-party font service, for the site itself", () => {
+    expect(md).toContain("Cloudflare");
+    expect(md).toContain("No third-party requests");
+    // Inter is self-hosted (web/app/fonts/), so the policy must not claim a
+    // Google Fonts request that no longer happens. See
+    // no-third-party-requests.test.ts for the guard on the code side.
+    expect(md).not.toContain("fonts.googleapis.com");
+    expect(md).not.toContain("fonts.gstatic.com");
+  });
+
+  it("states who controls the host's request logs, and on what basis", () => {
+    expect(md).toContain("is the controller");
+    expect(md).toContain("legitimate interest");
+    expect(md).toContain("user agent");
   });
 
   it("documents the hosted engine endpoint", () => {
@@ -143,6 +159,36 @@ describe("the privacy policy covers every surface", () => {
     expect(md).toMatch(/Effective \{EFFECTIVE_DATE\}/);
     expect(md).toMatch(/ISSUES_URL/);
     expect(md).toMatch(/SECURITY_URL/);
+  });
+});
+
+// A privacy policy whose only contact route is a public issue tracker asks a
+// data subject to publish their request. Both stores also expect a reachable
+// publisher contact. So the private route is not optional, and these tests fail
+// if either page loses it.
+describe("both pages carry a private contact route", () => {
+  it("defines one email and one postal address in the shared module", () => {
+    const legal = read("app/lib/legal.ts");
+    expect(legal).toContain("sales@hallowsgroup.com");
+    expect(legal).toContain("5900 Balcones Drive #31966");
+    expect(legal).toContain("Austin, TX 78731");
+  });
+
+  it.each([
+    ["privacy", PRIVACY],
+    ["terms", TERMS],
+  ])("renders the email and address on /%s", (_name, page) => {
+    const md = read(page);
+    expect(md).toMatch(/CONTACT_MAILTO/);
+    expect(md).toMatch(/CONTACT_EMAIL/);
+    expect(md).toMatch(/POSTAL_ADDRESS_LINES/);
+    expect(md).toMatch(/<address/);
+  });
+
+  it("keeps the issue tracker as the public option on both pages", () => {
+    for (const page of [PRIVACY, TERMS]) {
+      expect(read(page), page).toMatch(/ISSUES_URL/);
+    }
   });
 });
 
@@ -183,6 +229,15 @@ describe("the other surfaces point here", () => {
     const md = readRepo("extension/PRIVACY.md");
     expect(md).toMatch(/https:\/\/sfdt\.dev\/privacy/);
     expect(md).toMatch(/https:\/\/sfdt\.dev\/terms/);
+  });
+
+  it("extension/PRIVACY.md carries the same private contact route", () => {
+    const md = readRepo("extension/PRIVACY.md");
+    expect(md).toContain("sales@hallowsgroup.com");
+    expect(md).toContain("5900 Balcones Drive #31966");
+    expect(md).toContain("Austin, TX 78731");
+    // And still offers the public one.
+    expect(md).toContain("https://github.com/scoobydrew83/sfdt/issues");
   });
 
   it("the Chrome Web Store listing uses the hosted policy URL", () => {

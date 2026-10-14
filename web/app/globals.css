@@ -1,3 +1,39 @@
+/* Inter, self-hosted.
+ *
+ * This used to be a <link> to fonts.googleapis.com, which made every visitor's
+ * browser contact Google and hand it an IP address — the one third-party
+ * request the site made, and the one thing that kept /privacy from being able
+ * to say "no third-party requests". The woff2 files live in `app/fonts/` (SIL
+ * OFL 1.1, see `app/fonts/LICENSE` and THIRD_PARTY_NOTICES.md); the relative
+ * url()s below are resolved at build time, so they ship hashed from this
+ * origin. Nothing fetches a font over the network at runtime.
+ *
+ * Two files and two unicode-ranges, matching what the Google Fonts stylesheet
+ * served: `latin` covers the site's text, `latin-ext` is the fallback for
+ * accented glyphs. Both are variable on the weight axis, so one file covers the
+ * 400/500/600 the design uses. Italic was never loaded before and still isn't —
+ * <em> is synthesised, as it was.
+ *
+ * `web/test/no-third-party-requests.test.ts` fails if a remote font or
+ * stylesheet URL comes back.
+ */
+@font-face {
+  font-family: Inter;
+  font-style: normal;
+  font-display: swap;
+  font-weight: 100 900;
+  src: url("./fonts/inter-latin-wght-normal.woff2") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: Inter;
+  font-style: normal;
+  font-display: swap;
+  font-weight: 100 900;
+  src: url("./fonts/inter-latin-ext-wght-normal.woff2") format("woff2");
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+
 :root {
   --bg-canvas: #0a0c10;
   --bg-surface: #14181f;
@@ -73,6 +109,7 @@ aside.rules { border-top: 1px solid var(--border-subtle); background: var(--bg-e
 .legal .toc { display: flex; flex-wrap: wrap; gap: 10px; margin: 16px 0 0; padding: 0; list-style: none; }
 .legal .toc li { margin: 0; }
 .legal .toc a { font-size: 12px; color: var(--text-secondary); text-decoration: none; border: 1px solid var(--border-subtle); border-radius: 4px; padding: 4px 8px; }
+.legal .legal-address { display: flex; flex-direction: column; margin: 12px 0; padding: 12px 14px; border: 1px solid var(--border-subtle); border-radius: 4px; background: var(--bg-surface); color: var(--text-secondary); font-size: 14px; line-height: 1.6; font-style: normal; }
 .legal table { margin: 12px 0; }
 .legal td .mono, .legal .mono { font-size: 12px; }
 @media (min-width: 960px) {

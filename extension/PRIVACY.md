@@ -153,7 +153,18 @@ Changes will be announced in the repo's [CHANGELOG](../CHANGELOG.md) and in the 
 
 ## Contact
 
-Open an issue at <https://github.com/scoobydrew83/sfdt/issues> with the `area: extension` label.
+**Privately, and for anything about your own data.** Email <sales@hallowsgroup.com>, or write to:
+
+```
+Hallows Group LLC
+5900 Balcones Drive #31966
+Austin, TX 78731
+United States
+```
+
+Use that route for a privacy question, a data-subject or state-privacy request, a complaint, or a legal notice — anything you would rather not put in public. Hallows Group LLC is the publisher named in this policy and is reachable at both addresses.
+
+**Publicly, if you would rather.** Bugs, feature requests, and questions or corrections about this document are welcome as an issue at <https://github.com/scoobydrew83/sfdt/issues> with the `area: extension` label — often the faster route for anything that is fine in the open.
 
 Please report security vulnerabilities privately through [GitHub's private security advisories](https://github.com/scoobydrew83/sfdt/security/advisories/new) instead — see [SECURITY.md](../SECURITY.md).
 

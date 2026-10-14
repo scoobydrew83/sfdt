@@ -69,6 +69,10 @@ views offer a one-click **Run sfdt init** and links to the install docs.
 
 - **Privacy policy:** <https://sfdt.dev/privacy>
 - **Terms of use:** <https://sfdt.dev/terms>
+- **Private contact,** including any privacy or data request: <sales@hallowsgroup.com>, or
+  Hallows Group LLC, 5900 Balcones Drive #31966, Austin, TX 78731, United States. Bugs and
+  feature requests are welcome in public at
+  <https://github.com/scoobydrew83/sfdt/issues>.
 
 Both are also reachable from inside VS Code — **SFDT: Privacy Policy** and **SFDT: Terms
 of Use** in the command palette — because the Marketplace has no dedicated policy-link

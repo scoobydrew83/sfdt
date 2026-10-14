@@ -2,10 +2,13 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { Chrome } from "../components/Chrome";
 import {
+  CONTACT_EMAIL,
+  CONTACT_MAILTO,
   EFFECTIVE_DATE,
   ENTITY,
   ENTITY_JURISDICTION,
   ISSUES_URL,
+  POSTAL_ADDRESS_LINES,
   REPO_URL,
   SECURITY_URL,
 } from "../lib/legal";
@@ -21,8 +24,8 @@ export const metadata: Metadata = {
  *
  * Every factual claim here was checked against the code at the ref that added
  * this page; `extension/PRIVACY.md` points at this page and the two must be
- * changed together. The three outbound destinations named in §6 are the whole
- * set — a new one is a policy change, not just a code change.
+ * changed together. The outbound destinations named in §5 are the whole set — a
+ * new one is a policy change, not just a code change.
  */
 export default function Privacy() {
   return (
@@ -89,8 +92,15 @@ export default function Privacy() {
           <p>
             <strong>There is no SFDT server.</strong> We operate no accounts, no sign-up, no
             billing and no analytics backend. No SFDT surface sends your Salesforce data, your
-            source code or your usage to {ENTITY} or to any service we control, because no such
-            service exists. Everything these tools record, they record on your own device.
+            source code or your usage to {ENTITY} or to any service we control — there is nothing
+            of ours for it to be sent to. Everything these tools record, they record on your own
+            device.
+          </p>
+          <p>
+            The one piece of personal data we will not claim away: this website is hosted, and
+            serving you a page means our host logs the request — your IP address, user agent and
+            the URL. For that minimal set, and only that, {ENTITY} is a data controller. §4 and §5
+            say exactly what it is, why we have it and on what legal basis.
           </p>
         </div>
         <p>
@@ -466,17 +476,26 @@ export default function Privacy() {
             advertising. There is no form to submit and no user input collected anywhere on it.
           </li>
           <li>
-            <strong>Hosting.</strong> The site runs on Cloudflare Workers. To deliver a page,
-            Cloudflare necessarily processes the request — including your IP address and user agent
-            — as any web host does, under Cloudflare&rsquo;s own terms. We do not add analytics on
-            top of that, and we do not build profiles from it.
+            <strong>Hosting, and the one thing we are a controller of.</strong> The site runs on
+            Cloudflare Workers. To deliver a page, Cloudflare necessarily receives and logs the
+            request — your <strong>IP address</strong>, your <strong>user agent</strong> and the{" "}
+            <strong>URL</strong> you asked for — as any web host must. For that minimal set of
+            web-request data {ENTITY} <strong>is the controller</strong> and Cloudflare is our
+            hosting processor; under the UK/EU GDPR our legal basis is{" "}
+            <strong>legitimate interest</strong> (Article 6(1)(f)) in keeping the site available
+            and secure and in investigating abuse or attack. That is the whole purpose. We do not
+            add analytics on top of it, we do not build profiles from it, we do not combine it with
+            anything else and we do not sell or share it. Retention of those edge logs is
+            Cloudflare&rsquo;s, under Cloudflare&rsquo;s own terms and privacy policy — we neither
+            export them into any store of our own nor keep a copy. If you want this data not to
+            exist, do not visit the site; nothing on it requires a visit, since the tools are
+            distributed through the stores and npm.
           </li>
           <li>
-            <strong>One third-party request.</strong> Pages load the Inter typeface from Google
-            Fonts (<span className="mono">fonts.googleapis.com</span>,{" "}
-            <span className="mono">fonts.gstatic.com</span>), so your browser contacts Google when
-            you load a page here and Google receives that request under its own privacy policy.
-            That is the only third-party request the site makes.
+            <strong>No third-party requests.</strong> The Inter typeface is served from this site
+            itself, so loading a page here contacts no one but the host above. Nothing is fetched
+            from a font, CDN, analytics or advertising service, and no request of yours reaches
+            Google.
           </li>
           <li>
             <strong>The Trailblazer pages</strong> render a fixture list bundled with the site in
@@ -533,16 +552,26 @@ export default function Privacy() {
             PR helpers.
           </li>
           <li>
-            <strong>Google Fonts</strong> — when you load a page on this website.
+            <strong>This website&rsquo;s host, Cloudflare</strong> — when you load a page here, and
+            only the web-request data described in §4.
           </li>
         </ol>
         <p>
-          {ENTITY} is not a destination on that list. We receive no personal data from these tools,
-          so we are not a controller or processor of any of it, we have nothing to sell and nothing
-          to share, and no data of yours is used for advertising, profiling, creditworthiness or
-          lending decisions. Loopback traffic to{" "}
+          {ENTITY} is not a destination on that list. From the{" "}
+          <strong>software</strong> — the browser extension, the VS Code extension and the CLI — we
+          receive no personal data at all, so for everything those three surfaces read, store or
+          send we are <strong>neither a controller nor a processor</strong>: there is no copy in our
+          hands to disclose, sell, share or hand over. Loopback traffic to{" "}
           <span className="mono">127.0.0.1</span> and the native messaging host are not on the list
           because they do not leave your machine.
+        </p>
+        <p>
+          <strong>This website is the one exception, and we would rather state it than claim a
+          clean sweep.</strong> Serving a page means our host logs the request, and for that
+          minimal web-request data — IP address, user agent, URL — {ENTITY} is the controller, on
+          the legitimate-interest basis set out in §4. It is the only personal data anywhere in
+          this policy for which we hold that role. None of it, on any surface, is used for
+          advertising, profiling, creditworthiness or lending decisions.
         </p>
 
         <h2 id="limited-use">6. Chrome Web Store Limited Use</h2>
@@ -597,14 +626,23 @@ export default function Privacy() {
             state outside your workspace.
           </li>
           <li>
-            <strong>This website:</strong> there is nothing to opt out of, because nothing is
-            collected.
+            <strong>This website:</strong> there is no cookie banner because there are no cookies,
+            and no analytics opt-out because there is no analytics. The only record of your visit
+            is the host&rsquo;s request log described in §4; the one way to prevent that is not to
+            visit, and nothing here requires you to.
           </li>
         </ul>
         <p>
-          If you are wondering how to exercise a right of access, deletion or portability against
-          us: there is no request to make, because we hold no data about you. The copy that exists
-          is on your own device, under your own control, and the paths above remove it.
+          <strong>Exercising a right of access, erasure, portability, objection or restriction.</strong>{" "}
+          For the extension, the VS Code extension and the CLI there is no request to make, because
+          we hold no data about you — the copy that exists is on your own device, under your own
+          control, and the paths above remove it. For the website request logs in §4, write to us
+          using the contact details below and we will do what we can; be aware that those logs are
+          keyed to an IP address and nothing else, so in the ordinary case we cannot tie one to a
+          person, which also means we cannot verify that a given log line is yours. You can object
+          to our legitimate-interest processing of them at any time. Wherever we can act, we
+          respond within one month (GDPR) or 45 days (US state privacy laws), and there is no
+          charge and no requirement to create an account.
         </p>
 
         <h3>Children&rsquo;s privacy</h3>
@@ -619,11 +657,33 @@ export default function Privacy() {
           this page is in a public repository, the full history of every edit is visible in git.
         </p>
         <p>
-          Questions about privacy, or a correction to anything on this page:{" "}
-          <a href={ISSUES_URL}>open an issue</a> in the public repository. Please report security
-          vulnerabilities privately instead, through{" "}
+          <strong>Privately, and for anything about your own data.</strong> Email{" "}
+          <a href={CONTACT_MAILTO}>{CONTACT_EMAIL}</a>, or write to us:
+        </p>
+        <address className="legal-address">
+          {POSTAL_ADDRESS_LINES.map((line) => (
+            <span key={line}>{line}</span>
+          ))}
+        </address>
+        <p>
+          That is the route for a privacy question, a data-subject or state-privacy request, a
+          complaint, or a legal notice — use it rather than the issue tracker for anything you do
+          not want in public. {ENTITY} is the data controller named in this policy and is reachable
+          at both addresses above.
+        </p>
+        <p>
+          <strong>Publicly, if you would rather.</strong> A question about this page, or a
+          correction to it, is also welcome as an{" "}
+          <a href={ISSUES_URL}>issue in the public repository</a> — that is often the faster route
+          for anything that is fine in the open. Please report security vulnerabilities privately
+          instead, through{" "}
           <a href={SECURITY_URL}>GitHub&rsquo;s private security advisories</a>, as described in{" "}
           <a href={`${REPO_URL}/blob/main/SECURITY.md`}>SECURITY.md</a>.
+        </p>
+        <p>
+          If you are in the EU or UK, the email and postal address above are the contact points for
+          a GDPR request, and you also have the right to complain to your local supervisory
+          authority.
         </p>
         <p className="faint">
           SFDT is an independent open-source project and is not affiliated with, endorsed by, or

@@ -2,10 +2,13 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { Chrome } from "../components/Chrome";
 import {
+  CONTACT_EMAIL,
+  CONTACT_MAILTO,
   EFFECTIVE_DATE,
   ENTITY,
   ENTITY_JURISDICTION,
   ISSUES_URL,
+  POSTAL_ADDRESS_LINES,
   REPO_URL,
   SECURITY_URL,
 } from "../lib/legal";
@@ -232,12 +235,31 @@ export default function Terms() {
           </li>
         </ul>
 
-        <h2 id="contact">11. Contact</h2>
+        <h2 id="contact">11. Contact and notices</h2>
         <p>
-          Questions about these terms, or anything that looks wrong on this page:{" "}
-          <a href={ISSUES_URL}>open an issue</a> in the public repository. Security vulnerabilities
-          go privately through <a href={SECURITY_URL}>GitHub&rsquo;s security advisories</a>, per{" "}
-          <a href={`${REPO_URL}/blob/main/SECURITY.md`}>SECURITY.md</a>.
+          <strong>Privately, and for anything legal.</strong> Email{" "}
+          <a href={CONTACT_MAILTO}>{CONTACT_EMAIL}</a>, or write to us:
+        </p>
+        <address className="legal-address">
+          {POSTAL_ADDRESS_LINES.map((line) => (
+            <span key={line}>{line}</span>
+          ))}
+        </address>
+        <p>
+          Any notice required under these terms — a legal notice, a trademark or copyright
+          complaint, a dispute, or anything you would rather not put in public — should go to one of
+          those two addresses, and we will treat a notice as given when it reaches either. Notices
+          to you may be given through this website or the repository.
+        </p>
+        <p>
+          <strong>Publicly, if you would rather.</strong> A question about these terms, or anything
+          that looks wrong on this page, is also welcome as an{" "}
+          <a href={ISSUES_URL}>issue in the public repository</a> — often the faster route for
+          anything that is fine in the open. Security vulnerabilities go privately through{" "}
+          <a href={SECURITY_URL}>GitHub&rsquo;s security advisories</a>, per{" "}
+          <a href={`${REPO_URL}/blob/main/SECURITY.md`}>SECURITY.md</a>. Privacy and data-subject
+          requests are handled through the contact routes in the{" "}
+          <Link href="/privacy">Privacy Policy</Link>, which are the same ones.
         </p>
         <p className="faint">
           {ENTITY}, {ENTITY_JURISDICTION}.

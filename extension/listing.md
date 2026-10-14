@@ -152,6 +152,10 @@ Privacy policy: https://sfdt.dev/privacy
 Terms of use: https://sfdt.dev/terms
 Third-party open source notices: https://github.com/scoobydrew83/sfdt/blob/main/THIRD_PARTY_NOTICES.md
 
+Contact
+- Privately, including any privacy or data request: sales@hallowsgroup.com, or Hallows Group LLC, 5900 Balcones Drive #31966, Austin, TX 78731, United States.
+- Publicly, for bugs and feature requests: https://github.com/scoobydrew83/sfdt/issues
+
 ## Single purpose
 Enhance Salesforce for admins and developers with opt-in productivity features across Flow Builder, Setup, Object Manager, and record pages — including flow analysis, schema and data tooling, SOQL/REST/SOAP exploration, deploy/rollback via a local CLI bridge, and optional AI assistance.
 

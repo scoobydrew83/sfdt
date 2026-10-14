@@ -8,17 +8,15 @@ export const metadata: Metadata = {
     "Public Trailblazer hub and in-browser Flow Studio. Org data never leaves the browser.",
 };
 
+/**
+ * Inter is self-hosted — the @font-face rules are in `globals.css`, which is
+ * imported above, and the woff2 files ship from this origin. There is
+ * deliberately no <link> to any other host here: /privacy claims the site makes
+ * no third-party request, and this file is where that claim would break first.
+ */
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="en">
-      <head>
-        <link rel="preconnect" href="https://fonts.googleapis.com" />
-        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="" />
-        <link
-          href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap"
-          rel="stylesheet"
-        />
-      </head>
       <body>{children}</body>
     </html>
   );
