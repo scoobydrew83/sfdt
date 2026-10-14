@@ -487,9 +487,20 @@ export default function Privacy() {
             add analytics on top of it, we do not build profiles from it, we do not combine it with
             anything else and we do not sell or share it. Retention of those edge logs is
             Cloudflare&rsquo;s, under Cloudflare&rsquo;s own terms and privacy policy — we neither
-            export them into any store of our own nor keep a copy. If you want this data not to
-            exist, do not visit the site; nothing on it requires a visit, since the tools are
-            distributed through the stores and npm.
+            export them into any store of our own nor keep a copy, and we can neither lengthen nor
+            shorten the window. Cloudflare&rsquo;s own documentation puts it in days rather than
+            months: Cloudflare states that it{" "}
+            <a href="https://developers.cloudflare.com/logs/faq/logpull-api/">
+              makes raw HTTP request logs available for at least three days and up to seven days
+            </a>
+            , and that it keeps the invocation logs of a Worker like this one for{" "}
+            <a href="https://developers.cloudflare.com/workers/observability/logs/workers-logs/">
+              3 days on the Workers Free plan and 7 days on Workers Paid
+            </a>
+            . Those are Cloudflare&rsquo;s figures, and Cloudflare&rsquo;s to change — we report
+            them rather than promise them. If you want this data not to exist, do not visit the
+            site; nothing on it requires a visit, since the tools are distributed through the
+            stores and npm.
           </li>
           <li>
             <strong>No third-party requests.</strong> The Inter typeface is served from this site
