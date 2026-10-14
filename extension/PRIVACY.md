@@ -1,6 +1,16 @@
 # Privacy Policy — SFDT for Salesforce (`@sfdt/extension`)
 
-**Last updated: 2026-08-12**
+**Last updated: 2026-10-13**
+
+> **The canonical policy is <https://sfdt.dev/privacy>.** That page is the URL in the
+> Chrome Web Store listing and the one users are shown; it covers all four surfaces
+> (this extension, the VS Code extension, the `@sfdt/cli`, and sfdt.dev). This file is
+> the extension-specific, in-repo mirror: it goes deeper on storage keys, permissions
+> and the local bridge, and it must not contradict the hosted page. Change the two
+> together — `web/test/legal.test.ts` fails if this file stops naming the hosted URLs.
+> Terms of use: <https://sfdt.dev/terms>.
+>
+> Source for the hosted page: `web/app/privacy/page.tsx`.
 
 This Chrome extension is designed for Salesforce admins and developers. Its full source code is published in the public [`sfdt` repository on GitHub](https://github.com/scoobydrew83/sfdt) — you can verify every claim below against the code.
 
@@ -26,7 +36,7 @@ All extension state lives in `chrome.storage.local` inside your Chrome profile. 
 | Key | What it is | When it's written |
 |---|---|---|
 | `sfdt.settings` | Your per-feature toggles, AI provider preferences, bridge token | When you save the options page |
-| `sfdt.killswitch.cache` | The most-recent server-disabled feature list from the local bridge ping | After every successful bridge ping |
+| `sfdt.killswitch.cache` | The most-recent disabled-feature list returned by the local bridge ping. The bridge reads it from a file in your own project (`.sfdt/feature-flags.json`) — no server of ours is contacted for it | After every successful bridge ping |
 | `sfdt.telemetry` | Opt-in local feature-use counters (see below) | Only when you've enabled telemetry |
 | `sfdt.activity` | The last 100 operations you ran — timestamp, tool, outcome, and a truncated description of the target (see below) | After a SOQL/SOSL run, an anonymous Apex execution, a metadata deploy or retrieve, or a bridge tool run |
 
@@ -117,6 +127,18 @@ The optional AI features (when enabled) send your prompts to a Claude / Gemini /
 
 ---
 
+## Chrome Web Store Limited Use
+
+This extension's collection and use of information complies with the [Chrome Web Store User Data Policy](https://developer.chrome.com/docs/webstore/program-policies/limited-use/), including its **Limited Use** requirements:
+
+- Data is used only to provide the user-facing features described in the store listing and above — the extension's single purpose of enhancing Salesforce for admins and developers.
+- **No user data is transferred to us.** The extension sends data only to your own Salesforce org, to a process on your own machine (the loopback bridge or the native host), or — if you explicitly enable an AI feature — to the model provider you configured under your own API key. Hallows Group LLC is not a destination.
+- User data is not sold, and is not transferred for advertising purposes.
+- User data is not used or transferred to determine creditworthiness or for lending purposes.
+- No human at Hallows Group LLC reads user data. There is no mechanism to: nothing is transmitted to us.
+
+---
+
 ## Children's privacy
 
 This is a developer / admin productivity tool. It is not directed at children under 13 and does not knowingly collect any data from them.
@@ -125,10 +147,20 @@ This is a developer / admin productivity tool. It is not directed at children un
 
 ## Changes to this policy
 
-Changes will be announced in the repo's [CHANGELOG](../CHANGELOG.md) and in the Web Store listing.
+Changes will be announced in the repo's [CHANGELOG](../CHANGELOG.md) and in the Web Store listing. The canonical policy at <https://sfdt.dev/privacy> carries the effective date, and because both live in a public repository, the full edit history is visible in git.
 
 ---
 
 ## Contact
 
 Open an issue at <https://github.com/scoobydrew83/sfdt/issues> with the `area: extension` label.
+
+Please report security vulnerabilities privately through [GitHub's private security advisories](https://github.com/scoobydrew83/sfdt/security/advisories/new) instead — see [SECURITY.md](../SECURITY.md).
+
+---
+
+## Related
+
+- Full privacy policy (all surfaces): <https://sfdt.dev/privacy>
+- Terms of use: <https://sfdt.dev/terms>
+- Published by Hallows Group LLC (Texas, United States). SFDT is an independent open-source project and is not affiliated with, endorsed by, or sponsored by Salesforce, Inc.

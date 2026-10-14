@@ -63,11 +63,13 @@ truncates or rejects.
 | Screenshots (5) | Store listing | — | 1280×800 | `store-assets/` |
 | Single purpose | Privacy practices | 287 | 1,000 | this file |
 | Permission justifications (8) | Privacy practices | ≤403 each | 1,000 each | this file |
+| Privacy policy URL | Privacy practices | — | — | **dashboard only** — `https://sfdt.dev/privacy` |
 | Data usage + certifications | Privacy practices | — | — | see below |
 | Visibility / Regions / Pricing | Distribution | — | — | dashboard only |
 
-**Four fields never come from the zip** and are the ones that silently keep showing stale values:
-the item name, the category, the data-usage disclosures, and the distribution settings.
+**Five fields never come from the zip** and are the ones that silently keep showing stale values:
+the item name, the category, the privacy policy URL, the data-usage disclosures, and the
+distribution settings.
 
 The **item name is already live** — CWS currently displays "SFDT for Salesforce". It remains a
 dashboard-only field: a future rename still has to be retyped by hand.
@@ -146,7 +148,8 @@ Privacy
 - All network traffic is to your Salesforce org (same origin you're already authenticated to), or to localhost when you've started the sfdt CLI yourself.
 
 Full source code: https://github.com/scoobydrew83/sfdt
-Privacy policy: https://github.com/scoobydrew83/sfdt/blob/main/extension/PRIVACY.md
+Privacy policy: https://sfdt.dev/privacy
+Terms of use: https://sfdt.dev/terms
 Third-party open source notices: https://github.com/scoobydrew83/sfdt/blob/main/THIRD_PARTY_NOTICES.md
 
 ## Single purpose
@@ -185,6 +188,18 @@ the zip. Alongside the Single purpose and the eight permission justifications ab
 asks for the following. Answers verified against the built manifest and the code on this ref,
 not from memory:
 
+### Privacy policy URL
+
+```
+https://sfdt.dev/privacy
+```
+
+**This replaced the old GitHub link** (`.../blob/main/extension/PRIVACY.md`), which is what the
+item currently points at. The hosted page is the canonical policy for every SFDT surface and
+carries the Chrome Web Store **Limited Use** statement this tab's certifications correspond to;
+`extension/PRIVACY.md` is now the in-repo mirror and links to it. Pasting the new URL into this
+field is a human step — like every other field on this tab, it does not come from the zip.
+
 ### Are you using remote code?
 **No — all code is bundled in the package.** Verified: the built manifest declares no
 `content_security_policy`, no `sandbox`, no `web_accessible_resources` and no
@@ -217,7 +232,8 @@ Telemetry is off by default, local-only, and has no network egress (`test/teleme
 > **One answer needs your call before you save the tab — the AI Assistant.** When a user
 > explicitly enables it, Flow content is sent to Claude / Gemini / OpenAI **through the local
 > CLI bridge, using an API key the user supplies and is billed for**. `PRIVACY.md`'s "Third
-> parties" section states the position: the extension is a pass-through and we neither see,
+> parties" section and <https://sfdt.dev/privacy> (§1 "AI features" and §6 "Limited Use") state
+> the position: the extension is a pass-through and we neither see,
 > log, nor store prompts or completions. Because the developer operates no server and the
 > destination is the user's own provider account, "No" to *Website content* is defensible and
 > is the answer this file records. The opposing reading is that content does leave the device

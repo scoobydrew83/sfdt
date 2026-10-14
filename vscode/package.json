@@ -17,6 +17,8 @@
   "bugs": {
     "url": "https://github.com/scoobydrew83/sfdt/issues"
   },
+  "privacy": "https://sfdt.dev/privacy",
+  "terms": "https://sfdt.dev/terms",
   "engines": {
     "vscode": "^1.80.0"
   },
@@ -227,6 +229,16 @@
         "command": "sfdt.notifySnapshot",
         "title": "SFDT: Send Snapshot to Channels",
         "icon": "$(bell)"
+      },
+      {
+        "command": "sfdt.openPrivacyPolicy",
+        "title": "SFDT: Privacy Policy",
+        "icon": "$(shield)"
+      },
+      {
+        "command": "sfdt.openTerms",
+        "title": "SFDT: Terms of Use",
+        "icon": "$(law)"
       }
     ],
     "menus": {
