@@ -65,6 +65,29 @@ views offer a one-click **Run sfdt init** and links to the install docs.
 | `sfdt.dashboardPort` | `7654` | Port the `sfdt ui` server listens on. |
 | `sfdt.orgColor` | `false` | Opt-in: tint the window by org type (prod/sandbox/scratch) to prevent wrong-org mistakes. Writes `workbench.colorCustomizations` into the workspace `.vscode/settings.json` when enabled; disabling removes them. |
 
+## Privacy & terms
+
+- **Privacy policy:** <https://sfdt.dev/privacy>
+- **Terms of use:** <https://sfdt.dev/terms>
+- **Private contact,** including any privacy or data request: <sales@hallowsgroup.com>, or
+  Hallows Group LLC, 5900 Balcones Drive #31966, Austin, TX 78731, United States. Bugs and
+  feature requests are welcome in public at
+  <https://github.com/scoobydrew83/sfdt/issues>.
+
+Both are also reachable from inside VS Code — **SFDT: Privacy Policy** and **SFDT: Terms
+of Use** in the command palette — because the Marketplace has no dedicated policy-link
+field.
+
+The short version, specific to this extension: it is a thin UI over the CLI, it stores
+nothing of its own (no global state, no secret storage, no database), and it has **no
+telemetry** — it reports nothing to us and nothing into VS Code's own telemetry channel.
+The one file it can write is the opt-in `sfdt.orgColor` tint, which adds
+`workbench.colorCustomizations` to your workspace `.vscode/settings.json` and removes those
+keys again when you disable it. It makes exactly one outbound request: on activation and on
+refresh it runs `npm view @sfdt/cli version` to show the "update available" hint. Everything
+else — orgs, metadata, test results — flows between your machine, your `sfdt`/`sf` CLIs and
+your own org. The hosted policy covers all four SFDT surfaces in full.
+
 ## Development
 
 ```bash

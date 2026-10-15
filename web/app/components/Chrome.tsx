@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import Link from "next/link";
+import { Footer } from "./Footer";
 
 const NAV = [
   { href: "/", label: "Hub" },
@@ -43,6 +44,7 @@ export function Chrome({
         </nav>
       </header>
       <main>{children}</main>
+      <Footer />
     </div>
   );
 }

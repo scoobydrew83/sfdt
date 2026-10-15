@@ -651,6 +651,17 @@ export function activate(context: vscode.ExtensionContext): void {
       if (url) await vscode.env.openExternal(vscode.Uri.parse(url));
     }),
 
+    // The Marketplace has no dedicated policy-link field, so the policies are
+    // reachable from inside the product instead: palette-only, and deliberately
+    // registered with no `when` clause so they work before the CLI is found.
+    vscode.commands.registerCommand('sfdt.openPrivacyPolicy', () =>
+      vscode.env.openExternal(vscode.Uri.parse('https://sfdt.dev/privacy')),
+    ),
+
+    vscode.commands.registerCommand('sfdt.openTerms', () =>
+      vscode.env.openExternal(vscode.Uri.parse('https://sfdt.dev/terms')),
+    ),
+
     vscode.commands.registerCommand('sfdt.pickOrg', async () => {
       const chosen = await chooseOrg('Select the target org');
       if (chosen !== undefined) {
