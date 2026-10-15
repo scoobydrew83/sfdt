@@ -139,8 +139,11 @@
     },
     "next": {
       "postcss": "8.5.26",
-      "sharp": "0.35.4"
+      "sharp": "0.35.5"
     },
+    "proxy-addr": "^2.0.8",
+    "source-map-js": "^1.2.2",
+    "sharp": "^0.35.5",
     "@sfdt/cli": {
       "@modelcontextprotocol/sdk": "$@modelcontextprotocol/sdk"
     }
