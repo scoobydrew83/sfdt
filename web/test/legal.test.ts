@@ -144,6 +144,15 @@ describe("the privacy policy covers every surface", () => {
     expect(md).toContain("user agent");
   });
 
+  it("leaves request-log retention to Cloudflare and promises no figure", () => {
+    expect(md).toContain(
+      "Cloudflare processes request data under its own privacy policy; we do not export or keep request logs.",
+    );
+    // The 3–7 day raw-log figure is an Enterprise-only Logpull/Logpush number.
+    expect(md).not.toContain("three days and up to seven days");
+    expect(md).not.toContain("logs/faq/logpull-api");
+  });
+
   it("documents the hosted engine endpoint", () => {
     expect(md).toMatch(/\/api\/engine/);
     expect(md).toMatch(/accepts no input/i);
@@ -194,6 +203,10 @@ describe("both pages carry a private contact route", () => {
 
 describe("the terms cover what counsel asked for", () => {
   const md = read(TERMS);
+
+  it("makes no claim about Trailblazer fixture data", () => {
+    expect(md).not.toContain("fixture data on the Trailblazer pages");
+  });
 
   it("ties the software to its open-source licence without narrowing it", () => {
     expect(md).toMatch(/Apache License, Version 2\.0/);

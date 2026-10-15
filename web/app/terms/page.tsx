@@ -112,7 +112,7 @@ export default function Terms() {
           The site and the tools are provided free of charge and with no service commitment. We may
           change, break, deprecate or withdraw any feature, endpoint, page or published build at any
           time, and we do not promise any uptime, retention or backwards compatibility. Content on
-          this site — including fixture data on the Trailblazer pages — may be incomplete,
+          this site may be incomplete,
           out of date or illustrative rather than live, and is not advice you should rely on
           without checking it.
         </p>
