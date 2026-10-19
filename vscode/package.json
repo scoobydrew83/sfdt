@@ -477,7 +477,7 @@
     "@sfdt/flow-core": "^0.16.0"
   },
   "devDependencies": {
-    "@types/node": "^25.9.8",
+    "@types/node": "^25.9.9",
     "@types/vscode": "~1.80.0",
     "@vscode/vsce": "^3.2.1",
     "esbuild": "^0.28.2",
