@@ -14,8 +14,8 @@
   "dependencies": {
     "@sfdt/flow-core": "^0.16.0",
     "d3": "^7.9.0",
-    "react": "^19.3.0",
-    "react-dom": "^19.3.0",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
     "react-markdown": "^9.0.1"
   },
   "devDependencies": {
