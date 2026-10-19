@@ -139,7 +139,7 @@ defects — but any of them could have failed a publish.
 
 **Mitigated 2026-09-02** (`test/setup-supertest-origin.js`). Every symptom above is a transport
 symptom, never a handler symptom, and the gui-server/bridge route suites are the only cli suites
-that speak real TCP: supertest 7 builds a fresh `http.Server` and `listen(0)`s it for *every*
+that speak real TCP: supertest builds a fresh `http.Server` and listens it for *every*
 `request(app)` call, then closes it. That was 477 listening-socket bind/close cycles per
 `--project cli` run, on the one loopback ephemeral port range every concurrent worker shares.
 The setup file now listens once per Express app, reuses that socket for the whole file, closes
@@ -148,11 +148,22 @@ server retires it — 477 cycles down to 129, one per app instead of one per req
 CSRF-token pre-fetch now rejects into the test that needed it instead of sending the request
 unauthenticated and surfacing as a 403 somewhere else.
 
-Not yet proven fixed. The class did not reproduce once on the 4-core container the fix was
-developed on — twelve clean runs beforehand: three plain `--project cli`, six of the gui-server
-suites alone at `--maxWorkers=12`, three `--project cli` under 6× CPU contention. Green runs
-since are therefore necessary but not sufficient evidence. Treat the list above as live until a
-release cycle passes without a member appearing.
+**Last residual mechanism closed 2026-10-19**, on the supertest 7.2.2 → 7.3.1 bump. The shared
+socket was still bound with a wildcard `listen(0)` while the client connected to `127.0.0.1`;
+supertest moved its *own* bind to `listen(0, '127.0.0.1')` in 7.3.x precisely because a wildcard
+bind can share its port with another process's loopback listener, which is the "403 from a
+different `createGuiApp` instance" row above. The patch now binds `127.0.0.1` too and defers the
+URL until the port is known, the way 7.3.1 does. Two further traps went with it: an `EADDRINUSE`
+from that bind had no `error` listener, so it took down the whole worker (the "whole-file
+cascade" row) instead of failing one request with an attributable message; and the CSRF
+pre-fetch reused the outer request's `Server`, which under 7.3.1's refcounted factory server
+could close the socket out from under the request that asked for the token.
+
+Still not reproduced on a 4-core container, in either direction: 38 pre-change runs green (8
+`npm test`, 8 `--project cli`, 12 gui-server-only at `--maxWorkers=16` under 8× CPU contention,
+10 `npm test` at `--maxWorkers=24` with the 32768-60999 ephemeral range held at ~30k TIME-WAIT),
+then 16 post-change runs green. Green runs are therefore still necessary rather than sufficient.
+Treat the list above as live until a release cycle passes without a member appearing.
 
 What replaced it is deterministic and catches things the test job does not: `check:all-contracts`
 fails on catalog drift (which would otherwise ship a `generated/` snapshot that disagrees with

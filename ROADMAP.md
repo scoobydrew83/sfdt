@@ -122,7 +122,7 @@ Design approved 2026-08-22; [docs/design/record-edit-clone.md](docs/design/recor
   permission change is actually discovered. A staged approve-then-apply queue remains unbuilt and
   stays in Research.
 
-- **Fix the two known flaky tests** — `test/lib/bridge-routes-extra.test.js` and `test/lib/gui-server-routes3.test.js` fail roughly 1 run in 8 under full-suite load (RELEASING.md §"Known flakes"). They already forced `npm test` out of `prepublishOnly`, and they can red the hard CI gate at random. Fixing them is a 1.0 requirement — **Planned**
+- **Fix the two known flaky tests** — `test/lib/bridge-routes-extra.test.js` and `test/lib/gui-server-routes3.test.js` used to fail roughly 1 run in 8 under full-suite load. They are members of the `gui-server-*` class, not separate defects, and the cause was always the loopback transport under supertest, never a handler (RELEASING.md §"Known flakes"). The per-request listening-socket churn went in 2026-09-02; the last residual mechanism — a wildcard bind the client never connected to — went on 2026-10-19 with the supertest 7.3.1 bump. 38 pre-change and 16 post-change runs are green, so what is left is the waiting period, not an open defect: `npm test` returns to `prepublishOnly` once a release cycle passes with no member appearing — **Awaiting a clean release cycle**
 
 ### Not in this phase
 
