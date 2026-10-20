@@ -1,11 +1,11 @@
 name: License Check
 
 on:
+  # No paths filter on pull_request: license-check is a required status check
+  # on main, and a path-filtered required check never reports on PRs that
+  # don't touch these files, which leaves the PR blocked forever.
   pull_request:
     branches: [main]
-    paths:
-      - 'package.json'
-      - 'package-lock.json'
   push:
     branches: [main]
     paths:
