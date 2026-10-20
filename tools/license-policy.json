@@ -11,7 +11,14 @@
     "packages/plugin/package.json",
     "packages/trailhead-client/package.json"
   ],
-  "licenseFiles": ["LICENSE", "vscode/LICENSE"],
+  "licenseRoot": "LICENSE",
+  "licenseFiles": [
+    "LICENSE",
+    "vscode/LICENSE",
+    "extension/LICENSE",
+    "packages/flow-core/LICENSE",
+    "packages/plugin/LICENSE"
+  ],
   "proseRoots": ["README.md", "RELEASING.md", "ROADMAP.md", "CONTRIBUTING.md", "docs", "extension/README.md", "extension/PRIVACY.md", "vscode/README.md", "packages"],
   "forbiddenPhrases": ["MIT License", "License: MIT", "licensed under MIT", "MIT — see"],
   "allowlist": ["CHANGELOG.md", "docs/skills-audit-2026-07-12.md", "packages/flow-core/THIRD_PARTY_NOTICES.md"]

@@ -1,7 +1,10 @@
 /**
  * License consistency check (tools/license-policy.json is the policy):
  *  1. every workspace package manifest declares the canonical license;
- *  2. every LICENSE file contains the canonical license text;
+ *  2. every LICENSE file exists, contains the canonical license text and,
+ *     other than the root one, is a byte-for-byte copy of the root LICENSE
+ *     (per-package copies ship in their own tarball/VSIX/zip and must not
+ *     drift from the repo's license);
  *  3. no prose file under the policy roots contains a forbidden phrase
  *     (stale "MIT" claims), outside the explicit allowlist (historical
  *     changelogs and audit records).
@@ -25,10 +28,19 @@ for (const rel of policy.packages) {
   }
 }
 
+const rootLicense = await fs.readFile(path.join(ROOT, policy.licenseRoot));
 for (const rel of policy.licenseFiles) {
-  const text = await fs.readFile(path.join(ROOT, rel), 'utf-8');
-  if (!text.includes(policy.canonicalLicenseText)) {
+  const abs = path.join(ROOT, rel);
+  if (!(await fs.pathExists(abs))) {
+    violations.push(`${rel}: missing`);
+    continue;
+  }
+  const bytes = await fs.readFile(abs);
+  if (!bytes.toString('utf-8').includes(policy.canonicalLicenseText)) {
     violations.push(`${rel}: does not contain "${policy.canonicalLicenseText}"`);
+  }
+  if (rel !== policy.licenseRoot && !bytes.equals(rootLicense)) {
+    violations.push(`${rel}: differs from ${policy.licenseRoot} (copy it again: cp ${policy.licenseRoot} ${rel})`);
   }
 }
 
