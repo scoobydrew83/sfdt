@@ -80,9 +80,10 @@ promises above start binding. To cut it:
       `pull-cache.js` use `node:sqlite`, which is experimental in Node 22 and prints a warning
       to users — either it is stable in the supported Node floor, or the warning is suppressed
       and the dependency documented as internal (it is: `logs/history.db` is not public).
-- [ ] The two known flaky tests (`test/lib/bridge-routes-extra.test.js`,
-      `test/lib/gui-server-routes3.test.js`) are fixed, so `npm test` can return to
-      `prepublishOnly` — see RELEASING.md.
+- [ ] `npm test` has returned to `prepublishOnly`. The flake class those two tests
+      (`test/lib/bridge-routes-extra.test.js`, `test/lib/gui-server-routes3.test.js`) belonged to
+      is fixed as of 2026-10-19 and has not reproduced in 54 runs, but the box stays unticked
+      until a release cycle passes with no member appearing — see RELEASING.md.
 - [ ] `SECURITY.md`'s supported-version table names the 1.0 line.
 
 ## Support window

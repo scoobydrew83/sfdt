@@ -36,15 +36,28 @@ version-bump commit on the right branch and let CI do the rest.
 
 ### Stable release (push to `main`)
 
-Triggers when `package.json#version` changed — or when the version isn't yet npm's `latest`,
-so a previously failed publish **self-heals** on the next push to `main`. The `publish` job, in order:
+Runs whenever `package.json#version` has no **published** (non-draft) GitHub Release
+`vX.Y.Z` yet. The release is the job's last step, after all three npm publishes succeed, so
+its existence is the "done" signal. npm's `latest` isn't: right after a publish, npm can report
+the version as staged for several minutes (v0.27.1: 4–6 min), while `latest` still shows the
+old one. Until the release exists, every push to `main` re-runs the job, and every step is
+idempotent, so a previously failed publish **self-heals** on the next push to `main`. Publish
+runs are serialized (`concurrency: release-publish-main`, never cancelled). If GitHub delivers
+one merge as two pushes, as it did for v0.27.1, the second run queues, sees the published
+release, and skips the tag, npm and release steps. The downstream channels are checked
+separately on every push to `main`, because a run can be cancelled after the release
+exists. The job compares the GHCR image `:X.Y.Z`, the Homebrew formula (this version's tarball
+and a non-empty sha256) and the skills-pack README footer against the version. Whichever is
+missing re-runs (tap bump, skills sync, `docker` job), even when the release is already
+published. The `docker` job is serialized as well (`release-docker-main`). The `publish` job,
+in order:
 
-1. Tags `vX.Y.Z` and force-moves the floating major tag (`v0` today) so `uses: scoobydrew83/sfdt@v0` resolves to the newest stable. Betas never move it.
+1. Tags `vX.Y.Z` if the tag is missing. It leaves the tag alone if it already points at the release commit, and refuses (red run) to move a tag that a GitHub Release uses: deleting a release's tag turns the release into an untagged draft. Then it force-moves the floating major tag (`v0` today), only if it isn't already on that commit, so `uses: scoobydrew83/sfdt@v0` resolves to the newest stable. Betas never move it.
 2. Builds the GUI; pins npm 11.x (OIDC trusted publishing + `--provenance`; no token).
 3. Publishes **`@sfdt/flow-core` → `@sfdt/cli` → `@sfdt/plugin`**, in that order. Each step is idempotent — republishing an already-published version is tolerated, which is what makes the self-healing re-run safe.
-4. Creates the GitHub Release (`--generate-notes`).
-5. Bumps the Homebrew tap (`scoobydrew83/homebrew-sfdt`, `Formula/sfdt.rb` url + sha256). Needs the `HOMEBREW_TAP_TOKEN` fine-grained PAT and runs `continue-on-error` — a failure is a yellow step, not a red run. Check it; bump the tap manually if it skipped. The tap repo is the single source of truth for the formula.
-6. The downstream `docker` job calls the reusable `docker-publish.yml` via `workflow_call` in the **same run** (a `GITHUB_TOKEN`-created Release doesn't fire downstream workflows), pushing `ghcr.io/scoobydrew83/sfdt:X.Y.Z` + `:latest`. Re-publish a version on demand via `workflow_dispatch` with the version input.
+4. Creates the GitHub Release (`--generate-notes --verify-tag --latest`), or publishes an existing draft for the same tag on that tag. Then it checks the release is not a draft and fails the step if it is.
+5. Bumps the Homebrew tap (`scoobydrew83/homebrew-sfdt`, `Formula/sfdt.rb` url + sha256). Needs the `HOMEBREW_TAP_TOKEN` fine-grained PAT and runs `continue-on-error` — a failure is a yellow step, not a red run. It downloads the npm tarball with backoff (up to ~15 min), checks it against npm's `dist.integrity`, and refuses an empty download, so the empty-input sha256 `e3b0c442…` can't ship again (v0.27.1). Check it; bump the tap manually if it skipped. The tap repo is the single source of truth for the formula.
+6. The downstream `docker` job calls the reusable `docker-publish.yml` via `workflow_call` in the **same run** (a `GITHUB_TOKEN`-created Release doesn't fire downstream workflows), pushing `ghcr.io/scoobydrew83/sfdt:X.Y.Z` + `:latest`. It first waits up to ~15 min, with backoff, for `@sfdt/cli@X.Y.Z` and its dependencies to be installable from npm. Publishing a draft release by hand (not via `GITHUB_TOKEN`) fires `release: published`, and that also builds the image. Re-publish a version on demand via `workflow_dispatch` with the version input.
 7. Syncs the standalone skills pack repo (`scoobydrew83/sfdt-skills`, backs `npx skills add`) by running `sfdt skills export --target pack`, which regenerates `skills/` + `manifest.json` **and bumps the README "Synced from `@sfdt/cli` vX.Y.Z" footer from `package.json`** so it can't drift (harness H-014). Needs the `SKILLS_PACK_TOKEN` fine-grained PAT and runs `continue-on-error` — a downstream distribution sync must never fail a published release. To sync by hand, run `sfdt skills export --target pack --out ../sfdt-skills` (the footer bump is in the command, not the CI job).
 
 A prerelease version (`X.Y.Z-*`) on `main` **fails the job** by design — prereleases publish from `develop`.
@@ -139,7 +152,7 @@ defects — but any of them could have failed a publish.
 
 **Mitigated 2026-09-02** (`test/setup-supertest-origin.js`). Every symptom above is a transport
 symptom, never a handler symptom, and the gui-server/bridge route suites are the only cli suites
-that speak real TCP: supertest 7 builds a fresh `http.Server` and `listen(0)`s it for *every*
+that speak real TCP: supertest builds a fresh `http.Server` and listens it for *every*
 `request(app)` call, then closes it. That was 477 listening-socket bind/close cycles per
 `--project cli` run, on the one loopback ephemeral port range every concurrent worker shares.
 The setup file now listens once per Express app, reuses that socket for the whole file, closes
@@ -148,11 +161,22 @@ server retires it — 477 cycles down to 129, one per app instead of one per req
 CSRF-token pre-fetch now rejects into the test that needed it instead of sending the request
 unauthenticated and surfacing as a 403 somewhere else.
 
-Not yet proven fixed. The class did not reproduce once on the 4-core container the fix was
-developed on — twelve clean runs beforehand: three plain `--project cli`, six of the gui-server
-suites alone at `--maxWorkers=12`, three `--project cli` under 6× CPU contention. Green runs
-since are therefore necessary but not sufficient evidence. Treat the list above as live until a
-release cycle passes without a member appearing.
+**Last residual mechanism closed 2026-10-19**, on the supertest 7.2.2 → 7.3.1 bump. The shared
+socket was still bound with a wildcard `listen(0)` while the client connected to `127.0.0.1`;
+supertest moved its *own* bind to `listen(0, '127.0.0.1')` in 7.3.x precisely because a wildcard
+bind can share its port with another process's loopback listener, which is the "403 from a
+different `createGuiApp` instance" row above. The patch now binds `127.0.0.1` too and defers the
+URL until the port is known, the way 7.3.1 does. Two further traps went with it: an `EADDRINUSE`
+from that bind had no `error` listener, so it took down the whole worker (the "whole-file
+cascade" row) instead of failing one request with an attributable message; and the CSRF
+pre-fetch reused the outer request's `Server`, which under 7.3.1's refcounted factory server
+could close the socket out from under the request that asked for the token.
+
+Still not reproduced on a 4-core container, in either direction: 38 pre-change runs green (8
+`npm test`, 8 `--project cli`, 12 gui-server-only at `--maxWorkers=16` under 8× CPU contention,
+10 `npm test` at `--maxWorkers=24` with the 32768-60999 ephemeral range held at ~30k TIME-WAIT),
+then 16 post-change runs green. Green runs are therefore still necessary rather than sufficient.
+Treat the list above as live until a release cycle passes without a member appearing.
 
 What replaced it is deterministic and catches things the test job does not: `check:all-contracts`
 fails on catalog drift (which would otherwise ship a `generated/` snapshot that disagrees with
@@ -200,7 +224,7 @@ into `main`.
    git push public develop
    ```
 
-2. Open the promote PR `develop → main` **on public**. Merge it as a **merge commit — never squash**. Squashing rewrites the commits, so `develop` and `main` permanently disagree and every later PR shows CONFLICTING.
+2. Open the promote PR `develop → main` **on public**. Merge it with **Create a merge commit** — never squash or rebase. The same goes for any sync PR that merges `main` back into `develop`: a squashed sync drops `main` as a parent and fixes nothing. Squashing rewrites the commits, so `develop` and `main` permanently disagree and every later PR shows CONFLICTING.
 
    ```bash
    gh pr create --repo scoobydrew83/sfdt --base main --head develop
@@ -314,8 +338,9 @@ old protocol compatibility (roll forward) — don't wait days on the Store.
 
 ### Publish job failed mid-way
 
-Nothing to unwind — every publish step is idempotent, and the version check compares against
-npm's `latest`. Fix the cause, push to `main`, and the job self-heals on that run.
+Nothing to unwind. Every publish step is idempotent, and the job re-runs until a published
+GitHub Release `vX.Y.Z` exists. Fix the cause, push to `main`, and the job self-heals on that
+run. If the release ended up as a draft, the next run publishes it on the existing tag.
 
 ## 7. Post-release
 

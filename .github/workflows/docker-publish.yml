@@ -40,7 +40,8 @@ jobs:
     # ext-v* / vscode-v* releases.
     if: github.repository == 'scoobydrew83/sfdt' && (github.event_name != 'release' || startsWith(github.event.release.tag_name, 'v'))
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # 15 min npm wait + multi-arch build.
+    timeout-minutes: 45
     permissions:
       contents: read
       packages: write
@@ -87,24 +88,27 @@ jobs:
         env:
           VERSION: ${{ steps.ver.outputs.version }}
         run: |
-          # ~5 min at 10s intervals. Longer than any propagation delay we have
-          # seen, short enough that a genuinely bad version fails the run rather
-          # than hanging until the job timeout.
+          # Up to ~15 min with backoff (10s doubling to a 60s cap). v0.27.1's
+          # cli and plugin took 4–6 minutes after `npm publish` returned before
+          # they were installable, and the old 5-minute wait missed by seconds.
           # Resolve in a scratch dir, not with -g: the global form additionally
           # depends on the runner's npm prefix existing, which turns an
           # unrelated environment problem into an indistinguishable failure.
           PROBE="$(mktemp -d)"
           trap 'rm -rf "$PROBE"' EXIT
           cd "$PROBE"
-          for attempt in $(seq 1 30); do
+          DEADLINE=$((SECONDS + 900)); DELAY=10; attempt=0
+          while :; do
+            attempt=$((attempt + 1))
             if npm install --dry-run --no-audit --no-fund "@sfdt/cli@${VERSION}" >/dev/null 2>&1; then
-              echo "@sfdt/cli@${VERSION} and its dependencies resolve (attempt ${attempt})."
+              echo "@sfdt/cli@${VERSION} and its dependencies resolve (attempt ${attempt}, ${SECONDS}s)."
               exit 0
             fi
-            echo "attempt ${attempt}/30: @sfdt/cli@${VERSION} not fully resolvable yet, waiting 10s…"
-            sleep 10
+            if [ "${SECONDS}" -ge "${DEADLINE}" ]; then break; fi
+            echo "attempt ${attempt}: @sfdt/cli@${VERSION} not fully resolvable yet, waiting ${DELAY}s…"
+            sleep "${DELAY}"; DELAY=$(( DELAY * 2 > 60 ? 60 : DELAY * 2 ))
           done
-          echo "::error::@sfdt/cli@${VERSION} still does not resolve after 5 minutes."
+          echo "::error::@sfdt/cli@${VERSION} still does not resolve after 15 minutes (${attempt} attempts). Re-run this workflow by dispatch once npm serves it."
           # Surface the actual resolution error rather than only the timeout.
           npm install --dry-run --no-audit --no-fund "@sfdt/cli@${VERSION}" || true
           exit 1
