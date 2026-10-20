@@ -26,12 +26,33 @@
 //
 // See the comment on `patchedServerAddress` below. This is the fix for
 // sfdt-private#8 — the `gui-server-*` / `bridge-routes-extra` flake class.
+//
+// ── Keeping this in step with supertest ─────────────────────────────────────
+//
+// Both patches reach into supertest's internals, so they have to be re-read
+// against `node_modules/supertest/lib/test.js` on every bump. 7.3.1 changed two
+// things this file depends on: `Test` is now a class (its prototype methods are
+// still writable, so the patching style is unchanged), and `serverAddress` now
+// binds with an explicit host and defers the URL until the port is known —
+// which is why `SHARED_HOST` and `resolveSharedUrl` below exist.
 
 import http from 'http';
 import { afterAll } from 'vitest';
 import request, { Test } from 'supertest';
 
 const DEFAULT_TEST_ORIGIN = 'http://localhost:7654';
+
+// Bind the shared server to the same address the client connects to. A wildcard
+// bind (`listen(0)`, which is what this file used to do) can share its port with
+// another process's `127.0.0.1` listener, and the request then reaches that
+// process instead — which is the "403 from an app that never saw the request"
+// entry in the sfdt-private#8 symptom table, because the responding
+// `createGuiApp` instance minted a different CSRF token. supertest moved its own
+// bind to `listen(0, '127.0.0.1')` in 7.3.x for exactly this reason; see the
+// comment in its `serverAddress`. Leaving the patch on a wildcard bind kept that
+// one mechanism of the flake class live underneath the 2026-09-02 fix.
+const SHARED_HOST = '127.0.0.1';
+
 const tokenCache = new WeakMap();
 
 const originalEnd = Test.prototype.end;
@@ -42,11 +63,11 @@ function getHeader(testInstance, name) {
   return headers[name] || headers[name.toLowerCase()];
 }
 
-// supertest wraps the Express app in an ephemeral http.Server per Test
-// instance. The underlying Express app function is reachable as
+// supertest wraps a bare Express app in an `http.Server` before it builds the
+// `Test`. The underlying Express app function is reachable as
 // `server._events.request` and IS stable across requests, so both the CSRF
 // cache and the shared-server map key off of that rather than off of
-// `this.app` (the per-request Server wrapper).
+// `this.app` (the per-`request()` Server wrapper).
 function appHandler(app) {
   if (typeof app === 'function') return app;
   const handler = app?._events?.request;
@@ -55,12 +76,15 @@ function appHandler(app) {
 
 // ── Shared listening servers ────────────────────────────────────────────────
 //
-// supertest 7 builds a *new* `http.Server` around the Express app and calls
-// `listen(0)` for every single `request(app)`, then `close()`s it once the
-// response has been asserted. Measured on this repo, one worker's share of
-// the gui-server suites does ~57 of those bind/close cycles; the 26 suites
-// together do well over a thousand, all against the one loopback ephemeral
-// port range that every concurrently-running vitest worker shares.
+// supertest builds a *new* `http.Server` around the Express app for every
+// `request(app)` call and listens it on an ephemeral port, then closes it once
+// the last response from that call has been asserted. (7.3.1 shares one socket
+// between the `Test`s of a single `request()` factory and closes it by
+// refcount, but these suites call `request(app)` once per request, so it is
+// still one bind/close cycle each.) Measured on this repo, one worker's share
+// of the gui-server suites does ~57 of those cycles; the 26 suites together do
+// well over a thousand, all against the one loopback ephemeral port range that
+// every concurrently-running vitest worker shares.
 //
 // That is the only cross-process resource these suites touch — they are the
 // only cli suites that speak real TCP at all — and it is what the flake class
@@ -78,6 +102,10 @@ function appHandler(app) {
 const serverByApp = new WeakMap();
 const openedServers = new Set();
 
+function sharedUrl(server, path) {
+  return `http://${SHARED_HOST}:${server.address().port}${path}`;
+}
+
 Test.prototype.serverAddress = function patchedServerAddress(app, path) {
   // A server the test started itself (e.g. via `startGuiServer`) is already
   // listening on a port it chose — leave supertest's own handling alone.
@@ -88,21 +116,59 @@ Test.prototype.serverAddress = function patchedServerAddress(app, path) {
   const handler = appHandler(app);
   if (!handler) return originalServerAddress.call(this, app, path);
 
-  let server = serverByApp.get(handler);
-  if (!server) {
-    server = http.createServer(handler);
-    // `listen(0)` with no host binds synchronously, so `address()` is readable
-    // on the next line — the same assumption supertest itself makes.
-    server.listen(0);
+  let entry = serverByApp.get(handler);
+  if (!entry) {
+    const server = http.createServer(handler);
+    const ready = new Promise((resolve, reject) => {
+      const onListening = () => {
+        server.removeListener('error', onError);
+        resolve();
+      };
+      const onError = (err) => {
+        server.removeListener('listening', onListening);
+        reject(err);
+      };
+      server.once('listening', onListening);
+      server.once('error', onError);
+    });
+    // Binding to a host runs the address through a lookup, so unlike a wildcard
+    // `listen(0)` this resolves on a later tick and the port is not readable
+    // here. `patchedEnd` fills the URL in before it dispatches — the same
+    // two-step supertest itself does with `_serverPath`. The `error` listener
+    // matters as much as the port: an unhandled `EADDRINUSE` from this bind
+    // would take down the whole worker, which is the "whole-file cascade"
+    // symptom rather than a failure anyone could attribute.
+    server.listen(0, SHARED_HOST);
     server.unref();
-    serverByApp.set(handler, server);
+    entry = { server, ready };
+    serverByApp.set(handler, entry);
     openedServers.add(server);
   }
 
-  // Deliberately NOT `this._server = server`: supertest's `end()` closes
-  // `this._server`, and this one outlives the request.
-  return `http://127.0.0.1:${server.address().port}${path}`;
+  // Deliberately NOT `this._server = entry.server`: supertest's `end()` closes
+  // `this._server` once the last request on it settles, and this one outlives
+  // every individual request.
+  this._sfdtShared = entry;
+  this._sfdtSharedPath = path;
+  return entry.server.listening
+    ? sharedUrl(entry.server, path)
+    : `http://${SHARED_HOST}${path}`;
 };
+
+// Returns null — meaning "the URL is already final, dispatch synchronously" —
+// for every request after the first against a given app, which is the common
+// case. Only the request that opened the socket has to wait for the bind.
+function resolveSharedUrl(testInstance) {
+  const entry = testInstance._sfdtShared;
+  if (!entry) return null;
+  if (entry.server.listening) {
+    testInstance.url = sharedUrl(entry.server, testInstance._sfdtSharedPath);
+    return null;
+  }
+  return entry.ready.then(() => {
+    testInstance.url = sharedUrl(entry.server, testInstance._sfdtSharedPath);
+  });
+}
 
 afterAll(() => {
   for (const server of openedServers) server.close();
@@ -113,10 +179,10 @@ afterAll(() => {
 // rejects with a message that names the transport failure — never resolves
 // with "no token", because sending the real request without one just moves
 // the failure to an unrelated assertion three lines later.
-function fetchCsrfToken(app, launchToken) {
+function fetchCsrfToken(target, launchToken) {
   return new Promise((resolve, reject) => {
     const attempt = (retriesLeft, previous) => {
-      const req = request(app).get('/api/csrf-token');
+      const req = request(target).get('/api/csrf-token');
       if (launchToken) req.set('Authorization', `Bearer ${launchToken}`);
       req.end((err, res) => {
         const token = res?.body?.token;
@@ -134,6 +200,24 @@ function fetchCsrfToken(app, launchToken) {
     };
     attempt(1, null);
   });
+}
+
+// Dispatch once the prerequisites this file introduces have settled: the shared
+// socket's bind, and the CSRF token fetch. Surfacing either failure as itself is
+// the point — a request sent without a token draws a legitimate 403 that then
+// fails some unrelated status assertion.
+function dispatchWhen(testInstance, ready, tokenPromise, fn) {
+  Promise.all([ready, tokenPromise]).then(
+    ([, token]) => {
+      if (token) testInstance.set('X-SFDT-CSRF', token);
+      originalEnd.call(testInstance, fn);
+    },
+    (err) => {
+      if (fn) return fn.call(testInstance, err);
+      throw err;
+    },
+  );
+  return testInstance;
 }
 
 Test.prototype.end = function patchedEnd(fn) {
@@ -154,6 +238,8 @@ Test.prototype.end = function patchedEnd(fn) {
   const handler = appHandler(this.app);
   const launchToken = handler?.launchToken;
 
+  // `this.url` carries the request path whether or not the port is known yet,
+  // so these two checks are safe to run before `resolveSharedUrl`.
   const isCsrfTokenRequest = (this.url || '').includes('/api/csrf-token');
 
   if (isCsrfTokenRequest && launchToken && !getHeader(this, 'authorization')) {
@@ -165,8 +251,11 @@ Test.prototype.end = function patchedEnd(fn) {
     isCsrfTokenRequest ||
     (this.url || '').includes('/api/health');
 
+  const ready = resolveSharedUrl(this);
+
   if (skipCsrf) {
-    return originalEnd.call(this, fn);
+    if (!ready) return originalEnd.call(this, fn);
+    return dispatchWhen(this, ready, null, fn);
   }
 
   const self = this;
@@ -175,7 +264,14 @@ Test.prototype.end = function patchedEnd(fn) {
   // the same cold app would otherwise both miss and both fetch.
   let pending = handler ? tokenCache.get(handler) : null;
   if (!pending) {
-    pending = fetchCsrfToken(self.app, launchToken);
+    // Hand `request()` the Express app function, not `self.app`. Under 7.3.1 a
+    // `request()` factory's Server is shared by the Tests it creates and closed
+    // when the last of them settles; reusing `self.app` here would enrol this
+    // pre-flight in the outer request's refcount and let it close the socket
+    // out from under the request that asked for the token. Passing the handler
+    // gets a fresh (never-listened) wrapper that still resolves to the same
+    // shared socket via `appHandler`.
+    pending = fetchCsrfToken(handler || self.app, launchToken);
     if (handler) {
       // Don't strand a rejection, and don't let one transport hiccup poison
       // every later test in the file.
@@ -186,17 +282,5 @@ Test.prototype.end = function patchedEnd(fn) {
     }
   }
 
-  pending.then(
-    (token) => {
-      self.set('X-SFDT-CSRF', token);
-      originalEnd.call(self, fn);
-    },
-    (err) => {
-      // Surface the token failure itself rather than the 403 it would cause.
-      if (fn) return fn.call(self, err);
-      throw err;
-    },
-  );
-
-  return self;
+  return dispatchWhen(self, ready, pending, fn);
 };
