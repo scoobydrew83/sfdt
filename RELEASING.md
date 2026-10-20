@@ -36,15 +36,22 @@ version-bump commit on the right branch and let CI do the rest.
 
 ### Stable release (push to `main`)
 
-Triggers when `package.json#version` changed — or when the version isn't yet npm's `latest`,
-so a previously failed publish **self-heals** on the next push to `main`. The `publish` job, in order:
+Runs whenever `package.json#version` has no **published** (non-draft) GitHub Release
+`vX.Y.Z` yet. The release is the job's last step, after all three npm publishes succeed, so
+its existence is the "done" signal. npm's `latest` isn't: right after a publish, npm can report
+the version as staged for several minutes (v0.27.1: 4–6 min), while `latest` still shows the
+old one. Until the release exists, every push to `main` re-runs the job, and every step is
+idempotent, so a previously failed publish **self-heals** on the next push to `main`. Publish
+runs are serialized (`concurrency: release-publish-main`, never cancelled). If GitHub delivers
+one merge as two pushes, as it did for v0.27.1, the second run queues, sees the published
+release, and skips. The `publish` job, in order:
 
-1. Tags `vX.Y.Z` and force-moves the floating major tag (`v0` today) so `uses: scoobydrew83/sfdt@v0` resolves to the newest stable. Betas never move it.
+1. Tags `vX.Y.Z` if the tag is missing. It leaves the tag alone if it already points at the release commit, and refuses (red run) to move a tag that a GitHub Release uses: deleting a release's tag turns the release into an untagged draft. Then it force-moves the floating major tag (`v0` today), only if it isn't already on that commit, so `uses: scoobydrew83/sfdt@v0` resolves to the newest stable. Betas never move it.
 2. Builds the GUI; pins npm 11.x (OIDC trusted publishing + `--provenance`; no token).
 3. Publishes **`@sfdt/flow-core` → `@sfdt/cli` → `@sfdt/plugin`**, in that order. Each step is idempotent — republishing an already-published version is tolerated, which is what makes the self-healing re-run safe.
-4. Creates the GitHub Release (`--generate-notes`).
-5. Bumps the Homebrew tap (`scoobydrew83/homebrew-sfdt`, `Formula/sfdt.rb` url + sha256). Needs the `HOMEBREW_TAP_TOKEN` fine-grained PAT and runs `continue-on-error` — a failure is a yellow step, not a red run. Check it; bump the tap manually if it skipped. The tap repo is the single source of truth for the formula.
-6. The downstream `docker` job calls the reusable `docker-publish.yml` via `workflow_call` in the **same run** (a `GITHUB_TOKEN`-created Release doesn't fire downstream workflows), pushing `ghcr.io/scoobydrew83/sfdt:X.Y.Z` + `:latest`. Re-publish a version on demand via `workflow_dispatch` with the version input.
+4. Creates the GitHub Release (`--generate-notes --verify-tag --latest`), or publishes an existing draft for the same tag on that tag. Then it checks the release is not a draft and fails the step if it is.
+5. Bumps the Homebrew tap (`scoobydrew83/homebrew-sfdt`, `Formula/sfdt.rb` url + sha256). Needs the `HOMEBREW_TAP_TOKEN` fine-grained PAT and runs `continue-on-error` — a failure is a yellow step, not a red run. It downloads the npm tarball with backoff (up to ~15 min), checks it against npm's `dist.integrity`, and refuses an empty download, so the empty-input sha256 `e3b0c442…` can't ship again (v0.27.1). Check it; bump the tap manually if it skipped. The tap repo is the single source of truth for the formula.
+6. The downstream `docker` job calls the reusable `docker-publish.yml` via `workflow_call` in the **same run** (a `GITHUB_TOKEN`-created Release doesn't fire downstream workflows), pushing `ghcr.io/scoobydrew83/sfdt:X.Y.Z` + `:latest`. It first waits up to ~15 min, with backoff, for `@sfdt/cli@X.Y.Z` and its dependencies to be installable from npm. Publishing a draft release by hand (not via `GITHUB_TOKEN`) fires `release: published`, and that also builds the image. Re-publish a version on demand via `workflow_dispatch` with the version input.
 7. Syncs the standalone skills pack repo (`scoobydrew83/sfdt-skills`, backs `npx skills add`) by running `sfdt skills export --target pack`, which regenerates `skills/` + `manifest.json` **and bumps the README "Synced from `@sfdt/cli` vX.Y.Z" footer from `package.json`** so it can't drift (harness H-014). Needs the `SKILLS_PACK_TOKEN` fine-grained PAT and runs `continue-on-error` — a downstream distribution sync must never fail a published release. To sync by hand, run `sfdt skills export --target pack --out ../sfdt-skills` (the footer bump is in the command, not the CI job).
 
 A prerelease version (`X.Y.Z-*`) on `main` **fails the job** by design — prereleases publish from `develop`.
@@ -211,7 +218,7 @@ into `main`.
    git push public develop
    ```
 
-2. Open the promote PR `develop → main` **on public**. Merge it as a **merge commit — never squash**. Squashing rewrites the commits, so `develop` and `main` permanently disagree and every later PR shows CONFLICTING.
+2. Open the promote PR `develop → main` **on public**. Merge it with **Create a merge commit** — never squash or rebase. The same goes for any sync PR that merges `main` back into `develop`: a squashed sync drops `main` as a parent and fixes nothing. Squashing rewrites the commits, so `develop` and `main` permanently disagree and every later PR shows CONFLICTING.
 
    ```bash
    gh pr create --repo scoobydrew83/sfdt --base main --head develop
@@ -325,8 +332,9 @@ old protocol compatibility (roll forward) — don't wait days on the Store.
 
 ### Publish job failed mid-way
 
-Nothing to unwind — every publish step is idempotent, and the version check compares against
-npm's `latest`. Fix the cause, push to `main`, and the job self-heals on that run.
+Nothing to unwind. Every publish step is idempotent, and the job re-runs until a published
+GitHub Release `vX.Y.Z` exists. Fix the cause, push to `main`, and the job self-heals on that
+run. If the release ended up as a draft, the next run publishes it on the existing tag.
 
 ## 7. Post-release
 
