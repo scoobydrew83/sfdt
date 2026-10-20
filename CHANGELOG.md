@@ -7,6 +7,58 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.27.1] - 2026-10-20
+
+A dependency and security release. It folds the open Dependabot updates into one tested bump,
+clears every production `npm audit` advisory, and fixes the gui-server test flake class. No CLI
+commands, flags, MCP tools or config keys change.
+
+> **Versions:** `@sfdt/cli` and `@sfdt/plugin` → **0.27.1**. `@sfdt/flow-core` stays at
+> **0.16.0** (no source changes since 0.27.0). The Chrome extension (**0.17.0**) and the
+> VS Code extension (**0.7.1**) are not re-released.
+
+### Fixed
+
+- The gui-server and bridge route test suites no longer flake under concurrency
+  (`test/setup-supertest-origin.js`, test-only). The shared per-app test server bound to a
+  wildcard address while the client connected to `127.0.0.1`, so a concurrent worker could
+  answer on the same port. That produced the "403 from a different app instance" symptom.
+  It now binds to `127.0.0.1`, a bind failure fails one request instead of the whole file,
+  and the CSRF pre-fetch can no longer close the outer request's server. No retries, skips or
+  timeout changes. `npm test` stays out of `prepublishOnly` until a clean release cycle
+  (RELEASING.md).
+
+### Security
+
+- Production `npm audit --audit-level=high --omit=dev` reports 0 vulnerabilities (#391, #394).
+  The full audit drops from 17 findings (1 critical, 16 high) to 4 high, all dev-only. The
+  remaining `oclif → find-yarn-workspace-root → micromatch → braces` chain
+  (GHSA-vfj7-8cjw-p6xm) has no patched braces release.
+  - `proxy-addr` 2.0.8 (critical, GHSA-jqcg-44mw-7w3h), `sharp` 0.35.5 (also the
+    `next > sharp` pin), `source-map-js` 1.2.2, and `http-cache-semantics` 4.3.0
+    (GHSA-ch52-4w7c-c8xp).
+  - The `@modelcontextprotocol/sdk` copy nested under `@sfdt/cli` is overridden to the root's
+    1.32.1, so only one MCP SDK ships (GHSA-6qxp-vccf-f47h).
+  - `miniflare > undici` is overridden to `^7.30.1`, because miniflare pins undici to exactly
+    7.29.1. Root undici moves to 8.12.3.
+  - `@node-minify/core > glob` is overridden to `^10.5.0` (GHSA-5j98-mcp5-4vw2), which
+    `@opennextjs/cloudflare` 1.20.12 would otherwise pull in at 10.3.3.
+
+### Dependencies
+
+- `@modelcontextprotocol/sdk` ~1.32.1. HTTP client transports now follow redirects only within
+  the same origin. The new server options are off by default.
+- React and React DOM 19.3.1 in the GUI dashboard and web workspace. Next.js 16.4.2 in the web
+  workspace, which rewrites `web/tsconfig.json` (`jsx: react-jsx`) and `web/next-env.d.ts` on
+  build. `@opennextjs/cloudflare` 1.20.12, wrangler 4.151.
+- `@vscode/vsce` 4 packages the VS Code extension. It needs Node 22, which the repo already
+  requires. The VSIX contains the same 13 files at the same sizes as under vsce 3.
+- Patch and minor bumps across the root, gui, extension and plugin workspaces: chalk, express
+  5.3, express-rate-limit, inquirer, nodemailer, vitest 4.1.12, jsdom, prettier, supertest,
+  typescript-eslint, vite, zod, `@oclif/core` and oclif 6.0.
+- The lockfile is generated with npm 11.18.0, the version CI pins for publishing. `npm ci`
+  works with npm 10.9.9; only re-resolving with `npm install` needs npm 11 or newer.
+
 ## [0.27.0] - 2026-10-02
 
 Adds the AI-Readiness Index: `sfdt audit --index` groups every audit and monitor check under
