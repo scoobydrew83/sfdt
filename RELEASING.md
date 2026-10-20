@@ -44,7 +44,13 @@ old one. Until the release exists, every push to `main` re-runs the job, and eve
 idempotent, so a previously failed publish **self-heals** on the next push to `main`. Publish
 runs are serialized (`concurrency: release-publish-main`, never cancelled). If GitHub delivers
 one merge as two pushes, as it did for v0.27.1, the second run queues, sees the published
-release, and skips. The `publish` job, in order:
+release, and skips the tag, npm and release steps. The downstream channels are checked
+separately on every push to `main`, because a run can be cancelled after the release
+exists. The job compares the GHCR image `:X.Y.Z`, the Homebrew formula (this version's tarball
+and a non-empty sha256) and the skills-pack README footer against the version. Whichever is
+missing re-runs (tap bump, skills sync, `docker` job), even when the release is already
+published. The `docker` job is serialized as well (`release-docker-main`). The `publish` job,
+in order:
 
 1. Tags `vX.Y.Z` if the tag is missing. It leaves the tag alone if it already points at the release commit, and refuses (red run) to move a tag that a GitHub Release uses: deleting a release's tag turns the release into an untagged draft. Then it force-moves the floating major tag (`v0` today), only if it isn't already on that commit, so `uses: scoobydrew83/sfdt@v0` resolves to the newest stable. Betas never move it.
 2. Builds the GUI; pins npm 11.x (OIDC trusted publishing + `--provenance`; no token).

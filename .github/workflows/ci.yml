@@ -255,6 +255,7 @@ jobs:
     outputs:
       changed: ${{ steps.version.outputs.changed }}
       version: ${{ steps.version.outputs.version }}
+      docker_needed: ${{ steps.distro.outputs.docker_needed }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -301,6 +302,45 @@ jobs:
             echo "changed=true" >> "$GITHUB_OUTPUT"
           fi
           echo "version=${CURR_VERSION}" >> "$GITHUB_OUTPUT"
+      - name: Check distribution channels
+        # A published release only proves the tag, npm and the release itself
+        # are done. The channels after it (tap, skills pack, and the docker job,
+        # which a GITHUB_TOKEN-created release never triggers by event) can
+        # still be missing if a run was cancelled or lost its runner after the
+        # release step. The queued duplicate run would then skip them. So each
+        # channel is checked for this version on its own and re-runs when it is
+        # missing, even when changed=false. All three are idempotent. A failed
+        # lookup counts as "needed", because re-running is safe and skipping
+        # isn't.
+        id: distro
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          # GHCR image: anonymous pull token, then HEAD the manifest (index or single).
+          TOKEN=$(curl -fsS "https://ghcr.io/token?scope=repository:scoobydrew83/sfdt:pull" | jq -r '.token // empty' || true)
+          CODE=$(curl -s -o /dev/null -w '%{http_code}' -I \
+            -H "Authorization: Bearer ${TOKEN}" \
+            -H "Accept: application/vnd.oci.image.index.v1+json, application/vnd.docker.distribution.manifest.list.v2+json, application/vnd.oci.image.manifest.v1+json, application/vnd.docker.distribution.manifest.v2+json" \
+            "https://ghcr.io/v2/scoobydrew83/sfdt/manifests/${VERSION}" || true)
+          case "${CODE}" in
+            200) DOCKER=false ;;
+            404) DOCKER=true ;;
+            *) echo "::warning::GHCR manifest lookup for ${VERSION} returned '${CODE}'; treating the image as missing."; DOCKER=true ;;
+          esac
+          # Homebrew tap: the formula must point at this version's tarball with a real sha256.
+          EMPTY_SHA=e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+          FORMULA=$(gh api repos/scoobydrew83/homebrew-sfdt/contents/Formula/sfdt.rb --jq .content 2>/dev/null | base64 -d 2>/dev/null || true)
+          if printf '%s' "${FORMULA}" | grep -qF "cli-${VERSION}.tgz\"" && ! printf '%s' "${FORMULA}" | grep -qF "${EMPTY_SHA}"; then TAP=false; else TAP=true; fi
+          # Skills pack: the README footer names the version it was synced from.
+          README=$(gh api repos/scoobydrew83/sfdt-skills/contents/README.md --jq .content 2>/dev/null | base64 -d 2>/dev/null || true)
+          if printf '%s' "${README}" | grep -qF "@sfdt/cli\` v${VERSION}"; then SKILLS=false; else SKILLS=true; fi
+          echo "v${VERSION} still needed: docker image=${DOCKER} · Homebrew tap=${TAP} · skills pack=${SKILLS}"
+          {
+            echo "docker_needed=${DOCKER}"
+            echo "tap_needed=${TAP}"
+            echo "skills_needed=${SKILLS}"
+          } >> "$GITHUB_OUTPUT"
       - name: Create git tag
         # Idempotent. Creates v<version> only if it's missing. A tag already on
         # this commit is left alone. A tag on another commit is moved only if no
@@ -357,7 +397,8 @@ jobs:
           git tag -f "$MAJOR" "v${RELEASE_VERSION}"
           git push -f origin "$MAJOR"
       - run: npm ci
-        if: steps.version.outputs.changed == 'true'
+        # Also needed by the skills pack sync (bin/sfdt.js) when only that channel lags.
+        if: steps.version.outputs.changed == 'true' || steps.distro.outputs.skills_needed == 'true'
       - name: Build GUI
         if: steps.version.outputs.changed == 'true'
         run: npm run build:gui
@@ -447,7 +488,7 @@ jobs:
         # continue-on-error: a cosmetic tap bump must never fail the release job
         # (npm/GHCR already published by this point) or block the downstream
         # `docker` job — a bad/expired PAT surfaces as a yellow step, not a red run.
-        if: steps.version.outputs.changed == 'true'
+        if: steps.version.outputs.changed == 'true' || steps.distro.outputs.tap_needed == 'true'
         continue-on-error: true
         env:
           TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
@@ -514,7 +555,7 @@ jobs:
         # The export only wipes skills/ in the target, so that repo's README and
         # LICENSE (hand-written, not generated) survive each sync — except the
         # README's "Synced from" footer, which the export bumps from package.json.
-        if: steps.version.outputs.changed == 'true'
+        if: steps.version.outputs.changed == 'true' || steps.distro.outputs.skills_needed == 'true'
         continue-on-error: true
         env:
           SKILLS_PACK_TOKEN: ${{ secrets.SKILLS_PACK_TOKEN }}
@@ -558,7 +599,7 @@ jobs:
         # step only ever runs on an already-degraded release, and a failure to
         # file the issue (403, API blip) must not turn that into a red run and
         # block the downstream `docker` job.
-        if: steps.version.outputs.changed == 'true' && steps.skills_sync.outputs.synced != 'true'
+        if: (steps.version.outputs.changed == 'true' || steps.distro.outputs.skills_needed == 'true') && steps.skills_sync.outputs.synced != 'true'
         continue-on-error: true
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -576,11 +617,21 @@ jobs:
 
   docker:
     needs: publish
-    # Only when publish actually bumped the version. Builds + pushes the
-    # multi-arch GHCR image in this same run — a GITHUB_TOKEN-created release
-    # does not fire docker-publish.yml's `release` trigger, so we call it
-    # directly instead of relying on the release event.
-    if: needs.publish.outputs.changed == 'true'
+    # Builds + pushes the multi-arch GHCR image in this same run. A
+    # GITHUB_TOKEN-created release does not fire docker-publish.yml's `release`
+    # trigger, so it is called directly instead of relying on the release event.
+    # Runs when publish released the version, and also when the image for the
+    # version is missing even though npm and the release are done (a cancelled
+    # first run, or the duplicate-push case). `needs` still requires publish
+    # to succeed. Tap and skills are continue-on-error, so only a tag, npm or
+    # release failure blocks the image.
+    if: needs.publish.outputs.changed == 'true' || needs.publish.outputs.docker_needed == 'true'
+    # A duplicate run can see the image as missing while the first run's docker
+    # job is still waiting on npm. Queue the builds rather than race two pushes
+    # of the same tag. The second one only rebuilds the same version.
+    concurrency:
+      group: release-docker-main
+      cancel-in-progress: false
     permissions:
       contents: read
       packages: write
