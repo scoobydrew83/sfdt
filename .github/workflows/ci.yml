@@ -239,6 +239,13 @@ jobs:
     runs-on: ubuntu-latest
     if: github.repository == 'scoobydrew83/sfdt' && (github.ref == 'refs/heads/main' && github.event_name == 'push')
     environment: production
+    # GitHub can deliver one merge as two `push` events (v0.27.1: two CI runs on
+    # the same SHA, a minute apart). Queue publish runs instead of racing them;
+    # never cancel one mid-publish. The queued run then sees the published
+    # release in "Check for version bump" and skips.
+    concurrency:
+      group: release-publish-main
+      cancel-in-progress: false
     permissions:
       contents: write
       id-token: write
@@ -248,6 +255,7 @@ jobs:
     outputs:
       changed: ${{ steps.version.outputs.changed }}
       version: ${{ steps.version.outputs.version }}
+      docker_needed: ${{ steps.distro.outputs.docker_needed }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -257,52 +265,140 @@ jobs:
           node-version: 22
       - name: Check for version bump
         id: version
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           CURR_VERSION=$(node -p "require('./package.json').version")
           PREV_VERSION=$(git show HEAD~1:package.json | node -p "JSON.parse(require('fs').readFileSync(0,'utf8')).version" 2>/dev/null || echo "0.0.0")
-          # What's on npm now — lets a failed publish self-heal on the next push
-          # to main instead of only firing on a HEAD~1 version diff (a broken
-          # publish tool once left the tag pushed but nothing on npm).
-          NPM_VERSION=$(npm view @sfdt/cli version 2>/dev/null || echo "none")
-          echo "package.json: v${CURR_VERSION} · previous commit: v${PREV_VERSION} · npm latest: v${NPM_VERSION}"
+          FC_VERSION=$(node -p "require('./packages/flow-core/package.json').version")
+          PLUGIN_VERSION=$(node -p "require('./packages/plugin/package.json').version")
           # Refuse to publish a prerelease version as latest from main
           if [[ "${CURR_VERSION}" == *"-"* ]]; then
             echo "ERROR: prerelease version ${CURR_VERSION} must not be published from main (use develop instead)"
             exit 1
           fi
-          if [ "${CURR_VERSION}" != "${PREV_VERSION}" ] || [ "${CURR_VERSION}" != "${NPM_VERSION}" ]; then
-            echo "Publish needed: package.json v${CURR_VERSION} is not yet the npm latest (v${NPM_VERSION})."
-            echo "changed=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "Already published v${CURR_VERSION} to npm — nothing to do."
+          # Exact-version lookups, never `latest`: right after a publish npm can
+          # report the new version as staged (E409 "previously staged version")
+          # while `latest` still shows the old one for minutes.
+          on_npm() { npm view "$1@$2" version >/dev/null 2>&1 && echo yes || echo no; }
+          echo "package.json: v${CURR_VERSION} · previous commit: v${PREV_VERSION}"
+          echo "npm: @sfdt/cli@${CURR_VERSION}=$(on_npm @sfdt/cli "${CURR_VERSION}") · @sfdt/plugin@${PLUGIN_VERSION}=$(on_npm @sfdt/plugin "${PLUGIN_VERSION}") · @sfdt/flow-core@${FC_VERSION}=$(on_npm @sfdt/flow-core "${FC_VERSION}")"
+          # The GitHub Release is the last thing this job creates, after all
+          # three npm publishes succeed, so a published (non-draft) release
+          # v<version> means the release is done. That holds even while npm is
+          # still serving the version as staged. Anything short of it (no
+          # release, or a draft) runs the job again, and every step below is
+          # idempotent, so a failed publish self-heals on the next push to main.
+          # A failed API call fails the step rather than guessing: a guess
+          # either double-publishes or skips a release.
+          REL_STATE=$(gh api "repos/${GITHUB_REPOSITORY}/releases?per_page=100" \
+            --jq "[.[] | select(.tag_name == \"v${CURR_VERSION}\")][0] | if . == null then \"none\" elif .draft then \"draft\" else \"published\" end")
+          echo "GitHub Release v${CURR_VERSION}: ${REL_STATE}"
+          if [ "${REL_STATE}" = "published" ]; then
+            echo "Already released v${CURR_VERSION} — nothing to do."
             echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "Publish needed: v${CURR_VERSION} has no published GitHub Release yet (${REL_STATE})."
+            echo "changed=true" >> "$GITHUB_OUTPUT"
           fi
           echo "version=${CURR_VERSION}" >> "$GITHUB_OUTPUT"
+      - name: Check distribution channels
+        # A published release only proves the tag, npm and the release itself
+        # are done. The channels after it (tap, skills pack, and the docker job,
+        # which a GITHUB_TOKEN-created release never triggers by event) can
+        # still be missing if a run was cancelled or lost its runner after the
+        # release step. The queued duplicate run would then skip them. So each
+        # channel is checked for this version on its own and re-runs when it is
+        # missing, even when changed=false. All three are idempotent. A failed
+        # lookup counts as "needed", because re-running is safe and skipping
+        # isn't.
+        id: distro
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          # GHCR image: anonymous pull token, then HEAD the manifest (index or single).
+          TOKEN=$(curl -fsS "https://ghcr.io/token?scope=repository:scoobydrew83/sfdt:pull" | jq -r '.token // empty' || true)
+          CODE=$(curl -s -o /dev/null -w '%{http_code}' -I \
+            -H "Authorization: Bearer ${TOKEN}" \
+            -H "Accept: application/vnd.oci.image.index.v1+json, application/vnd.docker.distribution.manifest.list.v2+json, application/vnd.oci.image.manifest.v1+json, application/vnd.docker.distribution.manifest.v2+json" \
+            "https://ghcr.io/v2/scoobydrew83/sfdt/manifests/${VERSION}" || true)
+          case "${CODE}" in
+            200) DOCKER=false ;;
+            404) DOCKER=true ;;
+            *) echo "::warning::GHCR manifest lookup for ${VERSION} returned '${CODE}'; treating the image as missing."; DOCKER=true ;;
+          esac
+          # Homebrew tap: the formula must point at this version's tarball with a real sha256.
+          EMPTY_SHA=e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+          FORMULA=$(gh api repos/scoobydrew83/homebrew-sfdt/contents/Formula/sfdt.rb --jq .content 2>/dev/null | base64 -d 2>/dev/null || true)
+          if printf '%s' "${FORMULA}" | grep -qF "cli-${VERSION}.tgz\"" && ! printf '%s' "${FORMULA}" | grep -qF "${EMPTY_SHA}"; then TAP=false; else TAP=true; fi
+          # Skills pack: the README footer names the version it was synced from.
+          README=$(gh api repos/scoobydrew83/sfdt-skills/contents/README.md --jq .content 2>/dev/null | base64 -d 2>/dev/null || true)
+          if printf '%s' "${README}" | grep -qF "@sfdt/cli\` v${VERSION}"; then SKILLS=false; else SKILLS=true; fi
+          echo "v${VERSION} still needed: docker image=${DOCKER} · Homebrew tap=${TAP} · skills pack=${SKILLS}"
+          {
+            echo "docker_needed=${DOCKER}"
+            echo "tap_needed=${TAP}"
+            echo "skills_needed=${SKILLS}"
+          } >> "$GITHUB_OUTPUT"
       - name: Create git tag
+        # Idempotent. Creates v<version> only if it's missing. A tag already on
+        # this commit is left alone. A tag on another commit is moved only if no
+        # GitHub Release (draft or published) uses it: deleting a release's tag
+        # turns that release into an untagged draft, which is what happened to
+        # v0.27.1 when a duplicate run re-created the tag.
         if: steps.version.outputs.changed == 'true'
         env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           RELEASE_VERSION: ${{ steps.version.outputs.version }}
         run: |
+          TAG="v${RELEASE_VERSION}"
+          TARGET=$(git rev-parse HEAD)
+          # Peeled commit for an annotated tag, else the lightweight tag's own sha.
+          CURRENT=$(git ls-remote origin "refs/tags/${TAG}^{}" | awk '{print $1}')
+          [ -n "${CURRENT}" ] || CURRENT=$(git ls-remote origin "refs/tags/${TAG}" | awk '{print $1}')
+          if [ "${CURRENT}" = "${TARGET}" ]; then
+            echo "${TAG} already points at ${TARGET} — leaving it."
+            exit 0
+          fi
+          if [ -n "${CURRENT}" ]; then
+            USED=$(gh api "repos/${GITHUB_REPOSITORY}/releases?per_page=100" \
+              --jq "[.[] | select(.tag_name == \"${TAG}\")] | length")
+            if [ "${USED}" != "0" ]; then
+              echo "::error::${TAG} points at ${CURRENT}, not ${TARGET}, and a GitHub Release uses it. Refusing to move it. Resolve by hand (RELEASING.md §1)."
+              exit 1
+            fi
+            echo "::warning::${TAG} points at ${CURRENT} with no release attached (created before merge?); moving it to ${TARGET}."
+            git push origin ":refs/tags/${TAG}"
+          fi
+          git tag -d "${TAG}" 2>/dev/null || true
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          # Remove pre-existing tag if present (e.g. created on a branch before merge)
-          git tag -d "v${RELEASE_VERSION}" 2>/dev/null || true
-          git push origin ":refs/tags/v${RELEASE_VERSION}" 2>/dev/null || true
-          git tag -a "v${RELEASE_VERSION}" -m "Release v${RELEASE_VERSION}"
-          git push origin "v${RELEASE_VERSION}"
+          git tag -a "${TAG}" -m "Release ${TAG}" "${TARGET}"
+          git push origin "${TAG}"
       - name: Update floating major tag
         # Consumers of the root composite action reference `scoobydrew83/sfdt@v0`
         # (later `@v1`, …) — keep that tag pointing at the newest stable release.
-        # Stable releases only; beta publishes never move it.
+        # Stable releases only; beta publishes never move it. Moves (force-push)
+        # only when it doesn't already point at this release's commit.
         if: steps.version.outputs.changed == 'true'
         env:
           RELEASE_VERSION: ${{ steps.version.outputs.version }}
         run: |
           MAJOR="v${RELEASE_VERSION%%.*}"
+          TARGET=$(git rev-parse HEAD)
+          CURRENT=$(git ls-remote origin "refs/tags/${MAJOR}^{}" | awk '{print $1}')
+          [ -n "${CURRENT}" ] || CURRENT=$(git ls-remote origin "refs/tags/${MAJOR}" | awk '{print $1}')
+          if [ "${CURRENT}" = "${TARGET}" ]; then
+            echo "${MAJOR} already points at ${TARGET} — leaving it."
+            exit 0
+          fi
+          git fetch --force origin "refs/tags/v${RELEASE_VERSION}:refs/tags/v${RELEASE_VERSION}"
           git tag -f "$MAJOR" "v${RELEASE_VERSION}"
           git push -f origin "$MAJOR"
       - run: npm ci
-        if: steps.version.outputs.changed == 'true'
+        # Also needed by the skills pack sync (bin/sfdt.js) when only that channel lags.
+        if: steps.version.outputs.changed == 'true' || steps.distro.outputs.skills_needed == 'true'
       - name: Build GUI
         if: steps.version.outputs.changed == 'true'
         run: npm run build:gui
@@ -361,7 +457,29 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           VERSION: ${{ steps.version.outputs.version }}
-        run: gh release create "v${VERSION}" --generate-notes
+        # Idempotent. Creates the release only if none exists, pinned to the
+        # existing tag (--verify-tag: never let gh invent a tag or leave an
+        # untagged draft). If an earlier run's release became an untagged draft
+        # because its tag was deleted and re-created, re-attach and publish it.
+        # Then verify it is published, so a draft can't pass silently.
+        run: |
+          TAG="v${VERSION}"
+          EXISTING=$(gh api "repos/${GITHUB_REPOSITORY}/releases?per_page=100" \
+            --jq "[.[] | select(.tag_name == \"${TAG}\")][0] | if . == null then \"\" else \"\\(.id) \\(.draft)\" end")
+          if [ -z "${EXISTING}" ]; then
+            gh release create "${TAG}" --generate-notes --verify-tag --latest
+          elif [ "${EXISTING#* }" = "true" ]; then
+            echo "::warning::Release ${TAG} exists as a draft; publishing it on the existing tag."
+            gh api -X PATCH "repos/${GITHUB_REPOSITORY}/releases/${EXISTING%% *}" \
+              -f tag_name="${TAG}" -F draft=false -f make_latest=true >/dev/null
+          else
+            echo "Release ${TAG} already published."
+          fi
+          DRAFT=$(gh release view "${TAG}" --json isDraft --jq .isDraft)
+          if [ "${DRAFT}" != "false" ]; then
+            echo "::error::Release ${TAG} is not published (isDraft=${DRAFT})."
+            exit 1
+          fi
       - name: Bump Homebrew tap
         # Pushes the new tarball url + sha256 to the separate tap repo
         # (scoobydrew83/homebrew-sfdt). The default GITHUB_TOKEN can't write to
@@ -370,7 +488,7 @@ jobs:
         # continue-on-error: a cosmetic tap bump must never fail the release job
         # (npm/GHCR already published by this point) or block the downstream
         # `docker` job — a bad/expired PAT surfaces as a yellow step, not a red run.
-        if: steps.version.outputs.changed == 'true'
+        if: steps.version.outputs.changed == 'true' || steps.distro.outputs.tap_needed == 'true'
         continue-on-error: true
         env:
           TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
@@ -380,9 +498,40 @@ jobs:
             echo "HOMEBREW_TAP_TOKEN not set — skipping tap bump (bump Formula/sfdt.rb manually)."
             exit 0
           fi
+          set -euo pipefail
           TARBALL="https://registry.npmjs.org/@sfdt/cli/-/cli-${VERSION}.tgz"
-          SHA=$(curl -fsSL "${TARBALL}" | shasum -a 256 | awk '{print $1}')
-          if [ -z "${SHA}" ]; then echo "Failed to compute tarball sha256"; exit 1; fi
+          # npm can take minutes to serve a just-published tarball. v0.27.1's
+          # curl 404'd, the pipe hashed empty input, and the tap shipped the
+          # sha256 of nothing (e3b0c442…). So download to a file with backoff
+          # (up to ~15 min), refuse an empty file or the empty-input hash, and
+          # check the bytes against npm's own dist.integrity.
+          EMPTY_SHA=e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+          TGZ="${RUNNER_TEMP}/cli-${VERSION}.tgz"
+          DEADLINE=$((SECONDS + 900)); DELAY=10
+          until curl -fsSL -o "${TGZ}" "${TARBALL}" && [ -s "${TGZ}" ]; do
+            if [ "${SECONDS}" -ge "${DEADLINE}" ]; then
+              echo "::error::${TARBALL} was not downloadable after 15 minutes — tap not bumped."
+              exit 1
+            fi
+            echo "Tarball not served yet; retrying in ${DELAY}s…"
+            sleep "${DELAY}"; DELAY=$(( DELAY * 2 > 60 ? 60 : DELAY * 2 ))
+          done
+          SHA=$(shasum -a 256 "${TGZ}" | awk '{print $1}')
+          if [ -z "${SHA}" ] || [ "${SHA}" = "${EMPTY_SHA}" ]; then
+            echo "::error::Refusing to write sha256 '${SHA}' (empty download)."
+            exit 1
+          fi
+          INTEGRITY=$(npm view "@sfdt/cli@${VERSION}" dist.integrity 2>/dev/null || true)
+          if [ -n "${INTEGRITY}" ]; then
+            ACTUAL="sha512-$(openssl dgst -sha512 -binary "${TGZ}" | base64 -w0)"
+            if [ "${ACTUAL}" != "${INTEGRITY}" ]; then
+              echo "::error::Downloaded tarball does not match npm dist.integrity (${INTEGRITY})."
+              exit 1
+            fi
+          else
+            echo "::warning::npm did not report dist.integrity for ${VERSION}; using the sha256 of the downloaded tarball unverified."
+          fi
+          echo "Tarball sha256: ${SHA}"
           git clone --depth 1 "https://x-access-token:${TAP_TOKEN}@github.com/scoobydrew83/homebrew-sfdt.git" tap
           cd tap
           sed -i -E "s#(url \")[^\"]*(\")#\1${TARBALL}\2#" Formula/sfdt.rb
@@ -406,7 +555,7 @@ jobs:
         # The export only wipes skills/ in the target, so that repo's README and
         # LICENSE (hand-written, not generated) survive each sync — except the
         # README's "Synced from" footer, which the export bumps from package.json.
-        if: steps.version.outputs.changed == 'true'
+        if: steps.version.outputs.changed == 'true' || steps.distro.outputs.skills_needed == 'true'
         continue-on-error: true
         env:
           SKILLS_PACK_TOKEN: ${{ secrets.SKILLS_PACK_TOKEN }}
@@ -450,7 +599,7 @@ jobs:
         # step only ever runs on an already-degraded release, and a failure to
         # file the issue (403, API blip) must not turn that into a red run and
         # block the downstream `docker` job.
-        if: steps.version.outputs.changed == 'true' && steps.skills_sync.outputs.synced != 'true'
+        if: (steps.version.outputs.changed == 'true' || steps.distro.outputs.skills_needed == 'true') && steps.skills_sync.outputs.synced != 'true'
         continue-on-error: true
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -468,11 +617,21 @@ jobs:
 
   docker:
     needs: publish
-    # Only when publish actually bumped the version. Builds + pushes the
-    # multi-arch GHCR image in this same run — a GITHUB_TOKEN-created release
-    # does not fire docker-publish.yml's `release` trigger, so we call it
-    # directly instead of relying on the release event.
-    if: needs.publish.outputs.changed == 'true'
+    # Builds + pushes the multi-arch GHCR image in this same run. A
+    # GITHUB_TOKEN-created release does not fire docker-publish.yml's `release`
+    # trigger, so it is called directly instead of relying on the release event.
+    # Runs when publish released the version, and also when the image for the
+    # version is missing even though npm and the release are done (a cancelled
+    # first run, or the duplicate-push case). `needs` still requires publish
+    # to succeed. Tap and skills are continue-on-error, so only a tag, npm or
+    # release failure blocks the image.
+    if: needs.publish.outputs.changed == 'true' || needs.publish.outputs.docker_needed == 'true'
+    # A duplicate run can see the image as missing while the first run's docker
+    # job is still waiting on npm. Queue the builds rather than race two pushes
+    # of the same tag. The second one only rebuilds the same version.
+    concurrency:
+      group: release-docker-main
+      cancel-in-progress: false
     permissions:
       contents: read
       packages: write
