@@ -1098,7 +1098,7 @@ sfdt audit callermap --probe --days 7                    # shorter LoginHistory 
 `callermap` will list everything that signs into an org (integrations, users, AI clients), together
 with the Salesforce authentication change each one is affected by. So far only `--probe` exists.
 The probe checks which login and API-usage data the org exposes, so the inventory can be built on
-what is really there. Running `callermap` without `--probe` exits non-zero with a message. The probe also exits non-zero when no source is readable at all, which usually means an auth or connection problem.
+what is really there. Running `callermap` without `--probe` exits non-zero with a message. The probe also exits non-zero when no source is readable at all, which usually means an auth or connection problem. With `--json` that case is an error envelope, with the probe result under `data`.
 
 | Option | Description |
 |---|---|

@@ -75,6 +75,19 @@ describe('probeSource', () => {
     expect(r.fieldsMissing).toEqual(source('oauth-tokens').fields);
   });
 
+  it('does not report a field as missing when its probe fails for another reason', async () => {
+    const queryFn = vi.fn(async (_org, soql) => {
+      if (soql.includes('PermissionsUseAnyApiClient')) throw new Error('INVALID_FIELD: No such column');
+      if (soql === 'SELECT IsOwnedByProfile FROM PermissionSet LIMIT 1') throw new Error('Session expired or invalid');
+      return [];
+    });
+    const r = await probeSource('dev', source('api-permission'), ctx, { queryFn });
+
+    expect(r.status).toBe('unreadable');
+    expect(r.error).toContain('Session expired');
+    expect(r.fieldsMissing).toEqual([]);
+  });
+
   it('flags a result that hit the row limit', async () => {
     const queryFn = vi.fn().mockResolvedValue(Array.from({ length: 2000 }, () => ({ UserType: 'Standard' })));
     const r = await probeSource('dev', source('users'), ctx, { queryFn });

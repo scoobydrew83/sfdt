@@ -193,7 +193,13 @@ export async function probeSource(orgAlias, source, ctx, { queryFn = query } = {
     try {
       await queryFn(orgAlias, `SELECT ${field} FROM ${source.object} LIMIT 1`);
       fieldsReadable.push(field);
-    } catch {
+    } catch (err) {
+      // Only a missing-field error means the field is absent. Anything else
+      // (timeout, expired session, rate limit) would make the report list real
+      // fields as missing, so stop and report the source as unreadable instead.
+      if (!MISSING_FIELD.test(err?.message ?? '')) {
+        return { ...base, status: 'unreadable', soql: buildSoql(source, source.fields, ctx), fieldsReadable: [], fieldsMissing: [], error: oneLine(err?.message), stats: null };
+      }
       fieldsMissing.push(field);
     }
   }
