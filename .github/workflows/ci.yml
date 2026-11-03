@@ -37,6 +37,21 @@ jobs:
         # advisories at moderate so they stay visible for when an upstream fix lands.
         run: npm audit --audit-level=high --omit=dev
       - run: npm run lint
+      - name: Validate shipped skills (frontmatter + component structure)
+        # `skills/` is the source `sfdt skills export --target pack` publishes to
+        # scoobydrew83/sfdt-skills, so a malformed SKILL.md reaches every
+        # `npx skills add` user. Claude Code parses SKILL.md frontmatter on bare
+        # skills directories; --strict also fails on unrecognized fields that the
+        # runtime merely tolerates, which is what makes this a release gate.
+        #
+        # Pinned deliberately: `latest` lets an upstream Claude Code release turn
+        # this job red with no change in this repo. Bump the pin on purpose.
+        #
+        # Not validated here: .work/skills (the .claude/skills symlink target) is
+        # gitignored private process material and does not exist on a CI runner.
+        run: |
+          npm i -g @anthropic-ai/claude-code@2.1.263
+          claude plugin validate ./skills --strict
       - run: npm test
       - run: npm run test:web
       # test:web only runs vitest. Neither the Next build nor web's tsc ran in CI

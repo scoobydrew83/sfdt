@@ -11,6 +11,22 @@
           }
         ]
       }
+    ],
+    "Setup": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "statusMessage": "Preparing sfdt workspace",
+            "command": "d=$(jq -r '.cwd // empty'); cd \"${d:-.}\" || exit 0; [ -d node_modules ] || npm ci; npm run --silent check:all-contracts"
+          }
+        ]
+      }
+    ]
+  },
+  "worktree": {
+    "symlinkDirectories": [
+      "node_modules"
     ]
   }
 }
