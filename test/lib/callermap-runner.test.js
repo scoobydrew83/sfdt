@@ -75,6 +75,56 @@ describe('probeSource', () => {
     expect(r.fieldsMissing).toEqual(source('oauth-tokens').fields);
   });
 
+  it('does not report a field as missing when its probe fails for another reason', async () => {
+    const queryFn = vi.fn(async (_org, soql) => {
+      if (soql.includes('PermissionsUseAnyApiClient')) throw new Error('INVALID_FIELD: No such column');
+      if (soql === 'SELECT IsOwnedByProfile FROM PermissionSet LIMIT 1') throw new Error('Session expired or invalid');
+      return [];
+    });
+    const r = await probeSource('dev', source('api-permission'), ctx, { queryFn });
+
+    expect(r.status).toBe('unreadable');
+    expect(r.error).toContain('Session expired');
+    expect(r.fieldsMissing).toEqual([]);
+  });
+
+  it('reports stats built on a missing field as unknown, not zero', async () => {
+    const queryFn = vi.fn(async (_org, soql) => {
+      if (soql.includes('Application')) throw new Error("INVALID_FIELD: No such column 'Application' on entity 'LoginHistory'");
+      return [{ ApiType: 'REST', LoginType: 'Remote Access 2.0' }];
+    });
+    const r = await probeSource('dev', source('login-history'), ctx, { queryFn });
+
+    expect(r.status).toBe('partial');
+    expect(r.fieldsMissing).toEqual(['Application']);
+    expect(r.stats).toMatchObject({ apiLogins: 1, apiLoginsWithApplication: null, distinctApplications: null });
+    expect(assessAppNaming([r, { id: 'oauth-tokens', stats: { distinctApps: 0 } }]).verdict).toBe('unknown');
+  });
+
+  it('combines API access and "Use Any API Client" across a user\'s assignments', async () => {
+    const queryFn = vi.fn().mockResolvedValue([
+      { AssigneeId: '005A', PermissionSet: { IsOwnedByProfile: true, PermissionsApiEnabled: true, PermissionsUseAnyApiClient: false } },
+      { AssigneeId: '005A', PermissionSet: { IsOwnedByProfile: false, PermissionsApiEnabled: false, PermissionsUseAnyApiClient: true } },
+      { AssigneeId: '005B', PermissionSet: { IsOwnedByProfile: true, PermissionsApiEnabled: true, PermissionsUseAnyApiClient: false } },
+    ]);
+    const r = await probeSource('dev', source('api-permission-assignments'), ctx, { queryFn });
+
+    expect(queryFn.mock.calls[0][1]).toContain('PermissionSet.PermissionsApiEnabled = true OR PermissionSet.PermissionsUseAnyApiClient = true');
+    expect(r.stats).toEqual({ activeApiUsers: 2, withUseAnyApiClient: 1, withoutUseAnyApiClient: 1 });
+  });
+
+  it('drops "Use Any API Client" from the filter when the org lacks it', async () => {
+    const queryFn = vi.fn(async (_org, soql) => {
+      if (soql.includes('PermissionsUseAnyApiClient')) throw new Error('INVALID_FIELD: No such column');
+      return [{ AssigneeId: '005A', PermissionSet: { IsOwnedByProfile: true, PermissionsApiEnabled: true } }];
+    });
+    const r = await probeSource('dev', source('api-permission-assignments'), ctx, { queryFn });
+
+    expect(r.status).toBe('partial');
+    expect(r.soql).toContain('WHERE Assignee.IsActive = true AND PermissionSet.PermissionsApiEnabled = true LIMIT');
+    expect(r.stats).toEqual({ activeApiUsers: 1, withUseAnyApiClient: null, withoutUseAnyApiClient: null });
+  });
+
   it('flags a result that hit the row limit', async () => {
     const queryFn = vi.fn().mockResolvedValue(Array.from({ length: 2000 }, () => ({ UserType: 'Standard' })));
     const r = await probeSource('dev', source('users'), ctx, { queryFn });
@@ -109,6 +159,12 @@ describe('assessAppNaming', () => {
 
   it('says yes when LoginHistory names the app on most API logins', () => {
     expect(assessAppNaming([lh(10, 9)]).verdict).toBe('yes');
+  });
+
+  it('does not say yes from a LoginHistory sample that hit its row limit', () => {
+    const a = assessAppNaming([{ ...lh(2000, 1990), truncated: true }]);
+    expect(a.verdict).toBe('partly');
+    expect(a.signals.join(' ')).toMatch(/row limit/);
   });
 
   it('says partly when only some sources can name the app', () => {

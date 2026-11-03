@@ -231,11 +231,31 @@ describe('audit callermap', () => {
     expect(process.exitCode).toBe(1);
   });
 
+  it('emits an error envelope with the probe as data when no source is readable in --json mode', async () => {
+    const empty = { ...probe, summary: { total: 2, readable: 0, partial: 0, unreadable: 2 } };
+    runCallermapProbe.mockResolvedValue(empty);
+    const write = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+    await createProgram().parseAsync(['node', 'sfdt', 'audit', 'callermap', '--probe', '--json']);
+    const out = JSON.parse(write.mock.calls.map((c) => c[0]).join(''));
+    write.mockRestore();
+    expect(out.status).not.toBe(0);
+    expect(out.message).toContain('No caller data source was readable');
+    expect(out.data).toMatchObject({ probe: true, summary: { readable: 0 } });
+    expect(process.exitCode).toBe(1);
+  });
+
   it('refuses to run without --probe until the full scan exists', async () => {
     vi.spyOn(console, 'error').mockImplementation(() => {});
     await createProgram().parseAsync(['node', 'sfdt', 'audit', 'callermap']);
     expect(runCallermapProbe).not.toHaveBeenCalled();
     expect(process.exitCode).toBe(1);
+  });
+
+  it('rejects a --days value that is not a plain whole number', async () => {
+    const err = vi.spyOn(console, 'error').mockImplementation(() => {});
+    await createProgram().parseAsync(['node', 'sfdt', 'audit', 'callermap', '--probe', '--days', '1e1']);
+    expect(runCallermapProbe).not.toHaveBeenCalled();
+    expect(err.mock.calls.flat().join(' ')).toContain('--days must be');
   });
 
   it('rejects an out-of-range --days', async () => {

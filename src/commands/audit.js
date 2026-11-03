@@ -247,8 +247,9 @@ async function executeCallermap(options) {
     if (!options.probe) {
       throw new Error('Only `sfdt audit callermap --probe` is available so far. It checks which login and API-usage data this org exposes, before the full caller inventory is built.');
     }
-    const days = Number(options.days ?? CALLERMAP_DEFAULTS.lookbackDays);
-    if (!Number.isInteger(days) || days < 1 || days > CALLERMAP_DEFAULTS.maxLookbackDays) {
+    const rawDays = String(options.days ?? CALLERMAP_DEFAULTS.lookbackDays);
+    const days = Number(rawDays);
+    if (!/^\d+$/.test(rawDays) || days < 1 || days > CALLERMAP_DEFAULTS.maxLookbackDays) {
       throw new Error(`--days must be a whole number from 1 to ${CALLERMAP_DEFAULTS.maxLookbackDays}`);
     }
     const config = await loadConfig();
@@ -267,11 +268,21 @@ async function executeCallermap(options) {
       throw err;
     }
 
-    if (jsonMode) emitJson(probe);
-    else printCallermapProbe(probe);
     // Nothing readable usually means an auth or connection problem, not an org
-    // without login data, so it must not read as a clean run in CI.
-    if (probe.summary.readable + probe.summary.partial === 0) process.exitCode = 1;
+    // without login data, so it must not read as a clean run in CI. In JSON mode
+    // that is an error envelope (with the probe kept under `data`), so a consumer
+    // reading stdout sees the failure, not only the exit code.
+    const nothingReadable = probe.summary.readable + probe.summary.partial === 0;
+    if (jsonMode) {
+      if (nothingReadable) {
+        emitJsonError(new Error(`No caller data source was readable in ${orgAlias}. This usually means an auth or connection problem; see data.sources for each error.`), { data: probe });
+      } else {
+        emitJson(probe);
+      }
+    } else {
+      printCallermapProbe(probe);
+      if (nothingReadable) process.exitCode = 1;
+    }
   } catch (err) {
     if (jsonMode) {
       emitJsonError(err);

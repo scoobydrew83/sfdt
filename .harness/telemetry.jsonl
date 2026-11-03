@@ -14,3 +14,5 @@
 {"type":"verdict","timestamp":"2026-11-03T04:52:34.956Z","status":"pass","summary":{"phase":"0.27.2 dependency + security release","verdict":"PASS","criteriaCount":5}}
 {"type":"verdict","timestamp":"2026-11-03T04:59:50.958Z","status":"pass","summary":{"phase":"callermap phase A (read-only probe)","verdict":"PASS","criteriaCount":5}}
 {"type":"verdict","timestamp":"2026-11-03T05:36:43.470Z","status":"pass","summary":{"phase":"callermap probe share-wording fix","verdict":"PASS","criteriaCount":2}}
+{"type":"verdict","timestamp":"2026-11-03T05:41:33.997Z","status":"pass","summary":{"phase":"callermap probe review fixes (PR #412 bot findings)","verdict":"PASS","criteriaCount":3}}
+{"type":"verdict","timestamp":"2026-11-03T05:45:05.633Z","status":"pass","summary":{"phase":"callermap probe review fixes round 2 (PR #412 Codex/Claude findings)","verdict":"PASS","criteriaCount":5}}
