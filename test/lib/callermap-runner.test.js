@@ -21,8 +21,8 @@ describe('PROBE_SOURCES', () => {
   });
 
   it('puts the lookback window into the LoginHistory query', () => {
-    expect(buildSoql(source('login-history'), ['UserId'], ctx)).toBe(
-      'SELECT UserId FROM LoginHistory WHERE LoginTime >= 2026-10-04T00:00:00Z ORDER BY LoginTime DESC LIMIT 2000',
+    expect(buildSoql(source('login-history'), ['UserId', 'LoginTime'], ctx)).toBe(
+      'SELECT UserId, LoginTime FROM LoginHistory WHERE LoginTime >= 2026-10-04T00:00:00Z ORDER BY LoginTime DESC LIMIT 2000',
     );
   });
 });
@@ -123,6 +123,78 @@ describe('probeSource', () => {
     expect(r.status).toBe('partial');
     expect(r.soql).toContain('WHERE Assignee.IsActive = true AND PermissionSet.PermissionsApiEnabled = true LIMIT');
     expect(r.stats).toEqual({ activeApiUsers: 1, withUseAnyApiClient: null, withoutUseAnyApiClient: null });
+  });
+
+  it('drops the ORDER BY when its field is missing, so the source stays partial', async () => {
+    const queryFn = vi.fn(async (_org, soql) => {
+      if (soql.includes('LastUsedDate')) throw new Error("INVALID_FIELD: No such column 'LastUsedDate' on entity 'OauthToken'");
+      return [{ AppName: 'X', UseCount: 3 }];
+    });
+    const r = await probeSource('dev', source('oauth-tokens'), ctx, { queryFn });
+
+    expect(r.status).toBe('partial');
+    expect(r.fieldsMissing).toEqual(['LastUsedDate']);
+    expect(r.soql).not.toContain('ORDER BY');
+    expect(r.stats).toMatchObject({ distinctApps: 1, rowsWithLastUsed: null, usedInWindow: null });
+  });
+
+  it('reports the original error when no selected field is missing', async () => {
+    const queryFn = vi.fn(async (_org, soql) => {
+      if (soql.includes('WHERE')) throw new Error("INVALID_FIELD: No such column 'PermissionsApiEnabled' in WHERE");
+      return [];
+    });
+    const r = await probeSource('dev', source('api-permission'), ctx, { queryFn });
+
+    expect(r.status).toBe('unreadable');
+    expect(r.fieldsMissing).toEqual([]);
+    expect(r.error).toContain('in WHERE');
+  });
+
+  it('reads ApiTotalUsage columns from the first log that lists them', async () => {
+    const queryFn = vi.fn().mockResolvedValue([
+      { LogDate: '2026-11-03T00:00:00.000+0000', LogFileFieldNames: '' },
+      { LogDate: '2026-11-02T00:00:00.000+0000', LogFileFieldNames: 'EVENT_TYPE,API_CLIENT_CATEGORY' },
+    ]);
+    const r = await probeSource('dev', source('api-total-usage'), ctx, { queryFn });
+    expect(r.stats).toMatchObject({
+      logFiles: 2,
+      columns: 2,
+      hasApiClientCategory: true,
+      newestLogDate: '2026-11-03T00:00:00.000+0000',
+      columnsFromLogDate: '2026-11-02T00:00:00.000+0000',
+    });
+  });
+
+  it('strips control characters from tally keys', async () => {
+    const queryFn = vi.fn().mockResolvedValue([{ UserType: 'Stan\u001b[31mdard' }]);
+    const r = await probeSource('dev', source('users'), ctx, { queryFn });
+    expect(Object.keys(r.stats.userTypes)).toEqual(['Stan[31mdard']);
+  });
+
+  it('treats a value made only of control characters as blank', async () => {
+    const queryFn = vi.fn().mockResolvedValue([{ UserType: '\u001b' }, { UserType: 'Standard' }]);
+    const r = await probeSource('dev', source('users'), ctx, { queryFn });
+    expect(r.stats.userTypes).toEqual({ '(blank)': 1, Standard: 1 });
+  });
+
+  it('strips control characters from the stored error, so JSON consumers get clean text too', async () => {
+    const queryFn = vi.fn().mockRejectedValue(new Error('INSUFFICIENT_ACCESS \u001b[31mdenied\u0007'));
+    const r = await probeSource('dev', source('oauth-tokens'), ctx, { queryFn });
+    expect(r.status).toBe('unreadable');
+    expect(r.error).toBe('INSUFFICIENT_ACCESS [31mdenied');
+  });
+
+  it('keeps words apart when an error contains tabs', async () => {
+    const queryFn = vi.fn().mockRejectedValue(new Error('INVALID\tFIELD on\tentity'));
+    const r = await probeSource('dev', source('oauth-tokens'), ctx, { queryFn });
+    expect(r.error).toBe('INVALID FIELD on entity');
+  });
+
+  it('declares each sort field on the source and keeps it in the field list', () => {
+    for (const s of PROBE_SOURCES.filter((x) => x.orderBy)) {
+      expect(s.fields).toContain(s.orderByField);
+      expect(s.orderBy.startsWith(s.orderByField)).toBe(true);
+    }
   });
 
   it('flags a result that hit the row limit', async () => {

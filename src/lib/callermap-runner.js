@@ -22,10 +22,22 @@ const MISSING_FIELD = /INVALID_FIELD|No such column|Didn't understand relationsh
 const isApiLogin = (r) => !!r.ApiType && r.ApiType !== 'N/A';
 const hasValue = (v) => v != null && v !== '' && v !== 'N/A';
 const distinct = (values) => new Set(values.filter(hasValue)).size;
+/**
+ * Strip control characters (C0, DEL, C1) from an org-derived string, so nothing
+ * odd reaches a terminal, a JSON consumer or a pasted report. Exported so every
+ * output path uses the same rule.
+ */
+export const stripControl = (v) => String(v ?? '').replace(/[\u0000-\u001f\u007f-\u009f]/g, '');
+/** One-line, control-free text of an error, as stored in a source's `error`. */
+// Control characters become spaces (so `INVALID\tFIELD` stays two words), and
+// the result is cleaned before `oneLine` caps its length.
+const errorText = (err) => oneLine(String(err?.message ?? '').replace(/[\u0000-\u001f\u007f-\u009f]/g, ' ')).replace(/ {2,}/g, ' ').trim();
 const tally = (values) => {
   const out = {};
   for (const v of values) {
-    const key = hasValue(v) ? String(v) : '(blank)';
+    // Clean first, so a value made only of control characters reads as blank.
+    const cleaned = v == null ? v : stripControl(v);
+    const key = hasValue(cleaned) ? cleaned : '(blank)';
     out[key] = (out[key] ?? 0) + 1;
   }
   return out;
@@ -51,6 +63,7 @@ export const PROBE_SOURCES = [
     fields: ['UserId', 'LoginTime', 'LoginType', 'LoginSubType', 'ApiType', 'ApiVersion', 'Application', 'ClientVersion', 'Platform', 'SourceIp', 'Status'],
     where: ({ since }) => `LoginTime >= ${since}`,
     orderBy: 'LoginTime DESC',
+    orderByField: 'LoginTime',
     limit: ROW_LIMIT,
     stats: (rows, _ctx, has) => {
       const api = has('ApiType') ? rows.filter(isApiLogin) : null;
@@ -72,6 +85,7 @@ export const PROBE_SOURCES = [
     purpose: 'Connected app usage per user: last used and use count',
     fields: ['AppName', 'UserId', 'LastUsedDate', 'UseCount', 'CreatedDate'],
     orderBy: 'LastUsedDate DESC NULLS LAST',
+    orderByField: 'LastUsedDate',
     limit: ROW_LIMIT,
     stats: (rows, { sinceMs }, has) => ({
       rows: rows.length,
@@ -153,18 +167,24 @@ export const PROBE_SOURCES = [
     fields: ['EventType', 'LogDate', 'Interval', 'LogFileLength', 'LogFileFieldNames'],
     where: () => "EventType = 'ApiTotalUsage'",
     orderBy: 'LogDate DESC',
+    orderByField: 'LogDate',
     limit: 7,
     stats: (rows, _ctx, has) => {
       if (!has('LogFileFieldNames')) {
-        return { logFiles: rows.length, newestLogDate: has('LogDate') ? rows[0]?.LogDate ?? null : null, columns: null, appColumnsPresent: null, hasApiClientCategory: null };
+        return { logFiles: rows.length, newestLogDate: has('LogDate') ? rows[0]?.LogDate ?? null : null, columnsFromLogDate: null, columns: null, appColumnsPresent: null, hasApiClientCategory: null };
       }
-      const columns = String(rows[0]?.LogFileFieldNames ?? '')
+      // The newest log can still be generating with no field names yet, so use
+      // the first log that lists its columns.
+      const withNames = rows.find((r) => String(r.LogFileFieldNames ?? '').trim());
+      const columns = String(withNames?.LogFileFieldNames ?? '')
         .split(',')
         .map((c) => c.trim())
         .filter(Boolean);
       return {
         logFiles: rows.length,
         newestLogDate: rows[0]?.LogDate ?? null,
+        // The columns can come from an older log than the newest one; say which.
+        columnsFromLogDate: withNames?.LogDate ?? null,
         columns: columns.length,
         appColumnsPresent: APP_COLUMNS.filter((c) => columns.includes(c)),
         hasApiClientCategory: columns.includes('API_CLIENT_CATEGORY'),
@@ -176,7 +196,9 @@ export const PROBE_SOURCES = [
 export function buildSoql(source, fields, ctx) {
   let soql = `SELECT ${fields.join(', ')} FROM ${source.object}`;
   if (source.where) soql += ` WHERE ${source.where(ctx, fields)}`;
-  if (source.orderBy) soql += ` ORDER BY ${source.orderBy}`;
+  // Sort only when the sort field is in the readable set, or a partial source
+  // would fail again on its ORDER BY.
+  if (source.orderBy && fields.includes(source.orderByField)) soql += ` ORDER BY ${source.orderBy}`;
   if (source.limit) soql += ` LIMIT ${source.limit}`;
   return soql;
 }
@@ -194,12 +216,14 @@ export async function probeSource(orgAlias, source, ctx, { queryFn = query } = {
     return { soql, rows };
   };
 
+  let firstError;
   try {
     const { soql, rows } = await run(source.fields);
     return { ...base, status: 'readable', soql, fieldsReadable: [...source.fields], fieldsMissing: [], truncated: rows.length >= source.limit, stats: source.stats(rows, ctx, () => true) };
   } catch (err) {
+    firstError = err;
     if (!MISSING_FIELD.test(err?.message ?? '')) {
-      return { ...base, status: 'unreadable', soql: buildSoql(source, source.fields, ctx), fieldsReadable: [], fieldsMissing: [], error: oneLine(err?.message), stats: null };
+      return { ...base, status: 'unreadable', soql: buildSoql(source, source.fields, ctx), fieldsReadable: [], fieldsMissing: [], error: errorText(err), stats: null };
     }
   }
 
@@ -214,7 +238,7 @@ export async function probeSource(orgAlias, source, ctx, { queryFn = query } = {
       // (timeout, expired session, rate limit) would make the report list real
       // fields as missing, so stop and report the source as unreadable instead.
       if (!MISSING_FIELD.test(err?.message ?? '')) {
-        return { ...base, status: 'unreadable', soql: buildSoql(source, source.fields, ctx), fieldsReadable: [], fieldsMissing: [], error: oneLine(err?.message), stats: null };
+        return { ...base, status: 'unreadable', soql: buildSoql(source, source.fields, ctx), fieldsReadable: [], fieldsMissing: [], error: errorText(err), stats: null };
       }
       fieldsMissing.push(field);
     }
@@ -222,12 +246,17 @@ export async function probeSource(orgAlias, source, ctx, { queryFn = query } = {
   if (!fieldsReadable.length) {
     return { ...base, status: 'unreadable', soql: buildSoql(source, source.fields, ctx), fieldsReadable, fieldsMissing, error: 'None of the probed fields are readable', stats: null };
   }
+  if (!fieldsMissing.length) {
+    // Every selected field exists, so the rejection came from elsewhere in the
+    // query (e.g. a WHERE field). Report the original error rather than retry.
+    return { ...base, status: 'unreadable', soql: buildSoql(source, source.fields, ctx), fieldsReadable, fieldsMissing, error: errorText(firstError), stats: null };
+  }
   try {
     const { soql, rows } = await run(fieldsReadable);
     return { ...base, status: 'partial', soql, fieldsReadable, fieldsMissing, truncated: rows.length >= source.limit, stats: source.stats(rows, ctx, (f) => fieldsReadable.includes(f)) };
   } catch (err) {
     // The WHERE clause itself can reference a missing field.
-    return { ...base, status: 'unreadable', soql: buildSoql(source, fieldsReadable, ctx), fieldsReadable, fieldsMissing, error: oneLine(err?.message), stats: null };
+    return { ...base, status: 'unreadable', soql: buildSoql(source, fieldsReadable, ctx), fieldsReadable, fieldsMissing, error: errorText(err), stats: null };
   }
 }
 

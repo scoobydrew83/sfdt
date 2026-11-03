@@ -312,7 +312,7 @@ function printCallermapProbe(probe) {
     console.log(`${color(s.status.toUpperCase().padEnd(10))} ${chalk.bold(s.object)} — ${s.purpose}`);
     if (s.fieldsMissing.length) console.log(chalk.yellow(`           missing fields: ${s.fieldsMissing.join(', ')}`));
     if (s.error) console.log(chalk.dim(`           ${s.error}`));
-    if (s.truncated) console.log(chalk.dim('           (row limit reached, so counts are a lower bound)'));
+    if (s.truncated) console.log(chalk.dim('           (row limit reached: counts come from a partial sample and may be off)'));
     for (const line of formatStats(s.stats)) console.log(chalk.dim(`           · ${line}`));
   }
   const a = probe.appNaming;
