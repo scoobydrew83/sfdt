@@ -25,8 +25,9 @@ No existing commands, flags, MCP tools or config keys change.
   (including "Use Any API Client"), active users by profile and license, and the ApiTotalUsage
   event log columns. Each source is reported as readable, partial (with the missing fields named)
   or unreadable (with the reason). The probe ends with a heuristic answer to whether the data can
-  name the calling app. Output holds counts and field names only, so it is safe to share. This is
-  the first step toward the full caller inventory. It is not part of `sfdt audit all`.
+  name the calling app. Org data is reduced to counts and field names; the org alias and any `sf`
+  error text are shown as-is. This is the first step toward the full caller inventory. It is not
+  part of `sfdt audit all`.
 
 ### Security
 

@@ -13,3 +13,4 @@
 {"type":"verdict","timestamp":"2026-09-28T14:53:58.008Z","status":"pass","summary":{"phase":"pr-372-codex-review","verdict":"PASS","criteriaCount":4}}
 {"type":"verdict","timestamp":"2026-11-03T04:52:34.956Z","status":"pass","summary":{"phase":"0.27.2 dependency + security release","verdict":"PASS","criteriaCount":5}}
 {"type":"verdict","timestamp":"2026-11-03T04:59:50.958Z","status":"pass","summary":{"phase":"callermap phase A (read-only probe)","verdict":"PASS","criteriaCount":5}}
+{"type":"verdict","timestamp":"2026-11-03T05:36:43.470Z","status":"pass","summary":{"phase":"callermap probe share-wording fix","verdict":"PASS","criteriaCount":2}}

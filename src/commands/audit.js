@@ -311,7 +311,7 @@ function printCallermapProbe(probe) {
   const s = probe.summary;
   console.log('');
   console.log(chalk.bold(`Summary: ${s.readable} readable · ${s.partial} partial · ${s.unreadable} unreadable (last ${probe.lookbackDays} days)`));
-  console.log(chalk.dim('Read-only. Output holds counts and Salesforce field names only (no user IDs, app names or IP addresses), so it is safe to share.'));
+  console.log(chalk.dim('Read-only. Org data is reduced to counts and Salesforce field names (no user IDs, app names or IP addresses). The org alias and any sf error text are shown as-is, so check those before sharing.'));
 }
 
 export function registerAuditCommand(program) {
