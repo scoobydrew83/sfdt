@@ -251,6 +251,13 @@ describe('audit callermap', () => {
     expect(process.exitCode).toBe(1);
   });
 
+  it('rejects a --days value that is not a plain whole number', async () => {
+    const err = vi.spyOn(console, 'error').mockImplementation(() => {});
+    await createProgram().parseAsync(['node', 'sfdt', 'audit', 'callermap', '--probe', '--days', '1e1']);
+    expect(runCallermapProbe).not.toHaveBeenCalled();
+    expect(err.mock.calls.flat().join(' ')).toContain('--days must be');
+  });
+
   it('rejects an out-of-range --days', async () => {
     const err = vi.spyOn(console, 'error').mockImplementation(() => {});
     await createProgram().parseAsync(['node', 'sfdt', 'audit', 'callermap', '--probe', '--days', '400']);

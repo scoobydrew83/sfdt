@@ -247,8 +247,9 @@ async function executeCallermap(options) {
     if (!options.probe) {
       throw new Error('Only `sfdt audit callermap --probe` is available so far. It checks which login and API-usage data this org exposes, before the full caller inventory is built.');
     }
-    const days = Number(options.days ?? CALLERMAP_DEFAULTS.lookbackDays);
-    if (!Number.isInteger(days) || days < 1 || days > CALLERMAP_DEFAULTS.maxLookbackDays) {
+    const rawDays = String(options.days ?? CALLERMAP_DEFAULTS.lookbackDays);
+    const days = Number(rawDays);
+    if (!/^\d+$/.test(rawDays) || days < 1 || days > CALLERMAP_DEFAULTS.maxLookbackDays) {
       throw new Error(`--days must be a whole number from 1 to ${CALLERMAP_DEFAULTS.maxLookbackDays}`);
     }
     const config = await loadConfig();

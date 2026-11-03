@@ -1111,7 +1111,8 @@ The probe runs one query per source and reports each source as `readable`, `part
 are missing, and the report names them) or `unreadable` (with the reason). It ends with a
 heuristic answer to "can this data name the calling app?" (`yes`, `partly`, `no`, `unknown`) and
 the signals behind it. A source that hits its row limit is marked, and its counts are then a lower
-bound.
+bound; a capped LoginHistory sample never yields a plain `yes`. A count that depends on a
+missing field is shown as unknown (`null` in JSON), not as zero.
 
 **What it reads:**
 
