@@ -1040,7 +1040,7 @@ sfdt audit licenses --json
 
 | Argument | Description |
 |---|---|
-| `[check]` | One of `audittrail`, `licenses`, `mfa`, `unused-apex`, `inactive-users`, `api-versions`, or `all` (default) |
+| `[check]` | One of `audittrail`, `licenses`, `mfa`, `mfa-readiness`, `soap-logins`, `unused-apex`, `inactive-users`, `api-versions`, `inactive-flows`, `unused-permsets`, `connected-apps`, `field-descriptions`, `apex-unreferenced`, `lint-access`, `inactive-validations`, `inactive-workflows`, `lint-access-fields`, or `all` (default). `callermap` is a separate subcommand, described below, and is not part of `all`. |
 
 **Options:**
 
@@ -1086,6 +1086,51 @@ The Chrome Index view leaves out any snapshot whose org doesn't match the org op
 including snapshots from older CLIs that carry no org ID. It says so at the top of the view and
 at the top of the copied pack, so one org's findings are never presented as another's. Run
 `sfdt audit --index` against the org you are assessing to refresh both snapshots together.
+
+#### The `callermap` probe
+
+```bash
+sfdt audit callermap --probe --org my-sandbox            # readable / partial / unreadable per source
+sfdt audit callermap --probe --org my-sandbox --json     # the same as a JSON envelope
+sfdt audit callermap --probe --days 7                    # shorter LoginHistory / OAuth window
+```
+
+`callermap` will list everything that signs into an org (integrations, users, AI clients), together
+with the Salesforce authentication change each one is affected by. So far only `--probe` exists.
+The probe checks which login and API-usage data the org exposes, so the inventory can be built on
+what is really there. Running `callermap` without `--probe` exits non-zero with a message. The probe also exits non-zero when no source is readable at all, which usually means an auth or connection problem. With `--json` that case is an error envelope, with the probe result under `data`.
+
+| Option | Description |
+|---|---|
+| `--probe` | Run the data-availability probe (required for now) |
+| `--org <alias>` | Target org (defaults to `config.defaultOrg`) |
+| `--days <n>` | Lookback for LoginHistory and OAuth usage, 1–180 (default 30) |
+| `--json` | Emit the probe result as a JSON envelope |
+
+The probe runs one query per source and reports each source as `readable`, `partial` (some fields
+are missing, and the report names them) or `unreadable` (with the reason). It ends with a
+heuristic answer to "can this data name the calling app?" (`yes`, `partly`, `no`, `unknown`) and
+the signals behind it. A source that hits its row limit is marked, and its counts are then a lower
+bound; a capped LoginHistory sample never yields a plain `yes`. A count that depends on a
+missing field is shown as unknown (`null` in JSON), not as zero.
+
+**What it reads:**
+
+- `LoginHistory` over the window: login type and subtype, API type and version, application,
+  client version, platform, source IP, status.
+- `OauthToken`: connected app name, user, last used date, use count.
+- `PermissionSet` and `PermissionSetAssignment`: which permission sets and profiles grant API
+  access, and whether the org has the "Use Any API Client" permission
+  (`PermissionsUseAnyApiClient`).
+- `User`: active users by user type, profile, license, API-only and Modify All Data.
+- `EventLogFile` (`ApiTotalUsage`, latest 7): log dates and the column list
+  (`LogFileFieldNames`). Log contents are never downloaded.
+
+**What it never does:** write to the org, write to disk, download event log files, or print user
+IDs, app names, IP addresses or any other record values. Org data is reduced to counts, Salesforce
+field names and Salesforce picklist values (for example `ApiType`). Two things are shown as-is: the
+org alias, and the text of any `sf` error, which can include the org's username or instance URL.
+Check those before you share the output.
 
 #### The `audittrail` check
 
