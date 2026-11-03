@@ -28,8 +28,9 @@ No new commands, flags, MCP tools or config keys.
   not as a lower bound. Some figures (such as users without "Use Any API Client") can be overstated.
 - ApiTotalUsage columns are read from the first log that lists them, so a log that is still being
   generated no longer makes the probe report no caller columns.
-- Control characters are stripped from org values (picklist tallies, `sf` error text) before they
-  are printed.
+- Control characters are stripped from org values (picklist tallies and `sf` error text) when the
+  probe builds its result, so the CLI, `--json` and MCP output all get clean text. A value made only
+  of control characters is shown as `(blank)`.
 
 ## [0.28.0] - 2026-11-03
 

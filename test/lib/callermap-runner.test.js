@@ -165,6 +165,19 @@ describe('probeSource', () => {
     expect(Object.keys(r.stats.userTypes)).toEqual(['Stan[31mdard']);
   });
 
+  it('treats a value made only of control characters as blank', async () => {
+    const queryFn = vi.fn().mockResolvedValue([{ UserType: '\u001b' }, { UserType: 'Standard' }]);
+    const r = await probeSource('dev', source('users'), ctx, { queryFn });
+    expect(r.stats.userTypes).toEqual({ '(blank)': 1, Standard: 1 });
+  });
+
+  it('strips control characters from the stored error, so JSON consumers get clean text too', async () => {
+    const queryFn = vi.fn().mockRejectedValue(new Error('INSUFFICIENT_ACCESS \u001b[31mdenied\u0007'));
+    const r = await probeSource('dev', source('oauth-tokens'), ctx, { queryFn });
+    expect(r.status).toBe('unreadable');
+    expect(r.error).toBe('INSUFFICIENT_ACCESS [31mdenied');
+  });
+
   it('flags a result that hit the row limit', async () => {
     const queryFn = vi.fn().mockResolvedValue(Array.from({ length: 2000 }, () => ({ UserType: 'Standard' })));
     const r = await probeSource('dev', source('users'), ctx, { queryFn });
