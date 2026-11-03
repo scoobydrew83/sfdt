@@ -1,14 +1,14 @@
 ---
 name: sf-lwc
 license: Apache-2.0
-description: Lightning Web Component development guidance — component structure, wire adapters, event patterns, SLDS styling, accessibility, and common pitfalls. Use whenever creating, editing, or reviewing any file in an lwc/ bundle (.html template, .js controller, .js-meta.xml), or when the user mentions Lightning components, wire adapters, App Builder properties, or component events — even if they just say "build me a component".
+description: "Guides Lightning Web Component development: bundle structure, wire adapters, event patterns, template rules, SLDS styling, accessibility, and common pitfalls. Use when creating, editing, or reviewing files in an lwc/ bundle (.html template, .js controller, .js-meta.xml), or when the user mentions Lightning Web Components, wire adapters, App Builder properties, or component events, including \"build me a Lightning component\". Not for Aura components or for the Apex controllers behind them (sf-apex-review)."
 triggers:
   - lwc
   - lightning web component
   - ".js-meta.xml"
   - wire adapter
   - lightning-
-  - component
+  - lightning component
 ---
 
 # Lightning Web Component (LWC) Development Skill
@@ -35,7 +35,7 @@ force-app/main/default/lwc/
 <?xml version="1.0" encoding="UTF-8"?>
 <LightningComponentBundle xmlns="http://soap.sforce.com/2006/04/metadata">
     <!-- Match the project's sourceApiVersion in sfdx-project.json -->
-    <apiVersion>63.0</apiVersion>
+    <apiVersion><!-- sourceApiVersion, e.g. 66.0 --></apiVersion>
     <isExposed>true</isExposed>
     <!-- Where the component can be used -->
     <targets>
@@ -245,3 +245,5 @@ this.loadData();
     <lightning-button type="submit" label="Save"></lightning-button>
 </lightning-record-edit-form>
 ```
+
+**Next steps:** When the component calls Apex, have `sf-apex-review` check the controller (`@AuraEnabled` security, query limits). Run `sf-pmd-scan` with the ESLint engine for a lint pass, then `sf-deploy` to ship. Skip if the user only needed the component.

@@ -1,7 +1,7 @@
 ---
 name: sf-pmd-scan
 license: Apache-2.0
-description: Run Salesforce Code Analyzer v5 (PMD + ESLint + Graph Engine) against this project, parse results, prioritize findings, and generate fix recommendations. Use whenever the user asks about static analysis, PMD, linting, code scanning, code quality gates, or CI quality checks for Apex/LWC — even if they just say "scan my code" or "is my code clean".
+description: Runs Salesforce Code Analyzer v5 (PMD, ESLint, Salesforce Graph Engine and its other engines) against a Salesforce DX project, prioritizes the findings, and recommends fixes and CI quality gates. Use when the user asks about static analysis, PMD, linting, code scanning, code quality gates, or CI quality checks for Apex or LWC, including "scan my code" or "is my code clean". Not for a hand review of specific Apex logic (sf-apex-review) or a whole-project health report (sf-org-audit).
 triggers:
   - pmd
   - code analyzer
@@ -14,7 +14,9 @@ triggers:
 
 # Salesforce Code Analyzer / PMD Scan Skill
 
-Run comprehensive static analysis against this project using Salesforce Code Analyzer v5.
+Run static analysis against a Salesforce DX project with Salesforce Code Analyzer v5.
+
+Paths below use `force-app/main/default`; substitute the `packageDirectories` paths from the project's `sfdx-project.json`.
 
 > If the project uses the sfdt CLI (`.sfdt/` directory present), prefer `sfdt quality` — it wraps Code Analyzer with project config, and `sfdt quality --include-fixes --fix-plan` adds analyzer fix suggestions plus an AI-generated remediation plan. Use the raw commands below when sfdt is not configured or you need custom selectors.
 
@@ -25,17 +27,19 @@ Run comprehensive static analysis against this project using Salesforce Code Ana
 sf plugins install code-analyzer@latest
 
 # Verify installation
-sf code-analyzer --version
+sf plugins --core | grep code-analyzer
 
-# View all available rules
-sf code-analyzer rules list
-
-# View rules by engine
-sf code-analyzer rules list --engine pmd
-sf code-analyzer rules list --engine eslint
+# Preview which rules a selector picks (same --rule-selector syntax as `run`)
+sf code-analyzer rules --rule-selector Recommended
+sf code-analyzer rules --rule-selector pmd
+sf code-analyzer rules --rule-selector eslint
 ```
 
 ## Running Scans
+
+**Rule selectors (v5):** bare tokens, not `key=value`. `:` means AND, `,` means OR, and
+repeating the flag also ORs. Examples: `pmd`, `pmd:Security`, `"pmd:(1,2)"` (quote
+parentheses), `Recommended`. Preview any selector with `sf code-analyzer rules` first.
 
 ### Full project scan (recommended first run)
 ```bash
@@ -49,7 +53,7 @@ sf code-analyzer run \
 ```bash
 sf code-analyzer run \
   --workspace force-app/main/default/classes \
-  --rule-selector "engine=pmd" \
+  --rule-selector pmd \
   --output-file docs/scans/apex-results.json
 ```
 
@@ -57,7 +61,7 @@ sf code-analyzer run \
 ```bash
 sf code-analyzer run \
   --workspace . \
-  --rule-selector "severity=1,2" \
+  --rule-selector "1,2" \
   --output-file docs/scans/critical-results.json
 ```
 
@@ -65,14 +69,14 @@ sf code-analyzer run \
 ```bash
 sf code-analyzer run \
   --workspace force-app/main/default/lwc \
-  --rule-selector "engine=eslint" \
+  --rule-selector eslint \
   --output-file docs/scans/lwc-results.json
 ```
 
 ### Scan only changed files (for PR reviews)
 ```bash
-# Get changed files from git; --target selects files within the workspace
-CHANGED=$(git diff --name-only HEAD~1 HEAD | grep -E '\.(cls|trigger|js)$' | tr '\n' ',')
+# Files changed on this branch vs main (deleted files excluded); --target selects files within the workspace
+CHANGED=$(git diff --name-only --diff-filter=d origin/main...HEAD | grep -E '\.(cls|trigger|js)$' | tr '\n' ',')
 sf code-analyzer run \
   --workspace . \
   --target "$CHANGED" \
@@ -100,13 +104,13 @@ When scan results JSON is available, analyze like this:
 
 ## Custom PMD Ruleset
 
-This project can use a custom ruleset at `config/pmd-ruleset.xml`:
+A project can add a custom ruleset, for example at `config/pmd-ruleset.xml`:
 
 ```xml
 <?xml version="1.0" encoding="UTF-8"?>
 <ruleset xmlns="http://pmd.sourceforge.net/ruleset/2.0.0"
          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-         name="SF-Rebuild-Ruleset"
+         name="Custom-Apex-Ruleset"
          xsi:schemaLocation="http://pmd.sourceforge.net/ruleset/2.0.0
                              https://pmd.sourceforge.io/ruleset_2_0_0.xsd">
 
@@ -121,7 +125,7 @@ This project can use a custom ruleset at `config/pmd-ruleset.xml`:
         <!-- <exclude name="ApexUnitTestClassShouldHaveAsserts"/> -->
     </rule>
 
-    <!-- Design thresholds tuned for this project -->
+    <!-- Design thresholds: tune to the codebase -->
     <rule ref="category/apex/design.xml/ExcessiveClassLength">
         <properties><property name="minimum" value="1000"/></properties>
     </rule>
@@ -154,7 +158,7 @@ Then run with the config file:
 sf code-analyzer run \
   --config-file code-analyzer.yml \
   --workspace . \
-  --rule-selector "engine=pmd" \
+  --rule-selector pmd \
   --output-file docs/scans/custom-results.json
 ```
 
@@ -189,7 +193,7 @@ Total violations: X
 
 ## CI/CD Integration
 
-**ALWAYS use the official `forcedotcom/run-code-analyzer@v2` GitHub Action** — do NOT write a manual `run: sf code-analyzer run` shell step. The official action exposes `steps.scan.outputs.num-sev1-violations` and `num-sev2-violations` outputs that make gate checks trivial.
+Prefer the official `forcedotcom/run-code-analyzer@v2` GitHub Action over a hand-written `run: sf code-analyzer run` step: it exposes `steps.scan.outputs.num-sev1-violations` and `num-sev2-violations` outputs that make gate checks trivial.
 
 Add to `.github/workflows/code-quality.yml`:
 ```yaml
@@ -239,3 +243,5 @@ Add to `.github/workflows/code-quality.yml`:
       results.json
       results.html
 ```
+
+**Next steps:** For Apex findings that need judgment beyond the rule (bulkification design, sharing model), hand the flagged classes to `sf-apex-review`. When scans are clean and the change is ready to ship, use `sf-deploy`. Skip if the user only wanted the scan.

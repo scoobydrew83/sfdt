@@ -1,14 +1,13 @@
 ---
 name: sf-apex-review
 license: Apache-2.0
-description: Production-grade Apex code review for this Salesforce project. Catches SOQL/DML in loops, CRUD/FLS gaps, missing bulkification, hardcoded IDs, empty catches, stale API versions, deprecated testMethod, Trigger.oldMap omissions, Datetime/Date type mismatches, unbounded @AuraEnabled queries, null relationship traversals, Database.Stateful waste, global vs public misuse, constant expressions inside loops, and missing batch idempotency guards. Use whenever reviewing or writing any .cls or .trigger file, or when asked to audit, review, check, or security-scan any Apex code — even if the user does not explicitly say "apex review".
+description: Reviews Apex classes and triggers for production readiness and returns severity-tiered findings with a deploy-safe verdict. Checks SOQL/DML in loops, CRUD/FLS and sharing gaps, bulkification, hardcoded IDs, empty catches, stale API versions, trigger context misuse, unbounded @AuraEnabled queries, and batch idempotency. Use when reviewing or writing a .cls or .trigger file, or when asked to audit, review, or check Apex, including "is this safe to deploy". Not for tool-based static analysis (sf-pmd-scan), writing tests (sf-test), or a whole-project health report (sf-org-audit).
 triggers:
   - apex review
   - review this class
   - review this trigger
   - check apex
   - audit apex
-  - security review
   - ".cls"
   - ".trigger"
   - before I deploy
@@ -52,7 +51,7 @@ Any `Trigger.new[0]`, treating new/old as single-record, or assuming list size =
 Regex `'[a-zA-Z0-9]{15,18}'` — use Custom Metadata, Custom Labels, or SOQL lookup.
 
 **Missing CRUD/FLS Checks on `@AuraEnabled` or Public Methods**
-Queries in public/AuraEnabled methods must use `WITH USER_MODE` (API 56+) or `WITH SECURITY_ENFORCED`, or manually check `isAccessible()` / `isCreateable()` etc. `with sharing` alone does NOT enforce FLS.
+Queries in public/AuraEnabled methods should use `WITH USER_MODE` (API 56+; preferred — it also covers WHERE-clause fields and reports all inaccessible fields), with `WITH SECURITY_ENFORCED` as the legacy option, or manually check `isAccessible()` / `isCreateable()` etc. `with sharing` alone does NOT enforce FLS.
 
 **Recursive Trigger Risk**
 Trigger performs DML on the same object without a static boolean recursion guard.
@@ -212,3 +211,5 @@ Fix:
 ```
 
 Keep "Deploy Safe? NO" if any CRITICAL or HIGH items exist. Use YES only when all findings are MEDIUM or lower. This is the signal a developer needs before merge.
+
+**Next steps:** When findings include missing or weak tests, hand off to `sf-test`. For a tool-based gate across the whole codebase, suggest `sf-pmd-scan`. When the verdict is "Deploy Safe? YES", use `sf-deploy`. Skip if the user only wanted the review.

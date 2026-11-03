@@ -1,7 +1,7 @@
 ---
 name: sf-scratch-org
 license: Apache-2.0
-description: Create and manage Salesforce scratch orgs — create, push source, pull changes, assign permsets, seed data, and manage lifecycle. Use whenever the user mentions scratch orgs, Dev Hub, spinning up a dev/test environment, source push/pull conflicts, or setting up local Salesforce DX development — even if they just say "give me a fresh org".
+description: "Creates and manages Salesforce scratch orgs: create from a definition file, push and pull source with conflict handling, assign permission sets, seed basic data, and delete orgs. Use when the user mentions scratch orgs, Dev Hub, spinning up a dev or test environment, source push/pull conflicts, or setting up local Salesforce DX development, including \"give me a fresh org\". Not for deploying to sandboxes or production (sf-deploy) or larger data loads (sf-data)."
 triggers:
   - scratch org
   - create org
@@ -13,7 +13,7 @@ triggers:
 
 # Scratch Org Management Skill
 
-You manage the full scratch org lifecycle for this Salesforce DX project.
+Manages the full scratch org lifecycle for a Salesforce DX project.
 
 If the project uses the sfdt CLI (`.sfdt/` directory present), `sfdt scratch create|delete|list` wraps the commands below with the project's configured definition file, and `sfdt scratch pool` maintains a pool of pre-created orgs so developers don't wait on org creation. Prefer those; use the raw `sf` commands for one-offs.
 
@@ -62,7 +62,8 @@ sf org create scratch \
 # Push all local source changes (source-tracked)
 sf project deploy start --target-org dev-scratch
 
-# Force push ignoring conflict detection
+# Force push ignoring conflict detection — overwrites changes made in the org.
+# Run `sf project deploy preview` first and confirm with the user.
 sf project deploy start --target-org dev-scratch --ignore-conflicts
 
 # Watch deploy progress
@@ -76,7 +77,8 @@ After making changes in the scratch org UI:
 # Pull declarative changes back to local project
 sf project retrieve start --target-org dev-scratch
 
-# Pull and ignore conflicts (prefer local)
+# Pull ignoring conflicts — overwrites local files with the org's version.
+# Run `sf project retrieve preview` first and confirm with the user.
 sf project retrieve start --target-org dev-scratch --ignore-conflicts
 ```
 
@@ -115,7 +117,7 @@ sf org open --target-org dev-scratch --path /lightning/setup/ObjectManager/home
 # Display org details (instance URL, username)
 sf org display --target-org dev-scratch
 
-# Delete scratch org when done
+# Delete scratch org when done — confirm the alias first; --no-prompt skips the CLI's own check
 sf org delete scratch --target-org dev-scratch --no-prompt
 ```
 
@@ -183,3 +185,5 @@ sf project retrieve start --target-org dev-scratch --ignore-conflicts
 - Check the actual allocation: `sf limits api display --target-org <devHubAlias>` (look for `ActiveScratchOrgs` and `DailyScratchOrgs`)
 - Max scratch org duration: 30 days
 - Always delete expired/unused orgs: `sf org delete scratch`
+
+**Next steps:** For seeding or extracting data beyond the basics here, use `sf-data`. When work in the scratch org is ready for a sandbox or production, use `sf-deploy`. Skip if the user only needed the org.

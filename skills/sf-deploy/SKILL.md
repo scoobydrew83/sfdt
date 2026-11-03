@@ -1,7 +1,7 @@
 ---
 name: sf-deploy
 license: Apache-2.0
-description: Salesforce CLI deployment skill for this project — deploy metadata to any org, retrieve metadata, validate, quick-deploy, and cancel stuck deploys. Use whenever the user wants to deploy, push, retrieve, validate, or promote Salesforce metadata, mentions package.xml or destructive changes, or asks "how do I get this to the sandbox/production" — even if they don't say "deploy".
+description: Deploys, validates, quick-deploys, retrieves, and cancels Salesforce metadata deployments with the sf CLI, with a confirmation gate before anything reaches a production org. Use when the user wants to deploy, retrieve, validate, or promote metadata to a sandbox or production, mentions package.xml or destructive changes, or asks "how do I get this to the sandbox/production", even without the word "deploy". Not for scratch-org source push/pull or org lifecycle (sf-scratch-org), or for running tests on their own (sf-test).
 triggers:
   - deploy
   - retrieve
@@ -13,7 +13,7 @@ triggers:
 
 # Salesforce Deployment Skill
 
-You assist with all Salesforce CLI (sf) deployment operations for this project. Always use the modern `sf` CLI (not deprecated `sfdx`).
+Handles Salesforce CLI (sf) deployment operations for a Salesforce DX project. Use the `sf` CLI, not the deprecated `sfdx` commands. Paths below use `force-app/main/default`; substitute the `packageDirectories` from `sfdx-project.json`.
 
 If the project uses the sfdt CLI (`.sfdt/` directory present), prefer its deployment flow — it adds preflight checks, delta computation, smart test selection, and rollback:
 
@@ -26,12 +26,36 @@ sfdt rollback               # roll back a deployment
 
 Use the raw `sf` commands below when sfdt is not configured or for one-off operations.
 
-## Before Deploying — Always Confirm
+## Before Deploying — Confirm, Then Check for Production
 
-Ask the user:
-1. **Target org alias** — never guess; use `sf org list` to show available orgs
-2. **What to deploy** — specific path, package.xml manifest, or entire force-app?
-3. **Test level** — NoTestRun (fastest), RunSpecifiedTests, RunLocalTests, RunAllTestsInOrg
+1. **Target org alias** — never guess; use `sf org list` to show available orgs.
+   If the user omits `--target-org`, the CLI uses the default org — name it
+   back to them before running anything.
+2. **What to deploy** — specific path, package.xml manifest, or the whole package directory?
+3. **Test level** — see the table below.
+4. **Is the target production?** Check before every deploy, retrieve-and-redeploy, or destructive change:
+   ```bash
+   sf org display --target-org <alias> --json   # result.isSandbox / isScratch false → production
+   ```
+   With sfdt, `.sfdt/environments.json` entries marked `type: production` also count.
+   If detection fails, treat the org as production.
+
+### Production gate
+
+When the target is production, stop and get explicit confirmation from the user
+before each of these steps, stating the org alias and what will change:
+
+```
+- [ ] Validate first: `sf project deploy validate ...` (or `sfdt deploy --smart --dry-run`)
+- [ ] Validation passed; tests and coverage meet the threshold
+- [ ] Destructive manifest reviewed line by line, if anything is being deleted
+- [ ] User confirmed: "deploy <scope> to <alias> (production)"
+- [ ] Quick deploy the validated job: `sf project deploy quick --job-id <id>`
+```
+
+Never deploy straight to production without a passing validation, and never add
+`--pre-destructive-changes` / `--post-destructive-changes` or run `sfdt rollback`
+against production without a fresh confirmation for that step.
 
 ## Common Deployment Commands
 
@@ -111,17 +135,11 @@ sf project retrieve start \
 
 ## Scratch Org Push/Pull
 
-```bash
-# Push local source to scratch org (source-tracked)
-sf project deploy start --target-org <scratchAlias>
-
-# Pull changes made in scratch org UI back to local
-sf project retrieve start --target-org <scratchAlias>
-```
+Source-tracked push/pull and conflict handling for scratch orgs live in `sf-scratch-org`.
 
 ## Destructive Changes
 
-A destructive deploy needs two files: a (possibly empty) `package.xml` and a `destructiveChangesPre.xml` or `destructiveChangesPost.xml` listing the members to delete (same XML format as package.xml).
+Deletes metadata from the target org — on production, this always goes through the production gate above. A destructive deploy needs two files: a (possibly empty) `package.xml` and a `destructiveChangesPre.xml` or `destructiveChangesPost.xml` listing the members to delete (same XML format as package.xml).
 
 ```bash
 # Deploy with destructive changes applied after the deploy
@@ -137,16 +155,16 @@ With sfdt: `sfdt manifest --destructive <path>` generates the destructive manife
 
 | Level | When to Use |
 |-------|-------------|
-| `NoTestRun` | Sandboxes (not Production), fast iteration |
-| `RunSpecifiedTests` | When you know which tests cover your code |
-| `RunLocalTests` | All local (non-managed) tests — required for Production |
+| `NoTestRun` | Sandboxes only, fast iteration — not allowed for Apex changes in production |
+| `RunSpecifiedTests` | When you know which tests cover your code; in production each changed class/trigger needs ≥ 75% coverage from the named tests |
+| `RunLocalTests` | All local (non-managed) tests — the production default when Apex changes |
 | `RunAllTestsInOrg` | Full org validation including managed packages |
 
 ## Deployment Checklist
 
-Before deploying to Production:
-- [ ] Validate first with `--dry-run` or `deploy validate`
-- [ ] Test coverage >= 75% (or the project's configured threshold — `.sfdt/config.json` → `deployment.coverageThreshold`)
+Before deploying to Production (in addition to the production gate):
+- [ ] Validate first with `deploy validate` (or `sfdt deploy --smart --dry-run`)
+- [ ] Test coverage >= 75% org-wide (or the deploy gate in `.sfdt/config.json` → `deployment.coverageThreshold`; see `sf-test`)
 - [ ] Run local tests pass cleanly
 - [ ] No pending scratch org-only config (permsets, test data)
 - [ ] Review destructive changes manifest if deleting metadata
@@ -157,3 +175,5 @@ Before deploying to Production:
 - **CANNOT_EXECUTE_FLOW_TRIGGER**: Flow version active in org conflicts with deployed version
 - **Test failure on deploy**: Run `sf apex test run --target-org <alias>` to see details
 - **Deploy stuck**: Use `sf project deploy cancel` then retry
+
+**Next steps:** When a deploy fails on tests or coverage, hand off to `sf-test`. Before a production deploy of Apex that hasn't been reviewed, suggest `sf-apex-review` (and `sf-pmd-scan` for a static-analysis gate). Skip if the deploy succeeded and the user is done.
