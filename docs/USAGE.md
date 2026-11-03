@@ -1126,8 +1126,10 @@ bound.
   (`LogFileFieldNames`). Log contents are never downloaded.
 
 **What it never does:** write to the org, write to disk, download event log files, or print user
-IDs, app names, IP addresses or any other record values. The output holds counts, Salesforce field
-names and Salesforce picklist values (for example `ApiType`), so you can share it safely.
+IDs, app names, IP addresses or any other record values. Org data is reduced to counts, Salesforce
+field names and Salesforce picklist values (for example `ApiType`). Two things are shown as-is: the
+org alias, and the text of any `sf` error, which can include the org's username or instance URL.
+Check those before you share the output.
 
 #### The `audittrail` check
 

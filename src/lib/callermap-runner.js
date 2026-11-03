@@ -8,7 +8,8 @@ import { oneLine } from './check-result.js';
  * Read-only: every source is a SELECT with a LIMIT. Nothing is written to the
  * org or to disk. The result holds counts, Salesforce field names and picklist
  * values only — no user IDs, app names, IP addresses or other org records — so
- * it is safe to paste into an issue.
+ * the org data in it is safe to paste into an issue. The org alias and sf error
+ * messages are passed through as-is and can name the org or its username.
  */
 
 export const CALLERMAP_DEFAULTS = { lookbackDays: 30, maxLookbackDays: 180 };
