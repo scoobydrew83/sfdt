@@ -14,6 +14,7 @@ import { maxStatus } from '../lib/check-status.js';
 import { runIndexEvidence } from '../lib/readiness-index.js';
 import { getOrgId } from '../lib/org-session.js';
 import { buildMonitorParams } from './monitor.js';
+import { runCallermapProbe, CALLERMAP_DEFAULTS } from '../lib/callermap-runner.js';
 
 const STATUS_COLOR = {
   ok: chalk.green,
@@ -234,6 +235,84 @@ function printReport(snapshot) {
   console.log(chalk.bold(`Summary: ${s.ok} ok · ${s.warn} warn · ${s.fail} fail · ${s.error} error`));
 }
 
+const PROBE_COLOR = { readable: chalk.green, partial: chalk.yellow, unreadable: chalk.red };
+
+/**
+ * `sfdt audit callermap --probe`: read-only check of which login and API-usage
+ * data the org exposes. Writes nothing to the org or to disk; stdout only.
+ */
+async function executeCallermap(options) {
+  const jsonMode = !!options.json;
+  try {
+    if (!options.probe) {
+      throw new Error('Only `sfdt audit callermap --probe` is available so far. It checks which login and API-usage data this org exposes, before the full caller inventory is built.');
+    }
+    const days = Number(options.days ?? CALLERMAP_DEFAULTS.lookbackDays);
+    if (!Number.isInteger(days) || days < 1 || days > CALLERMAP_DEFAULTS.maxLookbackDays) {
+      throw new Error(`--days must be a whole number from 1 to ${CALLERMAP_DEFAULTS.maxLookbackDays}`);
+    }
+    const config = await loadConfig();
+    const orgAlias = options.org ?? config.defaultOrg;
+    if (!orgAlias) {
+      throw new Error('No org specified — pass --org <alias> or set defaultOrg in .sfdt/config.json');
+    }
+
+    const spinner = jsonMode ? null : ora(`Probing caller data sources in ${orgAlias} (read-only)…`).start();
+    let probe;
+    try {
+      probe = await runCallermapProbe(orgAlias, { lookbackDays: days });
+      spinner?.succeed(`Probe complete (${orgAlias})`);
+    } catch (err) {
+      spinner?.fail('Probe failed');
+      throw err;
+    }
+
+    if (jsonMode) emitJson(probe);
+    else printCallermapProbe(probe);
+    // Nothing readable usually means an auth or connection problem, not an org
+    // without login data, so it must not read as a clean run in CI.
+    if (probe.summary.readable + probe.summary.partial === 0) process.exitCode = 1;
+  } catch (err) {
+    if (jsonMode) {
+      emitJsonError(err);
+    } else {
+      console.error(chalk.red(`Callermap failed: ${err.message}`));
+      process.exitCode = resolveExitCode(err);
+    }
+  }
+}
+
+function formatStats(stats) {
+  return Object.entries(stats ?? {})
+    .map(([k, v]) => {
+      if (v && typeof v === 'object' && !Array.isArray(v)) {
+        const inner = Object.entries(v).map(([ik, iv]) => `${ik}=${iv}`).join(', ');
+        return `${k}: {${inner || 'none'}}`;
+      }
+      if (Array.isArray(v)) return `${k}: [${v.join(', ') || 'none'}]`;
+      return `${k}: ${v ?? 'n/a'}`;
+    });
+}
+
+function printCallermapProbe(probe) {
+  console.log('');
+  for (const s of probe.sources) {
+    const color = PROBE_COLOR[s.status] ?? chalk.white;
+    console.log(`${color(s.status.toUpperCase().padEnd(10))} ${chalk.bold(s.object)} — ${s.purpose}`);
+    if (s.fieldsMissing.length) console.log(chalk.yellow(`           missing fields: ${s.fieldsMissing.join(', ')}`));
+    if (s.error) console.log(chalk.dim(`           ${s.error}`));
+    if (s.truncated) console.log(chalk.dim('           (row limit reached, so counts are a lower bound)'));
+    for (const line of formatStats(s.stats)) console.log(chalk.dim(`           · ${line}`));
+  }
+  const a = probe.appNaming;
+  console.log('');
+  console.log(chalk.bold(`Can the data name the calling app? ${a.verdict} (heuristic)`));
+  for (const sig of a.signals) console.log(chalk.dim(`  · ${sig}`));
+  const s = probe.summary;
+  console.log('');
+  console.log(chalk.bold(`Summary: ${s.readable} readable · ${s.partial} partial · ${s.unreadable} unreadable (last ${probe.lookbackDays} days)`));
+  console.log(chalk.dim('Read-only. Output holds counts and Salesforce field names only (no user IDs, app names or IP addresses), so it is safe to share.'));
+}
 
 export function registerAuditCommand(program) {
   const audit = program
@@ -257,4 +336,13 @@ export function registerAuditCommand(program) {
       .option('--json', 'Emit structured JSON to stdout')
       .action((options) => executeAudit([id], options));
   }
+
+  audit
+    .command('callermap')
+    .description('Inventory what signs into the org (read-only). Only --probe is available so far: it checks which login and API-usage data the org exposes')
+    .option('--org <alias>', 'Org alias (defaults to config.defaultOrg)')
+    .option('--json', 'Emit structured JSON to stdout')
+    .option('--probe', 'Check which login and API-usage data sources the org exposes (read-only, writes nothing)')
+    .option('--days <n>', `Lookback window in days for LoginHistory and OAuth usage (1-${CALLERMAP_DEFAULTS.maxLookbackDays})`, String(CALLERMAP_DEFAULTS.lookbackDays))
+    .action((options) => executeCallermap(options));
 }

@@ -7,15 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.27.2] - 2026-11-03
+## [0.28.0] - 2026-11-03
 
-A dependency and security release. It combines the open Dependabot updates (#405–#408) into one
-tested bump and clears a new high-severity production advisory that was failing the CI audit gate
-on `develop`. No CLI commands, flags, MCP tools or config keys change.
+Adds `sfdt audit callermap --probe`, a read-only first step toward an inventory of everything that
+signs into an org. Also combines the open Dependabot updates (#405–#408) into one tested bump and
+clears a new high-severity production advisory that was failing the CI audit gate on `develop`.
+No existing commands, flags, MCP tools or config keys change.
 
-> **Versions:** `@sfdt/cli` and `@sfdt/plugin` → **0.27.2**. `@sfdt/flow-core` stays at
+> **Versions:** `@sfdt/cli` and `@sfdt/plugin` → **0.28.0**. `@sfdt/flow-core` stays at
 > **0.16.0** (no source changes since 0.27.0). The Chrome extension (**0.17.0**) and the
 > VS Code extension (**0.7.1**) are not re-released: only their dev dependencies moved.
+
+### Added
+
+- **`sfdt audit callermap --probe`** — a read-only check of which login and API-usage data an
+  org exposes. It covers LoginHistory, OauthToken, API-access permissions and assignments
+  (including "Use Any API Client"), active users by profile and license, and the ApiTotalUsage
+  event log columns. Each source is reported as readable, partial (with the missing fields named)
+  or unreadable (with the reason). The probe ends with a heuristic answer to whether the data can
+  name the calling app. Output holds counts and field names only, so it is safe to share. This is
+  the first step toward the full caller inventory. It is not part of `sfdt audit all`.
 
 ### Security
 
@@ -32,7 +43,7 @@ on `develop`. No CLI commands, flags, MCP tools or config keys change.
     v11. Overrides apply only inside this repo, so `sf plugins install @sfdt/plugin` users
     get the fixed minimatch only once `@oclif/core` ships it.
   - The remaining moderate finding is the published `@sfdt/cli@0.27.0` copy that
-    `@sfdt/plugin` installs during development. It goes away once 0.27.2 is on npm.
+    `@sfdt/plugin` installs during development. It goes away once 0.28.0 is on npm.
 
 ### Dependencies
 
