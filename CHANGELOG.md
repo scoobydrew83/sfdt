@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.28.0] - 2026-11-03
+
+Adds `sfdt audit callermap --probe`, a read-only first step toward an inventory of everything that
+signs into an org. Also combines the open Dependabot updates (#405–#408) into one tested bump and
+clears a new high-severity production advisory that was failing the CI audit gate on `develop`.
+No existing commands, flags, MCP tools or config keys change.
+
+> **Versions:** `@sfdt/cli` and `@sfdt/plugin` → **0.28.0**. `@sfdt/flow-core` stays at
+> **0.16.0** (no source changes since 0.27.0). The Chrome extension (**0.17.0**) and the
+> VS Code extension (**0.7.1**) are not re-released: only their dev dependencies moved.
+
 ### Added
 
 - **`sfdt audit callermap --probe`** — a read-only check of which login and API-usage data an
@@ -16,6 +27,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   or unreadable (with the reason). The probe ends with a heuristic answer to whether the data can
   name the calling app. Output holds counts and field names only, so it is safe to share. This is
   the first step toward the full caller inventory. It is not part of `sfdt audit all`.
+
+### Security
+
+- Production `npm audit --audit-level=high --omit=dev` passes again. It had started failing
+  on `develop` once new advisories were published.
+  - `body-parser` 2.4.0 (high, GHSA-27r3-jxmh-p828: denial of service via trailing bytes after
+    a compressed body).
+  - `fast-uri` 3.1.9 (four moderate advisories: GHSA-w74x-v6f9-j3xg, GHSA-xhq7-xmqj-769h,
+    GHSA-wjr9-j795-jxcr, GHSA-333x-w4r6-6crp).
+  - `glob` ^14.0.3 for the CLI's own file globbing (GHSA-3g3m-2fjr-6pw4), which brings
+    `minimatch` 11 (GHSA-g3hv-75wg-m249).
+  - `@oclif/core > minimatch` is overridden to `^11.0.4`. No `@oclif/core` release has
+    picked up the fix yet, and oclif only calls the `minimatch()` export, which is unchanged in
+    v11. Overrides apply only inside this repo, so `sf plugins install @sfdt/plugin` users
+    get the fixed minimatch only once `@oclif/core` ships it.
+  - The remaining moderate finding is the published `@sfdt/cli@0.27.0` copy that
+    `@sfdt/plugin` installs during development. It goes away once 0.28.0 is on npm.
+
+### Dependencies
+
+- `happy-dom` 21 in the root and Chrome extension test environments. 21.0 turns off CSS and
+  iframe loading by default (an SSRF fix). No test relied on either, so the setup is unchanged.
+- `@modelcontextprotocol/sdk` 1.32.2, express-rate-limit 8.7.3, inquirer 14.2.5, nodemailer
+  10.3.1, `@oclif/core` 5.1.11 and oclif 6.0.15. In the web workspace: Next.js 16.4.4,
+  `@opennextjs/cloudflare` 1.20.14 and wrangler 4.156.
+- Dev tooling: vite 8.3.5 (gui), wxt 0.21.5 and `@types/chrome` 0.3.7 (extension),
+  `@vscode/vsce` 4.1.0.
+- The lockfile was regenerated with npm 11.18.0. A lockfile built up by repeated incremental
+  installs had nested `wxt` under `extension/`. That broke `build:ext`, because
+  `@sfdt/flow-core`'s output imports `wxt/utils/storage`. The committed lockfile hoists it
+  again.
 
 ## [0.27.1] - 2026-10-20
 
