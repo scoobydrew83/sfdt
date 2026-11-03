@@ -22,13 +22,20 @@ const MISSING_FIELD = /INVALID_FIELD|No such column|Didn't understand relationsh
 const isApiLogin = (r) => !!r.ApiType && r.ApiType !== 'N/A';
 const hasValue = (v) => v != null && v !== '' && v !== 'N/A';
 const distinct = (values) => new Set(values.filter(hasValue)).size;
-// Tally keys are org values (picklists such as ApiType). Strip control
-// characters so nothing odd reaches a terminal or a pasted report.
-const cleanKey = (v) => String(v).replace(/[\u0000-\u001f\u007f-\u009f]/g, '');
+/**
+ * Strip control characters (C0, DEL, C1) from an org-derived string, so nothing
+ * odd reaches a terminal, a JSON consumer or a pasted report. Exported so every
+ * output path uses the same rule.
+ */
+export const stripControl = (v) => String(v ?? '').replace(/[\u0000-\u001f\u007f-\u009f]/g, '');
+/** One-line, control-free text of an error, as stored in a source's `error`. */
+const errorText = (err) => stripControl(oneLine(err?.message));
 const tally = (values) => {
   const out = {};
   for (const v of values) {
-    const key = hasValue(v) ? cleanKey(v) : '(blank)';
+    // Clean first, so a value made only of control characters reads as blank.
+    const cleaned = v == null ? v : stripControl(v);
+    const key = hasValue(cleaned) ? cleaned : '(blank)';
     out[key] = (out[key] ?? 0) + 1;
   }
   return out;
@@ -209,7 +216,7 @@ export async function probeSource(orgAlias, source, ctx, { queryFn = query } = {
   } catch (err) {
     firstError = err;
     if (!MISSING_FIELD.test(err?.message ?? '')) {
-      return { ...base, status: 'unreadable', soql: buildSoql(source, source.fields, ctx), fieldsReadable: [], fieldsMissing: [], error: oneLine(err?.message), stats: null };
+      return { ...base, status: 'unreadable', soql: buildSoql(source, source.fields, ctx), fieldsReadable: [], fieldsMissing: [], error: errorText(err), stats: null };
     }
   }
 
@@ -224,7 +231,7 @@ export async function probeSource(orgAlias, source, ctx, { queryFn = query } = {
       // (timeout, expired session, rate limit) would make the report list real
       // fields as missing, so stop and report the source as unreadable instead.
       if (!MISSING_FIELD.test(err?.message ?? '')) {
-        return { ...base, status: 'unreadable', soql: buildSoql(source, source.fields, ctx), fieldsReadable: [], fieldsMissing: [], error: oneLine(err?.message), stats: null };
+        return { ...base, status: 'unreadable', soql: buildSoql(source, source.fields, ctx), fieldsReadable: [], fieldsMissing: [], error: errorText(err), stats: null };
       }
       fieldsMissing.push(field);
     }
@@ -235,14 +242,14 @@ export async function probeSource(orgAlias, source, ctx, { queryFn = query } = {
   if (!fieldsMissing.length) {
     // Every selected field exists, so the rejection came from elsewhere in the
     // query (e.g. a WHERE field). Report the original error rather than retry.
-    return { ...base, status: 'unreadable', soql: buildSoql(source, source.fields, ctx), fieldsReadable, fieldsMissing, error: oneLine(firstError?.message), stats: null };
+    return { ...base, status: 'unreadable', soql: buildSoql(source, source.fields, ctx), fieldsReadable, fieldsMissing, error: errorText(firstError), stats: null };
   }
   try {
     const { soql, rows } = await run(fieldsReadable);
     return { ...base, status: 'partial', soql, fieldsReadable, fieldsMissing, truncated: rows.length >= source.limit, stats: source.stats(rows, ctx, (f) => fieldsReadable.includes(f)) };
   } catch (err) {
     // The WHERE clause itself can reference a missing field.
-    return { ...base, status: 'unreadable', soql: buildSoql(source, fieldsReadable, ctx), fieldsReadable, fieldsMissing, error: oneLine(err?.message), stats: null };
+    return { ...base, status: 'unreadable', soql: buildSoql(source, fieldsReadable, ctx), fieldsReadable, fieldsMissing, error: errorText(err), stats: null };
   }
 }
 
