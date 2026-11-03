@@ -156,7 +156,13 @@ describe('probeSource', () => {
       { LogDate: '2026-11-02T00:00:00.000+0000', LogFileFieldNames: 'EVENT_TYPE,API_CLIENT_CATEGORY' },
     ]);
     const r = await probeSource('dev', source('api-total-usage'), ctx, { queryFn });
-    expect(r.stats).toMatchObject({ logFiles: 2, columns: 2, hasApiClientCategory: true, newestLogDate: '2026-11-03T00:00:00.000+0000' });
+    expect(r.stats).toMatchObject({
+      logFiles: 2,
+      columns: 2,
+      hasApiClientCategory: true,
+      newestLogDate: '2026-11-03T00:00:00.000+0000',
+      columnsFromLogDate: '2026-11-02T00:00:00.000+0000',
+    });
   });
 
   it('strips control characters from tally keys', async () => {
@@ -176,6 +182,19 @@ describe('probeSource', () => {
     const r = await probeSource('dev', source('oauth-tokens'), ctx, { queryFn });
     expect(r.status).toBe('unreadable');
     expect(r.error).toBe('INSUFFICIENT_ACCESS [31mdenied');
+  });
+
+  it('keeps words apart when an error contains tabs', async () => {
+    const queryFn = vi.fn().mockRejectedValue(new Error('INVALID\tFIELD on\tentity'));
+    const r = await probeSource('dev', source('oauth-tokens'), ctx, { queryFn });
+    expect(r.error).toBe('INVALID FIELD on entity');
+  });
+
+  it('declares each sort field on the source and keeps it in the field list', () => {
+    for (const s of PROBE_SOURCES.filter((x) => x.orderBy)) {
+      expect(s.fields).toContain(s.orderByField);
+      expect(s.orderBy.startsWith(s.orderByField)).toBe(true);
+    }
   });
 
   it('flags a result that hit the row limit', async () => {
