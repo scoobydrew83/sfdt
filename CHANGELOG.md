@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.28.1] - 2026-11-03
+
+Fixes for `sfdt audit callermap --probe` from the last round of review on the v0.28.0 release PR.
+No new commands, flags, MCP tools or config keys.
+
+> **Versions:** `@sfdt/cli` and `@sfdt/plugin` → **0.28.1**. `@sfdt/flow-core` stays at
+> **0.16.0**. The Chrome extension (**0.17.0**) and the VS Code extension (**0.7.1**) are not
+> re-released.
+
+### Fixed
+
+- **`audit callermap --probe`** no longer reports a source as unreadable when only its sort field
+  is missing. The ORDER BY is dropped when its field isn't readable, so the rest of the source is
+  still reported as partial.
+- When a query is rejected for a reason other than a missing selected field (for example a field
+  in the WHERE clause), the probe reports that original error instead of retrying field by field
+  and showing an empty "missing fields" list.
+- A source that hits its row limit is now described as a partial sample whose counts may be off,
+  not as a lower bound. Some figures (such as users without "Use Any API Client") can be overstated.
+- ApiTotalUsage columns are read from the first log that lists them, so a log that is still being
+  generated no longer makes the probe report no caller columns.
+- Control characters are stripped from org values (picklist tallies, `sf` error text) before they
+  are printed.
+
 ## [0.28.0] - 2026-11-03
 
 Adds `sfdt audit callermap --probe`, a read-only first step toward an inventory of everything that
