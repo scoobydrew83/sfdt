@@ -29,7 +29,9 @@ const distinct = (values) => new Set(values.filter(hasValue)).size;
  */
 export const stripControl = (v) => String(v ?? '').replace(/[\u0000-\u001f\u007f-\u009f]/g, '');
 /** One-line, control-free text of an error, as stored in a source's `error`. */
-const errorText = (err) => stripControl(oneLine(err?.message));
+// Control characters become spaces (so `INVALID\tFIELD` stays two words), and
+// the result is cleaned before `oneLine` caps its length.
+const errorText = (err) => oneLine(String(err?.message ?? '').replace(/[\u0000-\u001f\u007f-\u009f]/g, ' ')).replace(/ {2,}/g, ' ').trim();
 const tally = (values) => {
   const out = {};
   for (const v of values) {

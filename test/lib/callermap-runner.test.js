@@ -184,6 +184,12 @@ describe('probeSource', () => {
     expect(r.error).toBe('INSUFFICIENT_ACCESS [31mdenied');
   });
 
+  it('keeps words apart when an error contains tabs', async () => {
+    const queryFn = vi.fn().mockRejectedValue(new Error('INVALID\tFIELD on\tentity'));
+    const r = await probeSource('dev', source('oauth-tokens'), ctx, { queryFn });
+    expect(r.error).toBe('INVALID FIELD on entity');
+  });
+
   it('declares each sort field on the source and keeps it in the field list', () => {
     for (const s of PROBE_SOURCES.filter((x) => x.orderBy)) {
       expect(s.fields).toContain(s.orderByField);
