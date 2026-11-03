@@ -7,6 +7,10 @@ vi.mock('../../src/lib/audit-runner.js', async (importOriginal) => {
   const actual = await importOriginal();
   return { ...actual, runAudit: vi.fn() };
 });
+vi.mock('../../src/lib/callermap-runner.js', async (importOriginal) => {
+  const actual = await importOriginal();
+  return { ...actual, runCallermapProbe: vi.fn() };
+});
 vi.mock('../../src/lib/exit-codes.js', () => ({ resolveExitCode: vi.fn(() => 1) }));
 vi.mock('fs-extra', () => ({ default: { ensureDir: vi.fn(), writeJson: vi.fn() } }));
 vi.mock('ora', () => ({
@@ -20,6 +24,7 @@ vi.mock('ora', () => ({
 import { loadConfig } from '../../src/lib/config.js';
 import { getOrgId } from '../../src/lib/org-session.js';
 import { runAudit } from '../../src/lib/audit-runner.js';
+import { runCallermapProbe } from '../../src/lib/callermap-runner.js';
 import fs from 'fs-extra';
 import { registerAuditCommand } from '../../src/commands/audit.js';
 
@@ -182,5 +187,61 @@ describe('audit command', () => {
     expect(out).toContain('+2 more');
     expect(out).toContain('MYSTERY');
     logSpy.mockRestore();
+  });
+});
+
+describe('audit callermap', () => {
+  const probe = {
+    probe: true,
+    timestamp: '2026-11-03T00:00:00.000Z',
+    org: 'dev-org',
+    lookbackDays: 30,
+    sources: [
+      { id: 'login-history', object: 'LoginHistory', purpose: 'p', status: 'readable', fieldsReadable: ['UserId'], fieldsMissing: [], stats: { rows: 3, apiTypes: { REST: 2 } } },
+      { id: 'oauth-tokens', object: 'OauthToken', purpose: 'p', status: 'unreadable', fieldsReadable: [], fieldsMissing: [], error: 'INSUFFICIENT_ACCESS', stats: null },
+    ],
+    appNaming: { verdict: 'partly', heuristic: true, signals: ['x'] },
+    summary: { total: 2, readable: 1, partial: 0, unreadable: 1 },
+  };
+
+  it('runs the probe read-only and writes nothing to disk', async () => {
+    runCallermapProbe.mockResolvedValue(probe);
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+    await createProgram().parseAsync(['node', 'sfdt', 'audit', 'callermap', '--probe']);
+    expect(runCallermapProbe).toHaveBeenCalledWith('dev-org', { lookbackDays: 30 });
+    expect(fs.writeJson).not.toHaveBeenCalled();
+    expect(log.mock.calls.flat().join('\n')).toContain('Can the data name the calling app? partly');
+    expect(process.exitCode).toBeUndefined();
+  });
+
+  it('emits the probe as a JSON envelope', async () => {
+    runCallermapProbe.mockResolvedValue(probe);
+    const write = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+    await createProgram().parseAsync(['node', 'sfdt', 'audit', 'callermap', '--probe', '--json', '--org', 'sbx', '--days', '7']);
+    expect(runCallermapProbe).toHaveBeenCalledWith('sbx', { lookbackDays: 7 });
+    const out = JSON.parse(write.mock.calls.map((c) => c[0]).join(''));
+    expect(out).toMatchObject({ status: 0, result: { probe: true, summary: { unreadable: 1 } } });
+    write.mockRestore();
+  });
+
+  it('exits non-zero when no source is readable (auth or connection problem)', async () => {
+    runCallermapProbe.mockResolvedValue({ ...probe, summary: { total: 2, readable: 0, partial: 0, unreadable: 2 } });
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+    await createProgram().parseAsync(['node', 'sfdt', 'audit', 'callermap', '--probe']);
+    expect(process.exitCode).toBe(1);
+  });
+
+  it('refuses to run without --probe until the full scan exists', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    await createProgram().parseAsync(['node', 'sfdt', 'audit', 'callermap']);
+    expect(runCallermapProbe).not.toHaveBeenCalled();
+    expect(process.exitCode).toBe(1);
+  });
+
+  it('rejects an out-of-range --days', async () => {
+    const err = vi.spyOn(console, 'error').mockImplementation(() => {});
+    await createProgram().parseAsync(['node', 'sfdt', 'audit', 'callermap', '--probe', '--days', '400']);
+    expect(runCallermapProbe).not.toHaveBeenCalled();
+    expect(err.mock.calls.flat().join(' ')).toContain('--days must be');
   });
 });

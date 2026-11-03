@@ -2592,6 +2592,48 @@
             }
           ],
           "subcommands": []
+        },
+        {
+          "id": "audit callermap",
+          "path": [
+            "audit",
+            "callermap"
+          ],
+          "description": "Inventory what signs into the org (read-only). Only --probe is available so far: it checks which login and API-usage data the org exposes",
+          "aliases": [],
+          "hidden": false,
+          "arguments": [],
+          "options": [
+            {
+              "flags": "--org <alias>",
+              "name": "org",
+              "required": false,
+              "default": null,
+              "description": "Org alias (defaults to config.defaultOrg)"
+            },
+            {
+              "flags": "--json",
+              "name": "json",
+              "required": false,
+              "default": null,
+              "description": "Emit structured JSON to stdout"
+            },
+            {
+              "flags": "--probe",
+              "name": "probe",
+              "required": false,
+              "default": null,
+              "description": "Check which login and API-usage data sources the org exposes (read-only, writes nothing)"
+            },
+            {
+              "flags": "--days <n>",
+              "name": "days",
+              "required": false,
+              "default": "30",
+              "description": "Lookback window in days for LoginHistory and OAuth usage (1-180)"
+            }
+          ],
+          "subcommands": []
         }
       ],
       "mutating": false,
