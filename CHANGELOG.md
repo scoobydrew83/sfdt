@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`sfdt audit callermap --probe`** — a read-only check of which login and API-usage data an
+  org exposes. It covers LoginHistory, OauthToken, API-access permissions and assignments
+  (including "Use Any API Client"), active users by profile and license, and the ApiTotalUsage
+  event log columns. Each source is reported as readable, partial (with the missing fields named)
+  or unreadable (with the reason). The probe ends with a heuristic answer to whether the data can
+  name the calling app. Output holds counts and field names only, so it is safe to share. This is
+  the first step toward the full caller inventory. It is not part of `sfdt audit all`.
+
 ## [0.27.1] - 2026-10-20
 
 A dependency and security release. It folds the open Dependabot updates into one tested bump,
