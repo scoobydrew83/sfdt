@@ -1,15 +1,14 @@
 ---
 name: sf-data
 license: Apache-2.0
-description: SOQL query writing, data export/import, bulk upsert/delete, and data management for this Salesforce project. Use whenever writing or reviewing any SOQL query, loading or extracting org data, seeding sandboxes, running anonymous Apex for data fixes, or when the user mentions CSV loads, tree exports, aggregate queries, or governor limits on queries.
+description: "Writes and reviews SOQL and manages Salesforce org data with the sf CLI: queries, aggregate queries, CSV import/export, bulk upsert and delete, tree exports for seeding, and anonymous Apex data fixes, with a confirmation step before destructive data changes. Use when writing or reviewing a SOQL query, loading or extracting org data, seeding sandboxes, or running anonymous Apex for data fixes, or when the user mentions CSV loads, tree exports, or query governor limits. Not for reviewing the surrounding Apex logic (sf-apex-review)."
 triggers:
   - soql
-  - SELECT
   - data import
   - data export
   - upsert
   - data load
-  - query
+  - soql query
 ---
 
 # Salesforce Data Operations Skill
@@ -115,7 +114,8 @@ sf data upsert bulk \
   --target-org <alias> \
   --wait 10
 
-# Delete records (CSV of record IDs)
+# Delete records (CSV of record IDs) — irreversible outside the recycle bin.
+# Confirm the target org with the user first; on production, get explicit approval.
 sf data delete bulk \
   --sobject Account \
   --file data/accounts-to-delete.csv \
@@ -144,6 +144,12 @@ sf data import tree \
 ```
 
 ### Run anonymous Apex
+
+Anonymous Apex runs immediately with the running user's permissions and commits
+its DML. Show the script and the target org to the user before running it, and
+get explicit approval when the org is production (`sf org display --json` →
+`isSandbox: false`).
+
 ```bash
 # From file
 sf apex run \
@@ -159,10 +165,10 @@ echo "update [SELECT Id FROM Account WHERE Name = 'Old' LIMIT 200];" | \
 
 | Scenario | Optimization |
 |----------|-------------|
-| Large dataset | Use `LIMIT` and pagination with `OFFSET` or cursor |
+| Large dataset | Paginate on an indexed field (`WHERE Id > :lastId ORDER BY Id LIMIT n`); `OFFSET` caps at 2,000 rows |
 | Filtering on custom field | Check if field has External ID or Unique flag (auto-indexed) |
 | Parent lookup | Use relationship query instead of 2 queries |
-| COUNT only | Use `SELECT COUNT() FROM Object` (faster than COUNT(Id)) |
+| COUNT only | Use `SELECT COUNT() FROM Object` when you only need the total (no rows are returned) |
 | Avoid % prefix wildcards | `LIKE 'Smith%'` is indexed; `LIKE '%Smith'` is not |
 
 ## Governor Limits Reference
@@ -175,3 +181,5 @@ echo "update [SELECT Id FROM Account WHERE Name = 'Old' LIMIT 200];" | \
 | DML rows | 10,000 |
 | Heap size | 6 MB (12 MB async) |
 | CPU time | 10,000 ms (60,000 ms async) |
+
+**Next steps:** When a query is going into Apex code, have `sf-apex-review` check it in context (bulkification, CRUD/FLS). When seed data is for a new scratch org, `sf-scratch-org` covers creating the org first. Skip if the user only needed the query or the load.

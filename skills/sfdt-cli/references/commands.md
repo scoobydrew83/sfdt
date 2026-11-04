@@ -80,7 +80,7 @@ Run Apex tests with the enhanced test runner.
 | `--legacy` | Use `run-tests.sh` instead of `enhanced-test-runner.sh` |
 | `--analyze` | Run `test-analyzer.sh` after tests complete |
 | `--class-names <list>` | Run only these Apex test classes (comma-separated), overriding configured classes |
-| `--logic` | Run Apex + Flow tests together via `sf logic run test` (Spring '26 beta); pairs with `--org`, `--test-level`, `--tests`, `--category`, `--code-coverage`, `--wait` |
+| `--logic` | Run Apex + Flow tests together via `sf logic run test` (beta at time of writing — check `sf logic run test --help`); pairs with `--org`, `--test-level`, `--tests`, `--category`, `--code-coverage`, `--wait` |
 
 **Behavior**:
 1. Runs selected test script (catches errors, doesn't immediately exit on failure)

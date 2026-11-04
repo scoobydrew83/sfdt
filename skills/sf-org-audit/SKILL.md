@@ -1,7 +1,7 @@
 ---
 name: sf-org-audit
 license: Apache-2.0
-description: Full health audit of this Salesforce project — summarizes Apex class count, test coverage gaps, trigger patterns, flow inventory, LWC count, CI/CD status, and generates a prioritized remediation report. Use whenever the user asks for a health check, audit, project analysis, technical-debt assessment, or "how bad is this org/codebase" — anything that calls for a whole-project view rather than a single-file review.
+description: Runs a whole-project health audit of a Salesforce DX codebase — Apex inventory, test coverage gaps, trigger patterns, flow inventory, LWC count, CI/CD status — and produces a prioritized remediation report, delegating deep dives to the review skills. Use when the user asks for a health check, audit, project analysis, technical-debt assessment, or "how bad is this org/codebase", where a whole-project view is needed. Not for reviewing a single class or flow (sf-apex-review, sf-flow-review).
 triggers:
   - org audit
   - project audit
@@ -14,7 +14,7 @@ triggers:
 
 # Salesforce Project Health Audit Skill
 
-Perform a comprehensive health audit of this Salesforce DX project. Work through each phase systematically.
+Performs a health audit of a Salesforce DX project, phase by phase. Paths below use `force-app/main/default`; substitute the `packageDirectories` from `sfdx-project.json`.
 
 ## Fast path — native sfdt commands
 
@@ -159,3 +159,5 @@ Produce this structured report after completing all phases:
   "long_term_actions": []
 }
 ```
+
+**Next steps:** Work the remediation report top-down: `sf-apex-review` for flagged classes, `sf-flow-review` for flagged flows, `sf-test` for coverage gaps, and `sf-pmd-scan` to add a CI quality gate. Skip if the user only wanted the report.

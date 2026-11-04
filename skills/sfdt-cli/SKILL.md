@@ -1,28 +1,19 @@
 ---
 name: sfdt-cli
 license: Apache-2.0
-description: "Guide for using AND contributing to the @sfdt/cli (Salesforce DevTools) CLI. Use when: (1) the user mentions sfdt commands, deployment, testing, Apex coverage, org drift, org health audits/monitoring, docs generation, or release manifests; (2) you see a .sfdt/ directory or sfdx-project.json and the user wants CLI-driven workflows; (3) the user says sfdt should/could support something, wants to add a command, extend config, or suggests sfdt can help with a task — this means implementing the feature in the CLI itself."
+description: "Explains how to use and extend the @sfdt/cli (Salesforce DevTools) command-line tool: its commands, config system, SFDT_ environment variables, and development workflow. Use when the user mentions sfdt or its commands, a .sfdt/ directory is present and the user wants sfdt-driven workflows (smart deploys, drift, monitoring, docs generation, release manifests), or the user wants sfdt to support something new — which means implementing it in the CLI. For general deploy, test, or audit guidance without sfdt, the sf-* skills own those jobs."
 triggers:
   - sfdt
   - ".sfdt/"
   - salesforce devtools
-  - deploy salesforce
   - org drift
-  - org audit
   - release manifest
+  - sfdt deploy
 ---
 
 # sfdt CLI — Salesforce DevTools
 
 `@sfdt/cli` is a Node.js CLI that wraps Salesforce DX workflows into opinionated, configurable commands. It handles deployment (including smart delta deploys), testing, quality analysis, release management, metadata pulls, rollback, drift detection, org health audits and monitoring, documentation generation, data seeding, scratch-org pooling, notifications, and AI-powered code review for any Salesforce DX project. It also ships a web dashboard (`sfdt ui`), an MCP server (`sfdt mcp`), a VS Code extension, and an `sf` CLI plugin (`sf sfdt <command>`).
-
-## When to use this skill
-
-- The user mentions `sfdt` or any of its commands
-- You see a `.sfdt/` directory in the project
-- The user wants to deploy, test, pull, review, or release Salesforce code
-- The user asks about Apex test coverage, org drift, or deployment validation
-- The project has `sfdx-project.json` and the user wants CLI-driven workflows
 
 ## How sfdt works
 
@@ -32,7 +23,7 @@ sfdt is a **generic tool** — it contains no project-specific values. All confi
 User runs command → Load .sfdt/ config → Set SFDT_* env vars → Execute shell script
 ```
 
-**Prerequisites**: Node.js >= 18, Salesforce CLI (`sf`), and optionally an AI provider (see "AI features" below).
+**Prerequisites**: Node.js >= 22.15.0 (see `engines` in package.json), Salesforce CLI (`sf`), and optionally an AI provider (see "AI features" below).
 
 ## Commands quick reference
 
@@ -246,3 +237,5 @@ npm test                   # vitest
 npm run lint               # ESLint
 npm run test:coverage      # coverage report
 ```
+
+**Next steps:** For guidance that doesn't depend on sfdt, use the matching `sf-*` skill (`sf-deploy`, `sf-test`, `sf-pmd-scan`, `sf-org-audit`). When extending the CLI itself, follow the repo's CLAUDE.md and `docs/golden-principles.md`. Skip if the user is done.

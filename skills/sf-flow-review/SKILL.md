@@ -1,7 +1,7 @@
 ---
 name: sf-flow-review
 license: Apache-2.0
-description: Review Salesforce Flow metadata for best practices — fault paths, bulk safety, element naming, auto-layout, duplicate automation, and Flow vs Apex decision guidance. Use whenever reviewing, writing, or debugging any .flow-meta.xml file, or when the user asks about flows, record-triggered automation, process builder migration, or "why is my flow failing" — even if they don't say "review".
+description: Reviews Salesforce Flow metadata for fault paths, bulk safety, hardcoded IDs, element naming, auto-layout, duplicate automation, and Flow-vs-Apex fit. Use when reviewing, writing, or debugging a .flow-meta.xml file, or when the user asks about flows, record-triggered automation, migrating Process Builder or Workflow Rules, or "why is my flow failing". Not for Apex code review (sf-apex-review) or a whole-project automation inventory (sf-org-audit).
 triggers:
   - flow review
   - review flow
@@ -42,7 +42,7 @@ Check the XML:
 
 #### Bulk Safety (Record-Triggered Flows)
 Record-Triggered flows fire on every record in a transaction. Avoid:
-- Apex Actions that are not `@InvocableMethod(label='...' callout=false)` with proper bulkification
+- Apex Actions whose `@InvocableMethod` isn't bulk-safe (it must accept and return a `List` and avoid per-record SOQL/DML)
 - Get Records elements that run inside loops (nested queries)
 - Multiple Get Records on the same object — consolidate with filters
 
@@ -91,7 +91,7 @@ Keep in Flow when:
 - Admins need to maintain it without code releases
 
 #### Missing Flow Versions / Active Version
-Check that flows have exactly ONE active version. Multiple versions waste org limits.
+Only one version of a flow can be active, but inactive versions accumulate and count toward the per-flow version limit. Flag flows with many obsolete versions and suggest deleting old ones. Process Builder and Workflow Rules are retired for new automation — recommend migrating them to flows (Setup → Migrate to Flow).
 
 #### Schedule-Triggered Flows
 Verify batch size is considered — schedule flows process records in batches of 200.
@@ -151,3 +151,5 @@ Key XML elements to inspect in `.flow-meta.xml`:
 Flows reviewed: 1
 Critical issues: 1 | High: 1 | Medium: 1
 ```
+
+**Next steps:** When a flow should move to Apex (complex logic, heavy volume), hand the design to `sf-apex-review`. When the flow is ready to ship, use `sf-deploy`. Skip if the user only wanted the review.
