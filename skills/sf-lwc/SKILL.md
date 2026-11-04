@@ -34,8 +34,8 @@ force-app/main/default/lwc/
 ```xml
 <?xml version="1.0" encoding="UTF-8"?>
 <LightningComponentBundle xmlns="http://soap.sforce.com/2006/04/metadata">
-    <!-- Match the project's sourceApiVersion in sfdx-project.json -->
-    <apiVersion><!-- sourceApiVersion, e.g. 66.0 --></apiVersion>
+    <!-- Replace 66.0 with sourceApiVersion from sfdx-project.json -->
+    <apiVersion>66.0</apiVersion>
     <isExposed>true</isExposed>
     <!-- Where the component can be used -->
     <targets>

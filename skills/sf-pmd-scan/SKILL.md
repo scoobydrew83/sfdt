@@ -26,8 +26,8 @@ Paths below use `force-app/main/default`; substitute the `packageDirectories` pa
 # Install Code Analyzer plugin
 sf plugins install code-analyzer@latest
 
-# Verify installation
-sf plugins --core | grep code-analyzer
+# Verify installation (works however the plugin was installed)
+sf code-analyzer --help >/dev/null && echo "code-analyzer installed"
 
 # Preview which rules a selector picks (same --rule-selector syntax as `run`)
 sf code-analyzer rules --rule-selector Recommended
@@ -58,7 +58,12 @@ sf code-analyzer run \
 ```
 
 ### Critical and high severity only
+
+Numeric severities are valid selector tokens (`1` = Critical … `5` = Info) and `,` means OR.
+Preview first: if this lists no rules, the run below scans nothing — don't use it as a gate.
+
 ```bash
+sf code-analyzer rules --rule-selector "1,2"
 sf code-analyzer run \
   --workspace . \
   --rule-selector "1,2" \
@@ -75,8 +80,13 @@ sf code-analyzer run \
 
 ### Scan only changed files (for PR reviews)
 ```bash
-# Files changed on this branch vs main (deleted files excluded); --target selects files within the workspace
-CHANGED=$(git diff --name-only --diff-filter=d origin/main...HEAD | grep -E '\.(cls|trigger|js)$' | tr '\n' ',')
+# Set BASE to the project's base branch (main, master, develop…). In shallow CI clones,
+# fetch it first: git fetch --depth=1 origin <base-branch>
+BASE="${BASE:-origin/main}"
+# Files changed on this branch vs BASE (deleted files excluded); --target selects files within the workspace
+CHANGED=$(git diff --name-only --diff-filter=d "$BASE"...HEAD | grep -E '\.(cls|trigger|js)$' | tr '\n' ',')
+# An empty list means nothing to scan (or BASE is wrong) — report that instead of running
+[ -n "$CHANGED" ] || { echo "No changed Apex/JS files vs $BASE"; exit 0; }
 sf code-analyzer run \
   --workspace . \
   --target "$CHANGED" \

@@ -35,10 +35,14 @@ Use the raw `sf` commands below when sfdt is not configured or for one-off opera
 3. **Test level** — see the table below.
 4. **Is the target production?** Check before every deploy, retrieve-and-redeploy, or destructive change:
    ```bash
-   sf org display --target-org <alias> --json   # result.isSandbox / isScratch false → production
+   sf org display --target-org <alias> --json
    ```
+   The org is a sandbox **only** when `result.isSandbox` is literally `true`. Treat
+   everything else as production: `isSandbox: false`, a missing `isSandbox` field
+   (some scratch orgs, Dev Hubs, older `sf` versions), or a failed lookup. This
+   matches sfdt's own `isProductionOrg` check. A scratch org may therefore hit the
+   gate — that is the safe direction; confirming the alias with the user clears it.
    With sfdt, `.sfdt/environments.json` entries marked `type: production` also count.
-   If detection fails, treat the org as production.
 
 ### Production gate
 
