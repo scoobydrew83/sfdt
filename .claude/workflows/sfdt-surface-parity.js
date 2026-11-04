@@ -81,19 +81,23 @@ Note: generated/ is machine-generated and must never be hand-edited (golden prin
   // Stage 2 - adversarially refute this surface's REAL_GAP claims as soon as its stage 1 lands.
   (res, item) => {
     if (!res) return null
-    const real = res.classified.filter(c => c.verdict === 'REAL_GAP')
+    // Only ids we actually handed the agent count; a misspelled or invented id is dropped.
+    const known = new Set(item.gaps.map(g => g.id))
+    const classified = res.classified.filter(c => known.has(c.id))
+    const real = classified.filter(c => c.verdict === 'REAL_GAP')
     const bySignal = [...real].sort((a, b) => {
       const mt = id => (item.gaps.find(g => g.id === id)?.mcpTools.length ?? 0)
       return mt(b.id) - mt(a.id)
     })
     const picked = bySignal.slice(0, REFUTES_PER_SURFACE)
-    if (real.length > picked.length) {
+    const unverified = bySignal.slice(REFUTES_PER_SURFACE)
+    if (unverified.length) {
       log(`${item.surface}: ${real.length} REAL_GAP claims, verifying the top ${picked.length} by MCP-tool signal - ${real.length - picked.length} carried forward unverified`)
     }
     // UNDOCUMENTED is where the drift signal lands ("the flag says false but the
     // feature ships"). Do NOT refute these - they are policy-vs-reality claims a
     // contract lint can settle mechanically. Carry them to the report untouched.
-    const undocumented = res.classified.filter(c => c.verdict === 'UNDOCUMENTED')
+    const undocumented = classified.filter(c => c.verdict === 'UNDOCUMENTED')
 
     return parallel(picked.map(c => () =>
       agent(
@@ -114,7 +118,7 @@ Set refuted=true if the gap is intentional or not worth filing. Default to refut
 Read-only - change no files.`,
         { label: `refute:${item.surface}/${c.id}`, phase: 'Refute', schema: REFUTE_SCHEMA },
       ).then(v => ({ surface: item.surface, claim: c, verdict: v }))
-    )).then(checks => ({ surface: item.surface, checks, undocumented, rule: res.inclusionRule }))
+    )).then(checks => ({ surface: item.surface, checks, undocumented, unverified, rule: res.inclusionRule }))
   },
 )
 
@@ -123,11 +127,12 @@ const checked = perSurface.flatMap(s => s.checks).filter(Boolean).filter(r => r.
 const survived = checked.filter(r => !r.verdict.refuted)
 const killed = checked.filter(r => r.verdict.refuted)
 const drift = perSurface.flatMap(s => s.undocumented.map(c => ({ surface: s.surface, ...c })))
+const unverified = perSurface.flatMap(s => s.unverified.map(c => ({ surface: s.surface, ...c })))
 
-log(`${checked.length} gap claims verified - ${survived.length} survived, ${killed.length} refuted; ${drift.length} undocumented/drift claims carried forward`)
+log(`${checked.length} gap claims verified - ${survived.length} survived, ${killed.length} refuted; ${unverified.length} unverified and ${drift.length} undocumented/drift claims carried forward`)
 
-if (!survived.length && !drift.length) {
-  return { survived: [], drift: [], killed: killed.length, report: 'No REAL_GAP claim survived adversarial review and no drift was flagged. Surface parity is intentional as far as this pass can tell.' }
+if (!survived.length && !drift.length && !unverified.length) {
+  return { survived: [], drift: [], unverified: [], killed: killed.length, report: 'No REAL_GAP claim survived adversarial review and no drift was flagged. Surface parity is intentional as far as this pass can tell.' }
 }
 
 phase('Report')
@@ -146,8 +151,14 @@ Then a second section, "Declared-intent drift". These are NOT missing features -
 
 ${drift.map(d => `- \`${d.id}\` (${d.surface}): ${d.reason} [${d.evidence}]`).join('\n') || '- none'}
 
-For that section, say which entries look like a stale flag to flip versus a genuinely undocumented decision to write down. Be concise - this goes straight into ROADMAP.md or TODO.md. No preamble.`,
+For that section, say which entries look like a stale flag to flip versus a genuinely undocumented decision to write down.
+
+Then a third section, "Unverified gap claims". These were classified REAL_GAP but fell outside the per-surface refute budget, so nobody challenged them. List them as leads to check, not as findings:
+
+${unverified.map(u => `- \`${u.id}\` (${u.surface}): ${u.reason} [${u.evidence}]`).join('\n') || '- none'}
+
+Be concise - this goes straight into ROADMAP.md or TODO.md. No preamble.`,
   { label: 'report', phase: 'Report' },
 )
 
-return { survivedCount: survived.length, refutedCount: killed.length, driftCount: drift.length, survived, drift, report }
+return { survivedCount: survived.length, refutedCount: killed.length, driftCount: drift.length, unverifiedCount: unverified.length, survived, drift, unverified, report }
