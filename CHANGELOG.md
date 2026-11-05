@@ -7,6 +7,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Bundled skills audited against Anthropic's skill authoring guidance.** Every skill now
+  has a third-person description that says what it does, when to use it, and which sibling
+  skill owns the neighbouring job. Every skill ends with a `Next steps` handoff to the
+  related skill. The descriptions no longer assume one specific project, and paths now point
+  at `sfdx-project.json` `packageDirectories`. The over-broad triggers `component`, `query`,
+  `SELECT`, `security review`, `deploy salesforce` and `org audit` were removed.
+- **`sf-deploy` adds a production gate.** It checks `isSandbox` before every deploy,
+  requires validate → quick-deploy, and asks for explicit confirmation before destructive
+  changes or rollback against production. `sf-data` and `sf-scratch-org` now warn before
+  bulk delete, anonymous Apex, `--ignore-conflicts`, and `--no-prompt`.
+
+### Fixed
+
+- **`sf-pmd-scan`**: Code Analyzer v5 rule selectors are bare tokens (`pmd`, `"1,2"`,
+  `pmd:Security`), not `engine=pmd` / `severity=1,2`. Rule listing uses
+  `sf code-analyzer rules --rule-selector …`. The nonexistent `--version` flag is gone.
+  Changed-file scans diff against `origin/main` and skip deleted files.
+- **Skill accuracy fixes:**
+  - `sf-test` uses the `Assert` class in its templates and states the coverage rules
+    correctly (75% org-wide, plus per-class coverage under `RunSpecifiedTests`).
+  - `sf-deploy`'s test-level table no longer claims `RunLocalTests` is the only production
+    option.
+  - `sf-flow-review` drops the callout/bulkification mix-up and notes that Process Builder
+    and Workflow Rules are retired.
+  - `sf-data` notes the 2,000-row `OFFSET` cap.
+  - `sf-apex-review` prefers `WITH USER_MODE`.
+  - `sf-lwc` no longer pins API 63.0.
+  - `sfdt-cli` states the real Node.js requirement (>= 22.15.0).
+
 ## [0.28.1] - 2026-11-03
 
 Fixes for `sfdt audit callermap --probe` from the last round of review on the v0.28.0 release PR.

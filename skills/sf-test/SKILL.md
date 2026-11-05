@@ -1,7 +1,7 @@
 ---
 name: sf-test
 license: Apache-2.0
-description: Run Apex tests, analyze code coverage, find untested paths, and generate test classes for this Salesforce project. Use whenever writing or reviewing any @isTest class, running tests, investigating coverage gaps or test failures, or when the user asks "why is coverage low", "write a test for this", or mentions deployment test requirements.
+description: Runs Apex tests, analyzes code coverage, finds untested paths, and writes test classes to a consistent standard. Use when writing or reviewing an @isTest class, running tests, investigating coverage gaps or test failures, asking "why is coverage low" or "write a test for this", or checking deployment test requirements. Not for deploying (sf-deploy) or reviewing production Apex logic (sf-apex-review).
 triggers:
   - run tests
   - apex test
@@ -75,7 +75,7 @@ sf apex get test \
   --result-format human
 ```
 
-## Test Class Standards for This Project
+## Test Class Standards
 
 ### Required Structure
 ```apex
@@ -105,7 +105,7 @@ private class MyClassTest {
 
         // Assert — meaningful, not System.assert(true)
         List<Account> updated = [SELECT Id, Description FROM Account WHERE Id IN :accounts];
-        System.assertEquals('Processed', updated[0].Description,
+        Assert.areEqual('Processed', updated[0].Description,
             'Account description should be set to Processed');
     }
 
@@ -113,7 +113,7 @@ private class MyClassTest {
     static void testBulkScenario() {
         // Must test 200 records — the governor limit batch size
         List<Account> accounts = [SELECT Id FROM Account]; // 200 from @testSetup
-        System.assertEquals(200, accounts.size(), 'Should have 200 test accounts');
+        Assert.areEqual(200, accounts.size(), 'Should have 200 test accounts');
 
         Test.startTest();
         MyClass.processAccounts(accounts);
@@ -129,8 +129,9 @@ private class MyClassTest {
         MyClass.processAccounts(null);
         MyClass.processAccounts(new List<Account>());
         Test.stopTest();
-        // No exception thrown = pass, or assert specific exception:
-        // try { ... } catch(MyException e) { System.assert(true); }
+        // No exception thrown = pass, or assert the specific exception:
+        // try { MyClass.doThing(bad); Assert.fail('Expected MyException'); }
+        // catch (MyException e) { Assert.isTrue(e.getMessage().contains('expected text')); }
     }
 
     @isTest
@@ -207,6 +208,8 @@ public class TestDataFactory {
 
 ## Coverage Target
 
-Salesforce requires **75%** org-wide coverage to deploy to production — treat any class below 75% as CRITICAL. Many teams set a higher bar: check the project's configured threshold first (`.sfdt/config.json` → `deployment.coverageThreshold`, or `sfdt config get deployment.coverageThreshold`) and flag classes below it.
+Salesforce requires **75%** org-wide Apex coverage to deploy to production, every trigger needs some coverage, and with `RunSpecifiedTests` each class and trigger in the deployment needs 75% on its own. Treat classes below 75% as high-risk rather than an automatic deploy blocker. Many teams set a higher bar: with sfdt, `.sfdt/config.json` → `deployment.coverageThreshold` is the deploy gate (`sfdt config get deployment.coverageThreshold`) and `testConfig.coverageThreshold` drives test reports.
 
 Prefer `Assert.areEqual(expected, actual, msg)` / `Assert.isTrue(...)` (the modern `Assert` class) over the legacy `System.assert*` methods in new test code.
+
+**Next steps:** Once tests pass and coverage meets the threshold, use `sf-deploy` to validate and promote. If coverage is low because the code under test is hard to test (logic in triggers, no seams), suggest `sf-apex-review` for a refactor plan. Skip if the user only wanted the test run.
